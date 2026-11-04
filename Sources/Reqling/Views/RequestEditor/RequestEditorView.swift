@@ -32,13 +32,16 @@ struct RequestEditorPane: View {
             if let notice = editor.notice {
                 RequestEditorNotice(text: notice, systemImage: "info.circle") { editor.notice = nil }
             }
-            // Left enabled, so a read-only request's sections stay browsable.
-            SectionPicker("Section", selection: $editor.tab, options: RequestEditorTab.allCases, label: \.rawValue)
-            RequestEditorTabContent(editor: editor, model: model)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .disabled(editor.isReadOnly)
+            VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
+                // Left enabled, so a read-only request's sections stay browsable.
+                SectionPicker("Section", selection: $editor.tab, options: RequestEditorTab.allCases, label: \.rawValue)
+                RequestEditorTabContent(editor: editor, model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .disabled(editor.isReadOnly)
+            }
         }
-        .padding(AppMetrics.paneInset)
+        .padding(.horizontal, AppMetrics.detailPaneInset)
+        .padding(.vertical, AppMetrics.paneInset)
     }
 }
 

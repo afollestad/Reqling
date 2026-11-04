@@ -32,15 +32,18 @@ struct GRPCEditorPane: View {
             if let note = editor.unavailableNote {
                 RequestEditorNotice(text: note, systemImage: "exclamationmark.triangle", onDismiss: nil)
             }
-            // Left enabled, so a read-only request's sections stay browsable.
-            SectionPicker("Section", selection: $editor.tab, options: GRPCEditorTab.allCases) { tab in
-                Self.title(for: tab, listsMessages: listsMessages)
+            VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
+                // Left enabled, so a read-only request's sections stay browsable.
+                SectionPicker("Section", selection: $editor.tab, options: GRPCEditorTab.allCases) { tab in
+                    Self.title(for: tab, listsMessages: listsMessages)
+                }
+                // Disables its own editing parts: an open call's composer must work in a read-only project.
+                GRPCEditorTabContent(editor: editor, model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            // Disables its own editing parts: an open call's composer must work in a read-only project.
-            GRPCEditorTabContent(editor: editor, model: model)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(AppMetrics.paneInset)
+        .padding(.horizontal, AppMetrics.detailPaneInset)
+        .padding(.vertical, AppMetrics.paneInset)
     }
 
     static func title(for tab: GRPCEditorTab, listsMessages: Bool) -> String {

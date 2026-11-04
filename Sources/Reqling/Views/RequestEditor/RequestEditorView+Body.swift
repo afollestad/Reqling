@@ -21,6 +21,8 @@ struct RequestBodyEditor: View {
                     ? "Choose another method to add a body."
                     : "The body you entered is kept and sent again if you switch to a method that allows one.")
             }
+            // Fills the tab area; at its ideal width, the parent's leading alignment pins it off-center.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

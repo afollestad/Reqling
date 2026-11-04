@@ -25,7 +25,8 @@ struct GRPCResponseView: View {
                 GRPCResponseTabContent(response: response, call: call)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(AppMetrics.paneInset)
+            .padding(.horizontal, AppMetrics.detailPaneInset)
+            .padding(.vertical, AppMetrics.paneInset)
         } else if response.isSending {
             ProgressView("Connecting…")
         } else {
@@ -74,7 +75,7 @@ private struct GRPCResponseStatusBar: View {
                 ResponseEnvironmentLabel(name: environment)
             }
         }
-        .padding(.horizontal, AppMetrics.paneInset)
+        .padding(.horizontal, AppMetrics.detailPaneInset)
         .padding(.vertical, 8)
     }
 }

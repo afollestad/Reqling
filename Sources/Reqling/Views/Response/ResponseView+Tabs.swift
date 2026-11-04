@@ -86,8 +86,11 @@ private struct ResponseBodyView: View {
                     systemImage: "doc.zipper",
                     description: Text("\(Self.size(byteCount)). Save it to open it in another app.")
                 )
+                // Centered in the pane, not at its ideal width against this stack's leading edge.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .empty:
                 ContentUnavailableView("Empty Body", systemImage: "tray", description: Text("The response had no body."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

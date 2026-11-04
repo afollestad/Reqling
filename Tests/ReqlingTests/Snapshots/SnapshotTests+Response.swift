@@ -19,6 +19,24 @@ extension SnapshotTests {
         assertBothAppearances(view, size: CGSize(width: 520, height: 340))
     }
 
+    /// The empty state centers in the pane rather than hugging its leading edge.
+    func testResponseEmptyBody() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        project.cacheExchange(.response(HTTPResponseRecord(
+            statusCode: 204,
+            headers: [],
+            body: Data(),
+            url: "https://api.example.com/users",
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            duration: 0.042,
+            protocolName: "h2",
+            tlsVersion: "TLS 1.3"
+        )), for: project.listUsers, in: fixture)
+        let editor = try project.editor(project.listUsers, in: fixture)
+
+        assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: Self.responseSize)
+    }
+
     func testResponseFailure() throws {
         let project = try SnapshotProject.make(in: fixture)
         project.cacheExchange(

@@ -25,7 +25,8 @@ struct ResponseView: View {
                     ResponseSectionBar(response: response, model: model)
                     ResponseTabContent(response: response, exchange: exchange, record: record, model: model)
                 }
-                .padding(AppMetrics.paneInset)
+                .padding(.horizontal, AppMetrics.detailPaneInset)
+                .padding(.vertical, AppMetrics.paneInset)
             }
         } else if response.isSending {
             ProgressView("Sending…")
@@ -68,7 +69,7 @@ struct ResponseStatusBar: View {
                 ResponseEnvironmentLabel(name: environment)
             }
         }
-        .padding(.horizontal, AppMetrics.paneInset)
+        .padding(.horizontal, AppMetrics.detailPaneInset)
         .padding(.vertical, 8)
     }
 
