@@ -71,11 +71,6 @@ extension AppModel {
         insertRequest(RequestItem(name: "New Request", kind: .http(HTTPRequestSpec())), in: project)
     }
 
-    /// A gRPC request on `.automatic`, so it uses the project's protos when it has any and server reflection otherwise.
-    func newGRPCRequest(in project: ProjectID? = nil) {
-        insertRequest(RequestItem(name: "New gRPC Request", kind: .grpc(GRPCRequestSpec(schema: .automatic))), in: project)
-    }
-
     private func insertRequest(_ request: RequestItem, in project: ProjectID?) {
         guard let project = project ?? activeProjectID else {
             sheet = .newProject
@@ -89,6 +84,36 @@ extension AppModel {
         }
         expandAncestors(of: request.id, in: project)
         selection = .node(project, request.id)
+    }
+
+    /// Switches a request between HTTP and gRPC in place, asking first through `kindChangePending` when the switch
+    /// would discard something. Flushes first, so the conversion starts from the draft rather than the last save. Refused
+    /// mid-run: the run belongs to the old protocol, and the editor that could show or cancel it is about to go.
+    func changeKind(of request: RequestNodeID, in project: ProjectID, to kind: RequestKind.Name) {
+        flushPendingEdits()
+        guard !runner.isInFlight(request, in: project), let item = library.document(project)?.request(request), item.kind.name != kind else {
+            return
+        }
+        let change = RequestKindChange(projectID: project, requestID: request, name: item.name, kind: kind)
+        if item.kind.losesContent(convertingTo: kind) {
+            kindChangePending = change
+        } else {
+            applyKindChange(change)
+        }
+    }
+
+    func applyKindChange(_ change: RequestKindChange) {
+        kindChangePending = nil
+        guard perform("Couldn't Change the Request", {
+            try library.mutate(change.projectID) { document in
+                try document.updateRequest(change.requestID) { $0.kind = $0.kind.converted(to: change.kind) }
+            }
+        }) != nil else {
+            return
+        }
+        // Before the new editor exists, so it never shows the old protocol's response.
+        runner.forget(change.requestID, in: change.projectID)
+        syncEditor()
     }
 
     func newFolder(in project: ProjectID? = nil) {

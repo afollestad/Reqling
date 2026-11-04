@@ -48,6 +48,18 @@ struct AppAlert: Identifiable, Equatable {
     let message: String
 }
 
+/// A request switching protocol; see `AppModel.changeKind(of:in:to:)`.
+struct RequestKindChange: Identifiable, Equatable {
+    let projectID: ProjectID
+    let requestID: RequestNodeID
+    let name: String
+    let kind: RequestKind.Name
+
+    var id: RequestNodeID {
+        requestID
+    }
+}
+
 struct FolderAuthDraft: Equatable {
     let projectID: ProjectID
     let folderID: RequestNodeID
@@ -72,6 +84,8 @@ final class AppModel {
     var alert: AppAlert?
     /// A project awaiting confirmation before its folder moves to the Trash.
     var projectPendingDeletion: ProjectID?
+    /// A protocol switch awaiting confirmation because it would discard part of the request.
+    var kindChangePending: RequestKindChange?
     /// The project or item being renamed, with the name typed so far. Dismissing the dialog clears only `isRenaming`,
     /// never this, so its Rename action reads the typed name whichever order SwiftUI runs the dismissal and action in.
     var renaming: RenameTarget?
@@ -202,7 +216,7 @@ final class AppModel {
     /// Gives the selection the editor it needs: none, or one for the selected request's kind. The current editor stays
     /// while it still fits; one whose request changed kind underneath (a `git pull` turning HTTP into gRPC) is
     /// replaced, since its draft can no longer save. Says so when replacing an editor drops an edit.
-    private func syncEditor() {
+    func syncEditor() {
         let previous = editor
         if case .node(let projectID, let nodeID)? = selection, let request = library.document(projectID)?.request(nodeID) {
             if editor?.identity != selection || editor?.kind != request.kind.name {

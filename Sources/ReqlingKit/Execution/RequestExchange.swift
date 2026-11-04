@@ -170,6 +170,15 @@ public struct ResponseCache: Sendable {
         }
     }
 
+    public func remove(_ request: RequestNodeID, in project: ProjectID) {
+        try? FileManager.default.removeItem(at: fileURL(request, in: project))
+        var index = Dictionary(uniqueKeysWithValues: outcomes(in: project).map { ($0.key.description, $0.value) })
+        guard index.removeValue(forKey: request.description) != nil else {
+            return
+        }
+        try? JSONEncoder().encode(index).write(to: indexURL(for: project), options: .atomic)
+    }
+
     public func removeAll(in project: ProjectID) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(project.description, isDirectory: true))
     }

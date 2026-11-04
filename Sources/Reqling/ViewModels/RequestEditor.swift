@@ -7,6 +7,7 @@ protocol RequestEditing: AnyObject {
     var projectID: ProjectID { get }
     var requestID: RequestNodeID { get }
     var name: String { get }
+    var kind: RequestKind.Name { get }
     var isReadOnly: Bool { get }
     /// Explains the pause while the project is listed but did not load; `nil` otherwise.
     var unavailableNote: String? { get }
@@ -30,9 +31,17 @@ extension RequestEditing {
     }
 }
 
-extension RequestEditorViewModel: RequestEditing {}
+extension RequestEditorViewModel: RequestEditing {
+    var kind: RequestKind.Name {
+        .http
+    }
+}
 
-extension GRPCEditorViewModel: RequestEditing {}
+extension GRPCEditorViewModel: RequestEditing {
+    var kind: RequestKind.Name {
+        .grpc
+    }
+}
 
 /// The selected request's editor. An enum rather than an existential, so the detail view switches over the kinds
 /// exhaustively and an action only one protocol has (Copy as cURL) is reachable only on its kind. Two values are equal

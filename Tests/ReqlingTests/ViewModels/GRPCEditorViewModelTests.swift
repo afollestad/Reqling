@@ -275,11 +275,47 @@ final class GRPCEditorViewModelTests: XCTestCase {
         fixture.model.newRequest()
         XCTAssertEqual(fixture.model.editor?.kind, .http)
         XCTAssertNil(fixture.model.editor?.asGRPC)
+    }
 
-        fixture.model.newGRPCRequest()
-        let created = try XCTUnwrap(fixture.model.editor?.asGRPC)
-        XCTAssertEqual(created.name, "New gRPC Request")
-        XCTAssertEqual(created.spec.schema, .automatic)
+    func testANewRequestSwitchesToGRPCWithoutAsking() throws {
+        fixture.model.newRequest()
+        let created = try XCTUnwrap(fixture.model.editor?.identity.nodeID)
+        fixture.model.editor?.asHTTP?.spec.headers = [KeyValuePair(key: "x-trace", value: "1")]
+
+        fixture.model.changeKind(of: created, in: project, to: .grpc)
+
+        XCTAssertNil(fixture.model.kindChangePending)
+        let switched = try XCTUnwrap(fixture.model.editor?.asGRPC)
+        XCTAssertEqual(switched.requestID, created)
+        XCTAssertEqual(switched.spec.metadata.map(\.key), ["x-trace"], "the unsaved header carries over")
+        XCTAssertEqual(switched.spec.schema, .automatic)
+    }
+
+    func testASwitchForgetsTheOldProtocolsResponse() async throws {
+        fixture.model.newRequest()
+        let created = try XCTUnwrap(fixture.model.editor?.identity.nodeID)
+        let runner = fixture.model.runner
+        // An empty URL fails before sending, which is still a recorded, cached exchange.
+        fixture.model.editor?.send()
+        await waitUntil("the failed run to be recorded") { runner.exchange(for: created, in: project) != nil }
+
+        fixture.model.changeKind(of: created, in: project, to: .grpc)
+
+        XCTAssertNil(runner.exchange(for: created, in: project), "neither the session nor the disk cache keeps it")
+        XCTAssertEqual(runner.outcome(for: created, in: project), .notSent)
+    }
+
+    func testASwitchThatDiscardsAsksFirst() throws {
+        fixture.model.changeKind(of: request, in: project, to: .http)
+
+        let pending = try XCTUnwrap(fixture.model.kindChangePending)
+        XCTAssertNotNil(fixture.model.editor?.asGRPC, "nothing changes until confirmed")
+
+        fixture.model.applyKindChange(pending)
+
+        XCTAssertNil(fixture.model.kindChangePending)
+        XCTAssertNotNil(fixture.model.editor?.asHTTP)
+        XCTAssertNil(fixture.model.alert)
     }
 
     func testSwitchingRequestsFlushesTheGRPCDraft() throws {

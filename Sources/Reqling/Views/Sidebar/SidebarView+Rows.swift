@@ -88,7 +88,6 @@ private struct SidebarProjectMenu: View {
     var body: some View {
         if project.document != nil {
             Button("New Request") { model.selection = .project(project.id); model.newRequest(in: project.id) }
-            Button("New gRPC Request") { model.selection = .project(project.id); model.newGRPCRequest(in: project.id) }
             Button("New Folder") { model.selection = .project(project.id); model.newFolder(in: project.id) }
             Divider()
             Button("Environments…") { model.sheet = .environments(project.id) }
@@ -203,7 +202,6 @@ private struct SidebarItemMenu: View {
 
     var body: some View {
         Button("New Request") { model.selection = .node(projectID, nodeID); model.newRequest(in: projectID) }
-        Button("New gRPC Request") { model.selection = .node(projectID, nodeID); model.newGRPCRequest(in: projectID) }
         Button("New Folder") { model.selection = .node(projectID, nodeID); model.newFolder(in: projectID) }
         Divider()
         Button("Rename…") { model.beginRename(nodeID, in: projectID) }

@@ -22,7 +22,6 @@ struct ProjectDetailView: View {
                     HStack {
                         Button("New Request") { model.newRequest(in: project.id) }
                             .buttonStyle(.borderedProminent)
-                        Button("New gRPC Request") { model.newGRPCRequest(in: project.id) }
                         Button("Environments…") { model.sheet = .environments(project.id) }
                         Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
                         Button("Reveal in Finder") { model.revealProject(project.id) }
@@ -107,7 +106,6 @@ struct FolderDetailView: View {
                 }
                 HStack {
                     Button("New Request") { model.newRequest(in: projectID) }
-                    Button("New gRPC Request") { model.newGRPCRequest(in: projectID) }
                     Button("New Folder") { model.newFolder(in: projectID) }
                 }
             }

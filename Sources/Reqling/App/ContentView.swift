@@ -48,6 +48,18 @@ struct ContentView: View {
                     + "You can also install it later from Settings ▸ App Updates.")
             }
             .confirmationDialog(
+                "Change “\(model.kindChangePending?.name ?? "")” to \(RequestEditorHeader.title(for: model.kindChangePending?.kind ?? .http))?",
+                isPresented: Binding(get: { model.kindChangePending != nil }, set: { if !$0 { model.kindChangePending = nil } }),
+                titleVisibility: .visible,
+                presenting: model.kindChangePending
+            ) { change in
+                Button("Change to \(RequestEditorHeader.title(for: change.kind))", role: .destructive) { model.applyKindChange(change) }
+            } message: { change in
+                Text(change.kind == .grpc
+                    ? "Its auth, headers, host, and timeout carry over. Its method, query, and body are discarded."
+                    : "Its auth, metadata, target, and deadline carry over. Its service, method, and messages are discarded.")
+            }
+            .confirmationDialog(
                 "Move this project to the Trash?",
                 isPresented: Binding(get: { model.projectPendingDeletion != nil }, set: { if !$0 { model.projectPendingDeletion = nil } }),
                 titleVisibility: .visible,

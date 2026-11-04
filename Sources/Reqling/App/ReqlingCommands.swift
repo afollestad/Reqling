@@ -13,8 +13,6 @@ struct ReqlingCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Request") { model.newRequest() }
                 .keyboardShortcut("n", modifiers: .command)
-            Button("New gRPC Request") { model.newGRPCRequest() }
-                .keyboardShortcut("n", modifiers: [.command, .control])
             Button("New Folder") { model.newFolder() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("New Project…") { model.sheet = .newProject }

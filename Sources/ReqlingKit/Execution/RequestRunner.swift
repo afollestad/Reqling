@@ -260,6 +260,20 @@ public final class RequestRunner {
         outcomeRevision += 1
     }
 
+    /// Drops one request's run history, as when it switches protocol and its last exchange no longer describes it. A
+    /// run in flight is cancelled and detached first, so it cannot finish afterwards and record the old protocol again.
+    public func forget(_ request: RequestNodeID, in project: ProjectID) {
+        let key = RunKey(request, in: project)
+        tasks.removeValue(forKey: key)?.cancel()
+        inFlight.remove(key)
+        liveCalls[key] = nil
+        openStreams.remove(key)
+        cache.remove(request, in: project)
+        latest[key] = nil
+        outcomes[project]?[request] = nil
+        outcomeRevision += 1
+    }
+
     private struct PreparedRun {
         var prepared: PreparedHTTPRequest
         var tls: TLSContext
