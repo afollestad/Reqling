@@ -63,24 +63,6 @@ enum SyntaxPalette {
             return NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
         }
     }
-
-    /// Builds a fully colored string for read-only text, so a large response body is styled with a single storage
-    /// update instead of one per token. Tokenize off the main actor first; this part is cheap.
-    static func attributedString(_ text: String, tokens: [SyntaxToken], font: NSFont) -> NSAttributedString {
-        let attributed = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: base])
-        applyColors(tokens, to: attributed)
-        return attributed
-    }
-
-    /// Colors `tokens` in text that is already shown, inside one editing pass. Only attributes change, so a text
-    /// view's selection and scroll position survive, unlike replacing its string.
-    static func applyColors(_ tokens: [SyntaxToken], to text: NSMutableAttributedString) {
-        text.beginEditing()
-        for token in tokens {
-            text.addAttribute(.foregroundColor, value: color(for: token.role), range: token.range)
-        }
-        text.endEditing()
-    }
 }
 
 /// How a `{{variable}}` token reads in the editor.

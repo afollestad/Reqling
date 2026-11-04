@@ -56,13 +56,24 @@ struct SnapshotProject {
     }
 
     /// Stores an exchange as if a run had just finished, so the response pane has something to show.
-    func cacheExchange(_ outcome: RequestExchange.Outcome, for request: RequestNodeID, in fixture: AppFixture) {
+    func cacheExchange(
+        _ outcome: RequestExchange.Outcome,
+        for request: RequestNodeID,
+        sent: ResolvedHTTPRequest = ResolvedHTTPRequest(
+            method: "GET",
+            url: "https://api.example.com/users",
+            headers: [],
+            bodyPreview: nil,
+            bodyByteCount: 0
+        ),
+        in fixture: AppFixture
+    ) {
         ResponseCache(directory: fixture.profile.responsesDirectory).save(RequestExchange(
             projectID: id,
             requestID: request,
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             environmentName: "Default",
-            request: ResolvedHTTPRequest(method: "GET", url: "https://api.example.com/users", headers: [], bodyPreview: nil, bodyByteCount: 0),
+            request: sent,
             outcome: outcome
         ))
     }

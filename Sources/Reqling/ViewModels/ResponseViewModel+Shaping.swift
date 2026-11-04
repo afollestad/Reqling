@@ -125,8 +125,8 @@ extension ResponseViewModel {
         let modes = modes(for: shaped.format)
         let mode = modes.contains(preference) ? preference : modes.first
         switch shaped.content {
-        case .text(let text, let language):
-            return ResponseBodyPresentation(content: .text(text, language), availableModes: modes, mode: mode, pendingShape: nil)
+        case .text(let document):
+            return ResponseBodyPresentation(content: .text(document), availableModes: modes, mode: mode, pendingShape: nil)
         case .binary(let byteCount):
             return ResponseBodyPresentation(content: .binary(byteCount: byteCount), availableModes: [], mode: nil, pendingShape: nil)
         case .empty:

@@ -53,8 +53,9 @@ final class SyntaxTokenizerTests: XCTestCase {
 
     func testPlainTextAndOversizedSourcesAreLeftPlain() {
         XCTAssertTrue(SyntaxTokenizer.tokens(in: #"{"a": 1}"#, language: .plainText).isEmpty)
+        // The regex languages stop at the limit; JSON has none (`testJSONOverTheRegexLimitStillColors`).
         let huge = String(repeating: "1", count: SyntaxTokenizer.maximumLength + 1)
-        XCTAssertTrue(SyntaxTokenizer.tokens(in: huge, language: .json).isEmpty)
+        XCTAssertTrue(SyntaxTokenizer.tokens(in: huge, language: .yaml).isEmpty)
     }
 
     func testContentTypesMapToLanguages() {

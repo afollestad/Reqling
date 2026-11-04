@@ -4,6 +4,8 @@ import SwiftUI
 /// Menu-bar commands; they dispatch through `AppModel`, so they work whatever has focus.
 struct ReqlingCommands: Commands {
     let model: AppModel
+    /// A focused body search field, which the Find menu steps through.
+    @FocusedValue(\.bodySearch) private var focusedSearch
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -60,9 +62,11 @@ struct ReqlingCommands: Commands {
         }
     }
 
-    /// Finds in the focused body or response; anywhere else there is nothing to search in place.
+    /// Finds in the focused body editor, response, or body search; anywhere else there is nothing to search in place.
     private func find(_ action: NSTextFinder.Action) {
-        if !CodeTextView.performFind(action, in: NSApp.keyWindow) {
+        if let focusedSearch {
+            focusedSearch.perform(action)
+        } else if !CodeTextView.performFind(action, in: NSApp.keyWindow), !InPlaceFind.perform(action, in: NSApp.keyWindow) {
             NSSound.beep()
         }
     }

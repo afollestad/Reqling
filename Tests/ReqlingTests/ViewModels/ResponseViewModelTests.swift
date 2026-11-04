@@ -52,8 +52,8 @@ final class ResponseViewModelTests: XCTestCase {
     }
 
     private func text(_ presentation: ResponseBodyPresentation) -> String? {
-        if case .text(let text, _) = presentation.content {
-            return text
+        if case .text(let document) = presentation.content {
+            return document.text(in: 0..<document.length)
         }
         return nil
     }

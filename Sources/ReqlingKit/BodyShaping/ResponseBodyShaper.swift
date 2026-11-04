@@ -28,10 +28,10 @@ public enum ShapingMode: Hashable, Sendable {
     case raw
 }
 
-/// A body ready to show: the text with the language it is highlighted as, or why there is none.
+/// A body ready to show: its text indexed for the viewer, or why there is none.
 public struct ShapedBody: Sendable {
     public enum Content: Sendable {
-        case text(String, SyntaxLanguage)
+        case text(TextDocument)
         /// Not UTF-8 text, so there is nothing to show in place.
         case binary(byteCount: Int)
         case empty
@@ -73,30 +73,33 @@ public enum ResponseBodyShaper {
         guard !body.isEmpty else {
             return ShapedBody(content: .empty, format: .empty)
         }
-        guard let text = String(data: body, encoding: .utf8) else {
-            return ShapedBody(content: .binary(byteCount: body.count), format: format)
-        }
-        try checkCancellation()
+        let resolved: BodyFormat
+        let language: SyntaxLanguage
         switch format {
         case .empty:
             return ShapedBody(content: .empty, format: .empty)
         case .image:
-            return ShapedBody(content: .text(text, .plainText), format: .text(.plainText))
+            (resolved, language) = (.text(.plainText), .plainText)
+        case .json(.sniffed) where !(try isJSON(body)):
+            (resolved, language) = (.text(.plainText), .plainText)
         case .json(let source):
-            if source == .sniffed, !(try isJSON(body)) {
-                return ShapedBody(content: .text(text, .plainText), format: .text(.plainText))
+            (resolved, language) = (.json(source == .sniffed ? .declared : source), .json)
+            if mode == .pretty, let pretty = try JSONFormatter.pretty(body) {
+                return try shaped(Data(pretty), language: .json, format: resolved, byteCount: body.count)
             }
-            let confirmed = BodyFormat.json(source == .sniffed ? .declared : source)
-            // The formatter copies every multi-byte character whole, so valid UTF-8 in stays valid out.
-            guard mode == .pretty, let pretty = try JSONFormatter.pretty(body), let prettyText = String(bytes: pretty, encoding: .utf8) else {
-                return ShapedBody(content: .text(text, .json), format: confirmed)
-            }
-            return ShapedBody(content: .text(prettyText, .json), format: confirmed)
         case .xml:
-            return ShapedBody(content: .text(text, .xml), format: format)
-        case .text(let language):
-            return ShapedBody(content: .text(text, language), format: format)
+            (resolved, language) = (.xml, .xml)
+        case .text(let textLanguage):
+            (resolved, language) = (format, textLanguage)
         }
+        return try shaped(body, language: language, format: resolved, byteCount: body.count)
+    }
+
+    private static func shaped(_ text: Data, language: SyntaxLanguage, format: BodyFormat, byteCount: Int) throws(CancellationError) -> ShapedBody {
+        guard let document = try TextDocument.make(text, language: language) else {
+            return ShapedBody(content: .binary(byteCount: byteCount), format: format)
+        }
+        return ShapedBody(content: .text(document), format: format)
     }
 
     private static func isJSON(_ body: Data) throws(CancellationError) -> Bool {
@@ -125,9 +128,4 @@ public enum ResponseBodyShaper {
         return first == UInt8(ascii: "{") || first == UInt8(ascii: "[")
     }
 
-    private static func checkCancellation() throws(CancellationError) {
-        if Task.isCancelled {
-            throw CancellationError()
-        }
-    }
 }

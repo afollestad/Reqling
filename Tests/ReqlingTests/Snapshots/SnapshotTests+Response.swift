@@ -49,10 +49,46 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: Self.responseSize)
     }
 
+    /// The Raw format shows the body as sent, highlighted the same way.
+    func testResponseRawBody() throws {
+        let response = try jsonResponse()
+        response.bodyMode = .raw
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
+    /// Searching in place: the bar above the body, every match tinted, and the current one selected.
+    func testResponseBodySearch() async throws {
+        let response = try jsonResponse()
+        guard case .text(let document) = response.body.content else {
+            return XCTFail("\(response.body.content)")
+        }
+        response.search.present()
+        response.search.query = "name"
+        await response.search.search(in: document)
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
+    /// The Request tab shows the body sent, highlighted by its Content-Type.
+    func testResponseSentBody() throws {
+        let response = try jsonResponse(sent: ResolvedHTTPRequest(
+            method: "POST",
+            url: "https://api.example.com/users",
+            headers: [KeyValuePair(key: "Content-Type", value: "application/json")],
+            bodyPreview: #"{"name": "Ada", "admin": false}"#,
+            bodyByteCount: 31
+        ))
+        response.tab = .request
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
     private func jsonResponseView() throws -> ResponseView {
+        ResponseView(response: try jsonResponse(), model: fixture.model)
+    }
+
+    private func jsonResponse(sent: ResolvedHTTPRequest? = nil) throws -> ResponseViewModel {
         let project = try SnapshotProject.make(in: fixture)
         let body = #"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":false}],"next":null}"#
-        project.cacheExchange(.response(HTTPResponseRecord(
+        let record = HTTPResponseRecord(
             statusCode: 200,
             headers: [KeyValuePair(key: "Content-Type", value: "application/json")],
             body: Data(body.utf8),
@@ -61,8 +97,12 @@ extension SnapshotTests {
             duration: 0.142,
             protocolName: "h2",
             tlsVersion: "TLS 1.3"
-        )), for: project.listUsers, in: fixture)
-        let editor = try project.editor(project.listUsers, in: fixture)
-        return ResponseView(response: editor.response, model: fixture.model)
+        )
+        if let sent {
+            project.cacheExchange(.response(record), for: project.listUsers, sent: sent, in: fixture)
+        } else {
+            project.cacheExchange(.response(record), for: project.listUsers, in: fixture)
+        }
+        return try project.editor(project.listUsers, in: fixture).response
     }
 }

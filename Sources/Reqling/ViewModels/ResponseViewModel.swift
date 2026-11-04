@@ -27,7 +27,7 @@ enum ResponseBodyMode: String, CaseIterable, Identifiable {
 /// How a response body renders: as highlighted text, an image, or a placeholder, plus the formats it offers.
 struct ResponseBodyPresentation {
     enum Content {
-        case text(String, SyntaxLanguage)
+        case text(TextDocument)
         case image(NSImage)
         case binary(byteCount: Int)
         case empty
@@ -59,6 +59,8 @@ final class ResponseViewModel {
 
     let requestID: RequestNodeID
     let projectID: ProjectID
+    /// Searching the body, whichever format shows it; the query carries over between formats.
+    let search = BodySearchModel()
     @ObservationIgnored let runner: RequestRunner
     /// Results of background shaping for the exchange shown; writing it re-renders the body.
     var shapedBodies = ShapedBodies()
@@ -66,6 +68,7 @@ final class ResponseViewModel {
     @ObservationIgnored var classification: BodyClassification?
     @ObservationIgnored var shapingKey: ResponseShapeKey?
     @ObservationIgnored var shapingTask: Task<ShapedBody, any Error>?
+    @ObservationIgnored private var sentBodyCache: (startedAt: Date, document: TextDocument?)?
 
     init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner) {
         self.requestID = requestID
@@ -90,6 +93,25 @@ final class ResponseViewModel {
             return .empty
         }
         return presentation(of: response, startedAt: exchange.startedAt, preference: preference, shaped: shaped)
+    }
+
+    /// The body the request sent, as text to show, highlighted by its Content-Type; `nil` when it sent none.
+    var sentBody: TextDocument? {
+        guard let exchange else {
+            return nil
+        }
+        if let sentBodyCache, sentBodyCache.startedAt == exchange.startedAt {
+            return sentBodyCache.document
+        }
+        let document = exchange.request.flatMap { request -> TextDocument? in
+            guard let body = request.bodyPreview, !body.isEmpty else {
+                return nil
+            }
+            let contentType = request.headers.first { $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame }?.value
+            return TextDocument(text: body, language: ContentTypeLanguage.language(forContentType: contentType))
+        }
+        sentBodyCache = (exchange.startedAt, document)
+        return document
     }
 
     /// The format picker's selection: what `body` shows, writing the person's preference.

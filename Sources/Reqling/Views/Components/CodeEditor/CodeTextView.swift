@@ -38,10 +38,6 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     var isSingleLine = false
     /// Highlights `{{variable}}` references; off for response bodies.
     var showsTemplateTokens = true
-    /// Read-only response text arrives already colored in its storage (`SyntaxPalette.attributedString`), so it skips
-    /// rendering-attribute highlighting. Kept apart from `isEditable`, which an editor also loses while its SwiftUI
-    /// ancestor is disabled and which must keep highlighting then.
-    var isPrecolored = false
     var onSubmit: (() -> Void)?
     /// Returns true when it consumed the pasted text, as the URL bar does for cURL commands.
     var onPaste: ((String) -> Bool)?
@@ -149,7 +145,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// Re-applies syntax colors and token pills; called after every text change. Colors are rendering attributes, which
     /// never enter the text storage or the undo stack; storage attributes would bleed into newly typed text.
     func refreshHighlighting() {
-        guard !isPrecolored, let layoutManager = textLayoutManager, let contentStorage = layoutManager.textContentManager else {
+        guard let layoutManager = textLayoutManager, let contentStorage = layoutManager.textContentManager else {
             return
         }
         let documentRange = contentStorage.documentRange
@@ -240,7 +236,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// with. An attribute-only edit makes the content storage rebuild its paragraphs, and with them the fragments; it
     /// changes no text and records no undo step.
     private func rebuildPills() {
-        guard showsTemplateTokens, !isPrecolored else {
+        guard showsTemplateTokens else {
             return
         }
         if let storage = textStorage, storage.length > 0 {

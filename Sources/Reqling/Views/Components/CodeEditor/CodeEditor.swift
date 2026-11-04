@@ -2,18 +2,16 @@ import AppKit
 import ReqlingKit
 import SwiftUI
 
-/// A multi-line code editor for request bodies, and a read-only viewer for responses.
+/// A multi-line code editor for request bodies. Read-only text, such as a response, goes in `CodeViewer`.
 ///
-/// Editable text is re-highlighted as it changes; outside changes to it land through `CodeTextView.replaceText(with:)`,
-/// never as undo steps. Read-only text, which can be megabytes of response, is tokenized off the main actor above
-/// `Coordinator.inlineColoringLimit` and colored in place.
+/// Text is re-highlighted as it changes; outside changes to it land through `CodeTextView.replaceText(with:)`, never as
+/// undo steps.
 ///
 /// It honors SwiftUI's `isEnabled`, which AppKit views never see on their own: a disabled editor stays selectable
 /// but takes no edits.
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var language: SyntaxLanguage = .plainText
-    var isEditable = true
     var placeholder = ""
     var tokenContext: TemplateTokenContext = .empty
     var showsTemplateTokens = true
@@ -38,10 +36,8 @@ struct CodeEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         scrollView.documentView = textView
         context.coordinator.textView = textView
-        if isEditable {
-            textView.setInitialText(text)
-        }
-        update(textView, in: scrollView, coordinator: context.coordinator, environment: context.environment)
+        textView.setInitialText(text)
+        update(textView, in: scrollView, environment: context.environment)
         return scrollView
     }
 
@@ -50,13 +46,12 @@ struct CodeEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? CodeTextView else {
             return
         }
-        update(textView, in: scrollView, coordinator: context.coordinator, environment: context.environment)
+        update(textView, in: scrollView, environment: context.environment)
     }
 
-    private func update(_ textView: CodeTextView, in scrollView: NSScrollView, coordinator: Coordinator, environment: EnvironmentValues) {
+    private func update(_ textView: CodeTextView, in scrollView: NSScrollView, environment: EnvironmentValues) {
         let isEnabled = environment.isEnabled
-        textView.isPrecolored = !isEditable
-        textView.isEditable = isEditable && isEnabled
+        textView.isEditable = isEnabled
         textView.isSelectable = true
         scrollView.alphaValue = isEnabled ? 1 : CodeTextView.disabledAlpha
         textView.placeholder = placeholder
@@ -65,20 +60,14 @@ struct CodeEditor: NSViewRepresentable {
         textView.tokenContext = tokenContext
         textView.accentColor = environment.appAccent
         textView.setAccessibilityLabel(accessibilityLabel)
-        if isEditable {
-            textView.language = language
-            textView.replaceText(with: text)
-        } else {
-            coordinator.showReadOnly(text, language: language, in: textView)
-        }
+        textView.language = language
+        textView.replaceText(with: text)
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
         weak var textView: CodeTextView?
-        private var shown: (text: String, language: SyntaxLanguage)?
-        private var generation = 0
 
         init(text: Binding<String>) {
             self.text = text
@@ -90,52 +79,6 @@ struct CodeEditor: NSViewRepresentable {
                 return
             }
             text.wrappedValue = textView.string
-        }
-
-        /// Below this many UTF-16 units, coloring happens inline: it takes well under a frame and avoids a flash of
-        /// plain text. Larger bodies are tokenized off the main actor.
-        static let inlineColoringLimit = 100_000
-
-        /// Colors read-only text; a newer text or language supersedes a styling pass still in flight.
-        func showReadOnly(_ text: String, language: SyntaxLanguage, in textView: CodeTextView) {
-            if let shown, shown.text == text, shown.language == language {
-                return
-            }
-            shown = (text, language)
-            generation += 1
-            let font = textView.font ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            if language == .plainText {
-                textView.textStorage?.setAttributedString(SyntaxPalette.attributedString(text, tokens: [], font: font))
-            } else if (text as NSString).length <= Self.inlineColoringLimit {
-                let tokens = SyntaxTokenizer.tokens(in: text, language: language)
-                textView.textStorage?.setAttributedString(SyntaxPalette.attributedString(text, tokens: tokens, font: font))
-            } else {
-                textView.textStorage?.setAttributedString(SyntaxPalette.attributedString(text, tokens: [], font: font))
-                colorInBackground(text, language: language, generation: generation, textView: textView)
-            }
-        }
-
-        /// Colors the plain text already on screen in place once tokens arrive. Swapping in a new attributed string
-        /// would replace every character, dropping the selection and scroll position the reader set meanwhile.
-        private func colorInBackground(_ text: String, language: SyntaxLanguage, generation expected: Int, textView: CodeTextView) {
-            Task { [weak self, weak textView] in
-                let tokens = await Task.detached(priority: .userInitiated) {
-                    SyntaxTokenizer.tokens(in: text, language: language)
-                }.value
-                guard let self, self.generation == expected, let textView, let storage = textView.textStorage,
-                      storage.length == (text as NSString).length else {
-                    return
-                }
-                let selection = textView.selectedRanges
-                let clipView = textView.enclosingScrollView?.contentView
-                let origin = clipView?.bounds.origin
-                SyntaxPalette.applyColors(tokens, to: storage)
-                textView.selectedRanges = selection
-                if let clipView, let origin, clipView.bounds.origin != origin {
-                    clipView.scroll(to: origin)
-                    textView.enclosingScrollView?.reflectScrolledClipView(clipView)
-                }
-            }
         }
     }
 }

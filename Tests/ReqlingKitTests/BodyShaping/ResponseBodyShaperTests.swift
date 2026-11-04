@@ -60,15 +60,15 @@ final class ResponseBodyShaperTests: XCTestCase {
     }
 
     private func text(_ shaped: ShapedBody) -> String? {
-        if case .text(let text, _) = shaped.content {
-            return text
+        if case .text(let document) = shaped.content {
+            return document.text(in: 0..<document.length)
         }
         return nil
     }
 
     private func language(_ shaped: ShapedBody) -> SyntaxLanguage? {
-        if case .text(_, let language) = shaped.content {
-            return language
+        if case .text(let document) = shaped.content {
+            return document.language
         }
         return nil
     }

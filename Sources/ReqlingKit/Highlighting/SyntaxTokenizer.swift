@@ -33,15 +33,18 @@ public enum SyntaxLanguage: String, Hashable, Sendable, CaseIterable {
 
 /// A regex-based tokenizer ported from Alveary's `SyntaxHighlighter`: keys, strings, and comments are matched first
 /// and protected, then keywords, numbers, and symbols color what is left. It is deliberately lightweight; it makes
-/// payloads scan quickly rather than parsing them.
+/// payloads scan quickly rather than parsing them. JSON goes through `JSONLexer` instead.
 ///
 /// Output is ranges and roles only, so the SwiftUI and AppKit renderers share one tokenizer and one palette.
 public enum SyntaxTokenizer {
-    /// Sources longer than this (in UTF-16 units) come back with no tokens and render plain, so a multi-megabyte
-    /// response stays responsive.
+    /// Regex-highlighted sources longer than this (in UTF-16 units) come back with no tokens and render plain, so a
+    /// multi-megabyte response stays responsive. JSON has no limit: `JSONLexer` makes one linear pass.
     public static let maximumLength = 2_000_000
 
     public static func tokens(in source: String, language: SyntaxLanguage) -> [SyntaxToken] {
+        if language == .json {
+            return JSONLexer.tokens(in: source)
+        }
         let length = (source as NSString).length
         guard length > 0, length <= maximumLength, let spec = CompiledSpec.specs[language] else {
             return []

@@ -47,7 +47,7 @@ struct ResponseTabContent: View {
         case .timing:
             TimingView(record: record)
         case .request:
-            ResolvedRequestView(request: exchange.request)
+            ResolvedRequestView(request: exchange.request, sentBody: response.sentBody)
         }
     }
 }
@@ -66,15 +66,8 @@ private struct ResponseBodyView: View {
                     .foregroundStyle(.secondary)
             }
             switch presentation.content {
-            case .text(let text, let language):
-                CodeEditor(
-                    text: .constant(text),
-                    language: language,
-                    isEditable: false,
-                    showsTemplateTokens: false,
-                    accessibilityLabel: "Response body"
-                )
-                .editorChrome()
+            case .text(let document):
+                CodeViewerPane(document: document, search: response.search, accessibilityLabel: "Response body")
             case .image(let image):
                 Image(nsImage: image)
                     .resizable()
@@ -249,6 +242,8 @@ private struct ResolvedRequestView: View {
         "macOS also adds Host, Content-Length, Accept-Encoding, and Accept-Language, and its own value for any automatic header you turned off."
 
     let request: ResolvedHTTPRequest?
+    let sentBody: TextDocument?
+    @State private var search = BodySearchModel()
 
     var body: some View {
         if let request {
@@ -266,9 +261,8 @@ private struct ResolvedRequestView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let body = request.bodyPreview, !body.isEmpty {
-                    CodeEditor(text: .constant(body), isEditable: false, showsTemplateTokens: false, accessibilityLabel: "Sent body")
-                        .editorChrome()
+                if let sentBody {
+                    CodeViewerPane(document: sentBody, search: search, accessibilityLabel: "Sent body")
                 }
             }
         } else {

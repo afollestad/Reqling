@@ -201,16 +201,17 @@ final class CodeTextViewTests: XCTestCase {
     }
 
     /// Clicking into the response to copy from it must not cost the body editor its history.
-    func testFocusingAReadOnlyViewerKeepsTheEditorsHistory() {
+    func testFocusingTheResponseViewerKeepsTheEditorsHistory() {
         let host = UndoHost()
         let editor = makeTextView(isSingleLine: false, text: "a", delegate: host)
-        let viewer = makeTextView(isSingleLine: false, text: "response", delegate: host)
-        viewer.isEditable = false
-        let window = focus(editor, alongside: viewer)
+        let window = focus(editor)
         defer { window.close() }
+        let viewer = CodeViewerView(frame: NSRect(x: 0, y: 30, width: 300, height: 100))
+        viewer.setDocument(TextDocument(text: "response", language: .plainText))
+        window.contentView?.addSubview(viewer)
         type("b", into: editor, host: host)
 
-        XCTAssertTrue(window.makeFirstResponder(viewer))
+        XCTAssertTrue(window.makeFirstResponder(viewer.documentView))
 
         XCTAssertTrue(host.manager.canUndo)
     }
