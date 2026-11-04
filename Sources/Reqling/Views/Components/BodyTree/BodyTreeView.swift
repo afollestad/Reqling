@@ -416,22 +416,23 @@ struct BodyTreeControls: View {
     let controller: BodyTreeController
 
     var body: some View {
-        Button {
-            controller.expandAll()
-        } label: {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
+        HStack(spacing: 2) {
+            Button {
+                controller.expandAll()
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .help("Expand all")
+            .accessibilityLabel("Expand all")
+            Button {
+                controller.collapseAll()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+            }
+            .help("Collapse all")
+            .accessibilityLabel("Collapse all")
         }
-        .buttonStyle(.borderless)
-        .help("Expand all")
-        .accessibilityLabel("Expand all")
-        Button {
-            controller.collapseAll()
-        } label: {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-        }
-        .buttonStyle(.borderless)
-        .help("Collapse all")
-        .accessibilityLabel("Collapse all")
+        .buttonStyle(IconButtonStyle())
     }
 }
 

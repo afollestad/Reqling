@@ -69,7 +69,7 @@ private struct KeyValueTableRow: View {
             Button(action: writer.remove) {
                 Image(systemName: "minus.circle")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle())
             .help("Remove this \(rowName)")
             .accessibilityLabel("Remove this \(rowName)")
             // Dimmed rather than hidden, like the checkbox, so the draft row spans the table's full width.

@@ -15,6 +15,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 - **Take corner radii and pane or screen insets from `AppMetrics`**, never a literal, so fields, editors, and panes stay one family.
 - **Draw the accent from the `appAccent` environment value, never `Color.accentColor` or `NSColor.controlAccentColor`.** Tests run outside Reqling's bundle, where those render the system blue; snapshots pin `appAccent` to Reqling's purple.
 - **Lay out labeled inputs with `LabeledRow`**, never a bare `TextField` or a control's built-in label: in a grouped `Form`, macOS pushes the field to the trailing edge and draws a built-in label after its control.
+- **Style icon-only buttons with `IconButtonStyle`, icon toggles with `IconToggleStyle`, and icon-labeled `Menu`s with `.iconButtonChrome()`**, never `.borderless` or `.plain`: those show no hover, press, or on state, and leave neighbouring symbols at mismatched sizes.
 - **Use `AppHoverInfoIcon` for an `info.circle` help affordance, never plain `.help(...)`.** The system tooltip waits out a long delay, ignores clicks, and inside a toggle row's button the click flips the setting.
 - **Use `SectionPicker` for segmented switchers**; macOS centers a segmented control inside a wider frame, pulling it off the pane's leading edge.
 - **Use `TemplateField` or `CodeEditor` for any text that accepts `{{variables}}`**; a plain `TextField` silently loses the pills, tooltips, and completion.

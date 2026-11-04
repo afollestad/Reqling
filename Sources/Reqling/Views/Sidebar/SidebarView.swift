@@ -139,13 +139,14 @@ private struct SidebarFooter: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .fixedSize()
             .help("More ways to add")
             .accessibilityLabel("More ways to add")
+            .iconButtonChrome()
         }
         .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 11)
+        // The menu's icon tile carries its own padding, so the bar's vertical inset is that much smaller.
+        .padding(.top, 9)
+        .padding(.bottom, 8)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
     }

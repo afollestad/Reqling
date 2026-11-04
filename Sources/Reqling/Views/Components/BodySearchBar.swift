@@ -29,23 +29,26 @@ struct BodySearchBar: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .accessibilityLabel(search.status)
-            Button {
-                search.previous()
-            } label: {
-                Image(systemName: "chevron.up")
+            HStack(spacing: 2) {
+                Button {
+                    search.previous()
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .help("Previous match")
+                .accessibilityLabel("Previous match")
+                Button {
+                    search.next()
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .help("Next match")
+                .accessibilityLabel("Next match")
             }
-            .help("Previous match")
-            .accessibilityLabel("Previous match")
-            Button {
-                search.next()
-            } label: {
-                Image(systemName: "chevron.down")
-            }
-            .help("Next match")
-            .accessibilityLabel("Next match")
+            .buttonStyle(IconButtonStyle())
             Button("Done") { search.dismiss() }
+                .buttonStyle(.borderless)
         }
-        .buttonStyle(.borderless)
         .padding(.horizontal, 8)
         .frame(height: 28)
         .background(RoundedRectangle(cornerRadius: AppMetrics.inputCornerRadius, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))

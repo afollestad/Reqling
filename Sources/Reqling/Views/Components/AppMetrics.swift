@@ -7,6 +7,11 @@ enum AppMetrics {
     static let inputCornerRadius: CGFloat = 6
     /// Method pills and icon tiles.
     static let badgeCornerRadius: CGFloat = 4
+    /// The square tile of an icon-only button (`IconButtonStyle`).
+    static let iconButtonSize: CGFloat = 22
+    /// The glyph inside that tile, a point under body text: at 13pt, `doc.on.doc` nearly fills the tile. A label that
+    /// sets its own font, like Settings' bold close glyph, keeps it.
+    static let iconButtonGlyphSize: CGFloat = 12
     /// Banners and other free-standing containers.
     static let containerCornerRadius: CGFloat = 8
     /// The inset inside a pane: a sheet's body, and the top and bottom of the request and response panes.

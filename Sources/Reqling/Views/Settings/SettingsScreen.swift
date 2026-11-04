@@ -91,9 +91,8 @@ struct SettingsScreenHeader: View {
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
-                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle(size: 28))
             .keyboardShortcut(.cancelAction)
             .help("Close Settings")
             .accessibilityLabel("Close Settings")

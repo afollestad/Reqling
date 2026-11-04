@@ -88,7 +88,7 @@ private struct ClientCertificateRow: View {
                 } label: {
                     Image(systemName: "trash")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .help("Remove this certificate")
                 .accessibilityLabel("Remove this certificate")
             }
@@ -150,7 +150,7 @@ private struct CACertificatesSection: View {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle())
                     .help("Remove this CA certificate")
                     .accessibilityLabel("Remove this CA certificate")
                 }

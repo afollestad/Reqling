@@ -189,7 +189,7 @@ private struct FormDataRow: View {
             Button(action: writer.remove) {
                 Image(systemName: "minus.circle")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle())
             .help("Remove this field")
             .accessibilityLabel("Remove this field")
         }

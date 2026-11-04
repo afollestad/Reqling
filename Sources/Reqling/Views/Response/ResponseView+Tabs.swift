@@ -122,25 +122,27 @@ private struct ResponseBodyControls: View {
             if spreads {
                 Spacer(minLength: 0)
             }
-            if case .tree = response.body.content {
-                BodyTreeControls(controller: response.treeController)
+            // Icon tiles carry their own padding, so they sit closer together than the row's other controls.
+            HStack(spacing: 2) {
+                if case .tree = response.body.content {
+                    BodyTreeControls(controller: response.treeController)
+                }
+                Button {
+                    response.copyBody(to: model.system)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .help("Copy the body")
+                .accessibilityLabel("Copy the body")
+                Button {
+                    response.saveBody(with: model.system)
+                } label: {
+                    Image(systemName: "arrow.down.to.line")
+                }
+                .help("Save the body to a file")
+                .accessibilityLabel("Save the body to a file")
             }
-            Button {
-                response.copyBody(to: model.system)
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.borderless)
-            .help("Copy the body")
-            .accessibilityLabel("Copy the body")
-            Button {
-                response.saveBody(with: model.system)
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-            }
-            .buttonStyle(.borderless)
-            .help("Save the body to a file")
-            .accessibilityLabel("Save the body to a file")
+            .buttonStyle(IconButtonStyle())
         }
     }
 }

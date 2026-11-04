@@ -48,7 +48,7 @@ struct GRPCMethodRows: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle())
                     .help("Reload the schema, asking the server again for reflection")
                     .accessibilityLabel("Reload the schema")
                     Button("Configure Protos…") { editor.configureProtos() }

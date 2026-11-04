@@ -60,7 +60,7 @@ struct RequestEditorNotice: View {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .help("Dismiss")
                 .accessibilityLabel("Dismiss")
             }

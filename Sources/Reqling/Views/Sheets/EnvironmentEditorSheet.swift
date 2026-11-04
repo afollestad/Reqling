@@ -49,7 +49,7 @@ private struct EnvironmentList: View {
                         }
                 }
             }
-            HStack {
+            HStack(spacing: 2) {
                 Button {
                     editor.addEnvironment()
                 } label: {
@@ -67,8 +67,9 @@ private struct EnvironmentList: View {
                 .accessibilityLabel("Delete the selected environment")
                 Spacer()
             }
-            .buttonStyle(.borderless)
-            .padding(8)
+            .buttonStyle(IconButtonStyle())
+            // The icon tiles carry their own padding, so the bar adds only a little.
+            .padding(4)
         }
     }
 }
@@ -175,13 +176,13 @@ private struct VariableRow: View {
             Toggle(isOn: binding(\.isSecret)) {
                 Image(systemName: variable.isSecret ? "lock.fill" : "lock.open")
             }
-            .toggleStyle(.button)
+            .toggleStyle(IconToggleStyle())
             .help(variable.isSecret ? "Secret: stored in your Keychain and masked in previews" : "Mark as secret")
             .accessibilityLabel("Secret")
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle())
             .help("Remove this variable")
             .accessibilityLabel("Remove this variable")
             .opacity(isDraft ? 0 : 1)

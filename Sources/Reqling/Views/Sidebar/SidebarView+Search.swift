@@ -23,9 +23,8 @@ struct SidebarSearchBar: View {
                         sidebar.query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle())
                     .help("Clear the filter")
                     .accessibilityLabel("Clear the filter")
                 }
@@ -51,7 +50,6 @@ struct SidebarSearchBar: View {
 /// Narrows the sidebar by protocol, by HTTP method, and by how each request's last run went.
 private struct SidebarFilterMenu: View {
     @Binding var filter: RequestFilter
-    @Environment(\.appAccent) private var accent
 
     var body: some View {
         Menu {
@@ -75,14 +73,13 @@ private struct SidebarFilterMenu: View {
                 .disabled(!filter.isActive)
         } label: {
             Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                .foregroundStyle(filter.isActive ? Color(nsColor: accent) : Color.secondary)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize()
         .help(filter.isActive ? "Filters are on" : "Filter by protocol, method, or last result")
         .accessibilityLabel("Filters")
         .accessibilityValue(filter.isActive ? "On" : "Off")
+        .iconButtonChrome(isSelected: filter.isActive)
     }
 
     private func member<Value: Hashable>(_ value: Value, in keyPath: WritableKeyPath<RequestFilter, Set<Value>>) -> Binding<Bool> {

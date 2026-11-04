@@ -27,7 +27,7 @@ struct InlineRenameTitle: View {
                     Button(action: beginEditing) {
                         Image(systemName: "pencil")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle())
                     .help("Rename")
                     .accessibilityLabel("Rename \(title)")
                 }

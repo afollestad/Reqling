@@ -160,7 +160,7 @@ private struct GRPCMessageCard: View {
                 Button(action: writer.remove) {
                     Image(systemName: "minus.circle")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .disabled(!canRemove)
                 .help("Remove this message")
                 .accessibilityLabel("Remove message \(number)")

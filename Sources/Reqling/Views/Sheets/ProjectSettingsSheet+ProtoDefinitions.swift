@@ -66,7 +66,7 @@ struct ProjectSettingsProtoDefinitions: View {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle())
                     .help("Remove this entry file")
                     .accessibilityLabel("Remove this entry file")
                 }
@@ -147,7 +147,7 @@ private struct ProtoPathRow: View {
             Button(action: onRemove) {
                 Image(systemName: "trash")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle())
             .help(removeLabel)
             .accessibilityLabel(removeLabel)
         }
