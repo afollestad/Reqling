@@ -15,6 +15,7 @@ struct ContentView: View {
                     .frame(minWidth: 520, minHeight: 420)
             }
             .toolbar { MainToolbar(model: model) }
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         )
         .preferredColorScheme(Self.colorScheme(for: model.settings.settings.theme))
         .onChange(of: model.library.projects) { _, _ in
