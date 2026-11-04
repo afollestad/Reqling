@@ -14,6 +14,14 @@ enum BodySearchTarget: Sendable {
         case .tree(let structure): structure.id
         }
     }
+
+    /// Changes as a streaming call's timeline grows under the same `id`.
+    var revision: Int {
+        if case .tree(let structure) = self {
+            return structure.revision
+        }
+        return 0
+    }
 }
 
 /// A search's matches: byte ranges in text, or node paths in a tree.
@@ -43,16 +51,19 @@ final class BodySearchModel {
     private(set) var currentIndex: Int?
     /// Bumped to move keyboard focus into the search field.
     private(set) var focusRequest = 0
+    /// What the last search ran over, so a rerun on a growing call's timeline keeps the current match.
+    @ObservationIgnored private var lastSearch: (query: String, targetID: UUID)?
 
     /// What a search depends on, for the view's `.task(id:)`.
     struct Key: Hashable {
         let query: String
         let isPresented: Bool
         let targetID: UUID?
+        let revision: Int
     }
 
     func key(for target: BodySearchTarget?) -> Key {
-        Key(query: query, isPresented: isPresented, targetID: target?.id)
+        Key(query: query, isPresented: isPresented, targetID: target?.id, revision: target?.revision ?? 0)
     }
 
     var currentTextMatch: Range<Int>? {
@@ -127,8 +138,17 @@ final class BodySearchModel {
         guard !Task.isCancelled, let found else {
             return
         }
+        // The same query over the same timeline, grown by new messages, keeps its place rather than jumping back.
+        let isRerun = lastSearch?.query == query && lastSearch?.targetID == target.id
+        lastSearch = (query, target.id)
         result = found
-        currentIndex = found.count == 0 ? nil : 0
+        if found.count == 0 {
+            currentIndex = nil
+        } else if isRerun, let currentIndex {
+            self.currentIndex = min(currentIndex, found.count - 1)
+        } else {
+            currentIndex = 0
+        }
     }
 
     // A separate function rather than a typed-throws closure in `search`: the closure crashed the compiler's ownership

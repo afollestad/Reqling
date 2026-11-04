@@ -116,4 +116,17 @@ final class BodyTreeTests: XCTestCase {
             return XCTFail("\(xml.content)")
         }
     }
+
+    func testATimelineSearchesEveryMessageWithPathsFromItsRow() throws {
+        let messages = [#"{"text": "hi"}"#, "{\"text\": \"cut", #"{"other": {"text": "HI there"}}"#].enumerated().map { sequence, json in
+            MessageTimeline.Message(
+                event: GRPCMessageEvent(direction: .received, offset: 0, json: json, byteCount: 1, sequence: sequence),
+                index: try? JSONStructureIndex.build(Data(json.utf8))
+            )
+        }
+        let timeline = MessageTimeline(id: UUID(), messages: messages)
+        XCTAssertNil(messages[1].index, "a message cut short doesn't parse")
+        XCTAssertEqual(messages[2].fields.map(\.key), ["other"])
+        XCTAssertEqual(try BodyStructure.messages(timeline).find("hi").matches.map(\.path), [[0, 0], [2, 0, 0]])
+    }
 }

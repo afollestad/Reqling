@@ -8,8 +8,11 @@ import ReqlingKit
 @MainActor
 final class BodyTreeItem {
     enum Node {
-        case json(JSONEntry)
+        /// A JSON value, with the index it is in: a timeline's messages each have their own.
+        case json(JSONEntry, JSONStructureIndex)
         case xml(Int)
+        /// A gRPC message on a call's timeline, over its fields.
+        case message(MessageTimeline.Message)
         /// The document itself, never shown: its children are the top-level values, which bucket like any others
         /// (newline-delimited JSON can have thousands).
         case document
@@ -19,8 +22,9 @@ final class BodyTreeItem {
 
     /// `nil` for a bucket.
     let node: Node?
-    /// A node's position among its parent node's children, or the range of them a bucket groups.
-    let range: Range<Int>
+    /// A node's position among its parent node's children, or the range of them a bucket groups. A message moves up
+    /// when older ones are trimmed from the timeline.
+    var range: Range<Int>
     /// The node this item is a child of, or, for a bucket, the node whose children it groups. Buckets in between don't
     /// count: paths and positions go node to node.
     private(set) weak var parentNode: BodyTreeItem?

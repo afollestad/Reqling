@@ -114,4 +114,47 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertEqual(coordinator.path(of: selected), "$[3].a")
         XCTAssertEqual(label(try XCTUnwrap(selected.parentNode)), "3: { 1 key }")
     }
+
+    /// A streaming call updates its tree in place: new messages append, trimmed ones go, and what was expanded stays.
+    func testATimelineUpdatesInPlaceKeepingExpansion() throws {
+        func timeline(_ sequences: Range<Int>, id: UUID) throws -> BodyStructure {
+            .messages(MessageTimeline(id: id, messages: try sequences.map { sequence in
+                let json = #"{"index": \#(sequence), "nested": {"a": 1}}"#
+                return MessageTimeline.Message(
+                    event: GRPCMessageEvent(
+                        direction: sequence.isMultiple(of: 2) ? .sent : .received,
+                        offset: 0,
+                        json: json,
+                        byteCount: 2,
+                        sequence: sequence
+                    ),
+                    index: try JSONStructureIndex.build(Data(json.utf8))
+                )
+            }))
+        }
+        let id = UUID()
+        coordinator.show(try timeline(0..<2, id: id))
+        let messages = items().filter { $0.parentNode === coordinator.document }
+        XCTAssertEqual(messages.map(label).map { String($0.prefix(6)) }, ["↑ Sent", "↓ Rece"])
+        XCTAssertEqual(outline.numberOfRows, 6, "messages open on their fields")
+        let first = try XCTUnwrap(messages.first)
+        let nested = try XCTUnwrap(coordinator.displayChildren(of: first).last)
+        outline.expandOne(nested)
+        outline.collapseItem(messages[1])
+        XCTAssertEqual(outline.numberOfRows, 5)
+
+        coordinator.show(try timeline(0..<3, id: id))
+        XCTAssertTrue(outline.isItemExpanded(nested), "expansion survives an update")
+        XCTAssertFalse(outline.isItemExpanded(messages[1]), "so does collapsing")
+        XCTAssertEqual(outline.numberOfRows, 8, "a new message arrives open")
+
+        coordinator.show(try timeline(1..<4, id: id))
+        XCTAssertFalse(items().contains { $0 === first }, "a trimmed message goes")
+        XCTAssertEqual(items().filter { $0.parentNode === coordinator.document }.map(\.range.lowerBound), [0, 1, 2])
+
+        coordinator.reveal(BodyTreeMatch(path: [2, 1, 0]))
+        let selected = try XCTUnwrap(outline.item(atRow: outline.selectedRow) as? BodyTreeItem)
+        XCTAssertEqual(label(selected), #""a": 1"#)
+        XCTAssertEqual(coordinator.path(of: selected), "$.nested.a", "paths start inside each message")
+    }
 }

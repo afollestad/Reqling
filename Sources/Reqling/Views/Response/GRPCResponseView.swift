@@ -21,13 +21,7 @@ struct GRPCResponseView: View {
             ResponseFailureView(failure: failure)
         } else if let call = exchange?.grpc {
             VStack(alignment: .leading, spacing: 8) {
-                SectionPicker(
-                    "Response section",
-                    selection: $response.tab,
-                    options: GRPCResponseTab.allCases,
-                    collapsesToMenu: true,
-                    label: \.rawValue
-                )
+                GRPCResponseSectionBar(response: response)
                 GRPCResponseTabContent(response: response, call: call)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -86,6 +80,44 @@ private struct GRPCResponseStatusBar: View {
     }
 }
 
+/// The section tabs; on Messages, the Tree and Text picker and the tree's Expand All and Collapse All share their
+/// row when it has room, or take one of their own below it.
+private struct GRPCResponseSectionBar: View {
+    @Bindable var response: GRPCResponseViewModel
+
+    var body: some View {
+        if response.tab == .messages {
+            WidthAdaptive {
+                HStack(spacing: 12) {
+                    tabs
+                    Spacer(minLength: 0)
+                    controls
+                }
+            } fallback: {
+                VStack(alignment: .leading, spacing: 8) {
+                    tabs
+                    controls
+                }
+            }
+        } else {
+            tabs
+        }
+    }
+
+    private var tabs: some View {
+        SectionPicker("Response section", selection: $response.tab, options: GRPCResponseTab.allCases, label: \.rawValue)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 8) {
+            SectionPicker("Format", selection: $response.messagesMode, options: GRPCMessagesMode.allCases, label: \.rawValue)
+            if response.messagesMode == .tree {
+                BodyTreeControls(controller: response.treeController)
+            }
+        }
+    }
+}
+
 private struct GRPCResponseTabContent: View {
     let response: GRPCResponseViewModel
     let call: GRPCCallRecord
@@ -93,13 +125,23 @@ private struct GRPCResponseTabContent: View {
     var body: some View {
         switch response.tab {
         case .messages:
-            GRPCTimelineView(
-                entries: response.timeline,
-                status: call.status,
-                trimmedCount: call.trimmedEventCount,
-                droppedCount: call.droppedEventCount,
-                isCacheShortened: response.exchange?.isBodyTruncated == true
-            )
+            let isCacheShortened = response.exchange?.isBodyTruncated == true
+            if response.messagesMode == .tree, let tree = response.messageTree {
+                let notes = GRPCTimelineView.notes(
+                    trimmedCount: call.trimmedEventCount,
+                    droppedCount: call.droppedEventCount,
+                    isCacheShortened: isCacheShortened
+                )
+                GRPCMessageTreeView(call: call, structure: tree, notes: notes, response: response)
+            } else {
+                GRPCTimelineView(
+                    entries: response.timeline,
+                    status: call.status,
+                    trimmedCount: call.trimmedEventCount,
+                    droppedCount: call.droppedEventCount,
+                    isCacheShortened: isCacheShortened
+                )
+            }
         case .metadata:
             GRPCMetadataView(initial: call.initialMetadata, trailers: call.trailers, isOpen: call.status == nil)
         case .request:

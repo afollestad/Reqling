@@ -123,7 +123,7 @@ private struct ResponseBodyControls: View {
                 Spacer(minLength: 0)
             }
             if case .tree = response.body.content {
-                ResponseTreeControls(controller: response.treeController)
+                BodyTreeControls(controller: response.treeController)
             }
             Button {
                 response.copyBody(to: model.system)
@@ -157,30 +157,6 @@ private struct ResponseContentTypeLabel: View {
             .truncationMode(.middle)
             .help(contentType)
             .accessibilityLabel("Content type, \(contentType)")
-    }
-}
-
-/// Expand All and Collapse All, for Tree mode.
-private struct ResponseTreeControls: View {
-    let controller: BodyTreeController
-
-    var body: some View {
-        Button {
-            controller.expandAll()
-        } label: {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
-        }
-        .buttonStyle(.borderless)
-        .help("Expand all")
-        .accessibilityLabel("Expand all")
-        Button {
-            controller.collapseAll()
-        } label: {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-        }
-        .buttonStyle(.borderless)
-        .help("Collapse all")
-        .accessibilityLabel("Collapse all")
     }
 }
 

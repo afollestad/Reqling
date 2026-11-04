@@ -93,4 +93,21 @@ final class GRPCResponseViewModelTests: XCTestCase {
         XCTAssertEqual(response.timeline.map(\.id), [0, 1, 2, 3, 4, 5, 8, 9])
         XCTAssertEqual(response.timeline.map(\.event.json).last, #"{"index": 9}"#)
     }
+
+    /// The messages tree keeps one identity per call as it streams, so the tree updates in place, and indexes each
+    /// message once.
+    func testTheMessageTreeKeepsItsIdentityAsTheCallStreams() throws {
+        publish(record(0..<3))
+        guard case .messages(let first) = try XCTUnwrap(response.messageTree) else {
+            return XCTFail("not a timeline")
+        }
+        publish(record(0..<5))
+        guard case .messages(let second) = try XCTUnwrap(response.messageTree) else {
+            return XCTFail("not a timeline")
+        }
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertEqual(second.messages.map(\.event.sequence), [0, 1, 2, 3, 4])
+        XCTAssertEqual(second.messages[0].index?.id, first.messages[0].index?.id, "indexed once")
+        XCTAssertEqual(second.messages[4].fields.map(\.key), ["index"])
+    }
 }

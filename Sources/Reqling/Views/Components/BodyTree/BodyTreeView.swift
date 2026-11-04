@@ -101,7 +101,15 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
 
     /// Shows `structure` with its top level open; the same structure again changes nothing.
     func show(_ structure: BodyStructure) {
-        guard structure.id != self.structure?.id, let outline else {
+        guard let outline else {
+            return
+        }
+        if case .messages(let timeline) = structure, case .messages(let current) = self.structure, timeline.id == current.id {
+            self.structure = structure
+            updateMessages(timeline)
+            return
+        }
+        guard structure.id != self.structure?.id else {
             return
         }
         self.structure = structure
@@ -113,11 +121,68 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         openSingleRoot()
     }
 
-    /// Opens the top-level value of a single document; a sequence of them starts closed.
+    /// Opens the top-level value of a single document, and every message of a call, whose fields are what its
+    /// timeline is for; a sequence of documents starts closed.
     private func openSingleRoot() {
-        if rootCount == 1, let root = roots.first, isExpandable(root) {
+        if case .messages = structure {
+            openMessages(roots)
+        } else if rootCount == 1, let root = roots.first, isExpandable(root) {
             outline?.expandOne(root)
         }
+    }
+
+    private func openMessages(_ items: [BodyTreeItem]) {
+        guard let outline else {
+            return
+        }
+        // One batch: a call can hold thousands of messages.
+        outline.beginUpdates()
+        for item in items where isExpandable(item) {
+            outline.expandOne(item)
+        }
+        outline.endUpdates()
+    }
+
+    /// Applies a newer update of the same call's timeline: adds its new messages and drops the trimmed ones, keeping
+    /// the rest, and what is expanded in them, as they are.
+    private func updateMessages(_ timeline: MessageTimeline) {
+        guard let outline else {
+            return
+        }
+        var existing: [Int: BodyTreeItem] = [:]
+        for item in roots {
+            if case .message(let message) = item.node {
+                existing[message.event.sequence] = item
+            }
+        }
+        let kept = Set(timeline.messages.map(\.event.sequence))
+        let removed = IndexSet(roots.indices.filter { index in
+            guard case .message(let message) = roots[index].node else {
+                return true
+            }
+            return !kept.contains(message.event.sequence)
+        })
+        var inserted = IndexSet()
+        let items = timeline.messages.enumerated().map { position, message in
+            if let item = existing[message.event.sequence] {
+                item.range = position..<position + 1
+                return item
+            }
+            inserted.insert(position)
+            return BodyTreeItem(node: .message(message), range: position..<position + 1, parentNode: document)
+        }
+        document.childNodes = timeline.messages.map(BodyTreeItem.Node.message)
+        document.displayChildren = items
+        roots = items
+        rootCount = items.count
+        guard !removed.isEmpty || !inserted.isEmpty else {
+            return
+        }
+        outline.beginUpdates()
+        outline.removeItems(at: removed, inParent: nil, withAnimation: [])
+        outline.insertItems(at: inserted, inParent: nil, withAnimation: [])
+        outline.endUpdates()
+        openMessages(inserted.map { items[$0] })
     }
 
     /// True for the top-level value of a single document, which reads as the whole document rather than an item.
@@ -129,8 +194,10 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         switch item.node {
         case nil, .document:
             true
-        case .json(let entry):
+        case .json(let entry, _):
             entry.childCount > 0
+        case .message(let message):
+            !message.fields.isEmpty
         case .xml(let node):
             if case .xml(let index) = structure {
                 index.nodes[node].childCount > 0
@@ -151,7 +218,13 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
             owner.childNodes = loadChildren(of: owner)
         }
         let range = item.isBucket ? item.range : 0..<(owner.childNodes?.count ?? 0)
-        let children = BodyTreeItem.level(of: owner, range: range)
+        // A timeline's messages stay one flat list, which streaming updates insert into and trim in place.
+        let children: [BodyTreeItem]
+        if case .document = item.node, case .messages = structure, let nodes = owner.childNodes {
+            children = range.map { BodyTreeItem(node: nodes[$0], range: $0..<$0 + 1, parentNode: owner) }
+        } else {
+            children = BodyTreeItem.level(of: owner, range: range)
+        }
         item.displayChildren = children
         return children
     }
@@ -159,11 +232,15 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
     private func loadChildren(of item: BodyTreeItem) -> [BodyTreeItem.Node] {
         switch (item.node, structure) {
         case (.document, .json(let index)):
-            index.rootEntries().map(BodyTreeItem.Node.json)
+            index.rootEntries().map { .json($0, index) }
         case (.document, .xml(let index)):
             index.roots.map(BodyTreeItem.Node.xml)
-        case (.json(let entry), .json(let index)):
-            entry.container.map { index.children(of: $0).map(BodyTreeItem.Node.json) } ?? []
+        case (.document, .messages(let timeline)):
+            timeline.messages.map(BodyTreeItem.Node.message)
+        case (.json(let entry, let index), _):
+            entry.container.map { index.children(of: $0).map { .json($0, index) } } ?? []
+        case (.message(let message), _):
+            message.index.map { index in message.fields.map { .json($0, index) } } ?? []
         case (.xml(let node), .xml(let index)):
             index.children(of: node).map(BodyTreeItem.Node.xml)
         default:
@@ -328,6 +405,30 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
     func copyToPasteboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// Expand All and Collapse All, for Tree mode; the gRPC Messages tab shows them too.
+struct BodyTreeControls: View {
+    let controller: BodyTreeController
+
+    var body: some View {
+        Button {
+            controller.expandAll()
+        } label: {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+        }
+        .buttonStyle(.borderless)
+        .help("Expand all")
+        .accessibilityLabel("Expand all")
+        Button {
+            controller.collapseAll()
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.borderless)
+        .help("Collapse all")
+        .accessibilityLabel("Collapse all")
     }
 }
 

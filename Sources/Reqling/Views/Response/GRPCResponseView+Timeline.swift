@@ -17,37 +17,23 @@ struct GRPCTimelineView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                if let status, !status.isOK, !status.message.isEmpty {
-                    Label(status.message, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                }
-                ForEach(notes, id: \.self) { note in
-                    Label(note, systemImage: "ellipsis")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
+                GRPCTimelineNotes(
+                    status: status,
+                    notes: Self.notes(trimmedCount: trimmedCount, droppedCount: droppedCount, isCacheShortened: isCacheShortened)
+                )
                 ForEach(entries) { entry in
                     GRPCTimelineRow(entry: entry)
                         .equatable()
                 }
-                if status == nil {
-                    // The status bar's Streaming… already moves; this only marks where new messages land.
-                    Label(entries.isEmpty ? "Waiting for messages…" : "Waiting for more messages…", systemImage: "ellipsis.circle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else if entries.isEmpty {
-                    Text("No messages crossed the wire.")
-                        .foregroundStyle(.secondary)
-                }
+                GRPCTimelineEnd(status: status, isEmpty: entries.isEmpty)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.trailing, 4)
         }
     }
 
-    private var notes: [String] {
+    /// What the timeline leaves out, by cause.
+    static func notes(trimmedCount: Int, droppedCount: Int, isCacheShortened: Bool) -> [String] {
         var notes: [String] = []
         if isCacheShortened {
             notes.append("This saved response was shortened to fit the cache.")
@@ -63,6 +49,60 @@ struct GRPCTimelineView: View {
             notes.append("\(skipped) skipped while Reqling fell behind.")
         }
         return notes
+    }
+}
+
+/// Above the messages: the status message of a call that failed, then what the timeline leaves out.
+struct GRPCTimelineNotes: View {
+    let status: GRPCStatusRecord?
+    let notes: [String]
+
+    var body: some View {
+        if let status, !status.isOK, !status.message.isEmpty {
+            Label(status.message, systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        }
+        ForEach(notes, id: \.self) { note in
+            Label(note, systemImage: "ellipsis")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Where new messages land on an open call, or that none crossed the wire on a finished one.
+struct GRPCTimelineEnd: View {
+    let status: GRPCStatusRecord?
+    let isEmpty: Bool
+
+    var body: some View {
+        if status == nil {
+            // The status bar's Streaming… already moves; this only marks where new messages land.
+            Label(isEmpty ? "Waiting for messages…" : "Waiting for more messages…", systemImage: "ellipsis.circle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else if isEmpty {
+            Text("No messages crossed the wire.")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The Messages tab in Tree mode: the call's notes, then one tree with a row per message over its fields.
+struct GRPCMessageTreeView: View {
+    let call: GRPCCallRecord
+    let structure: BodyStructure
+    let notes: [String]
+    @Bindable var response: GRPCResponseViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GRPCTimelineNotes(status: call.status, notes: notes)
+            GRPCTimelineEnd(status: call.status, isEmpty: call.events.isEmpty)
+            BodyTreePane(structure: structure, search: response.search, controller: response.treeController, accessibilityLabel: "Messages")
+        }
     }
 }
 

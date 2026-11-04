@@ -4,12 +4,23 @@ import Foundation
 public enum BodyStructure: Sendable {
     case json(JSONStructureIndex)
     case xml(XMLStructureIndex)
+    case messages(MessageTimeline)
 
+    /// The same for every update of one gRPC call's timeline, which the tree applies in place.
     public var id: UUID {
         switch self {
         case .json(let index): index.id
         case .xml(let index): index.id
+        case .messages(let timeline): timeline.id
         }
+    }
+
+    /// Changes whenever the content does under the same `id`: a timeline's newest message. A search reruns on it.
+    public var revision: Int {
+        if case .messages(let timeline) = self {
+            return (timeline.messages.last?.event.sequence ?? -1) &* 31 &+ timeline.messages.count
+        }
+        return 0
     }
 
     /// Every node whose key, name, or value contains `query`, ignoring case, up to `limit`, in tree order. Throws once
@@ -21,6 +32,7 @@ public enum BodyStructure: Sendable {
         switch self {
         case .json(let index): return try index.find(query, limit: limit)
         case .xml(let index): return try index.find(query, limit: limit)
+        case .messages(let timeline): return try timeline.find(query, limit: limit)
         }
     }
 }

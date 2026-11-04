@@ -12,6 +12,16 @@ enum GRPCResponseTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the Messages tab shows them: one tree over every message, or each message's JSON as text.
+enum GRPCMessagesMode: String, CaseIterable, Identifiable {
+    case tree = "Tree"
+    case text = "Text"
+
+    var id: Self {
+        self
+    }
+}
+
 /// One message on the response timeline, with its JSON tokenized for highlighting.
 struct GRPCTimelineEntry: Identifiable, Equatable {
     let event: GRPCMessageEvent
@@ -29,11 +39,17 @@ struct GRPCTimelineEntry: Identifiable, Equatable {
 @Observable
 final class GRPCResponseViewModel {
     var tab: GRPCResponseTab = .messages
+    var messagesMode: GRPCMessagesMode = .tree
+    /// Searching the messages tree.
+    let search = BodySearchModel()
+    /// The section bar's Expand All and Collapse All, reaching the tree on screen.
+    @ObservationIgnored let treeController = BodyTreeController()
 
     let requestID: RequestNodeID
     let projectID: ProjectID
     @ObservationIgnored private let runner: RequestRunner
     @ObservationIgnored private var cache = GRPCTimelineCache()
+    @ObservationIgnored private var treeCache = GRPCMessageTreeCache()
 
     init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner) {
         self.requestID = requestID
@@ -56,6 +72,54 @@ final class GRPCResponseViewModel {
             return []
         }
         return cache.entries(for: call, startedAt: exchange.startedAt)
+    }
+
+    /// The messages as one tree for Tree mode.
+    var messageTree: BodyStructure? {
+        // Read the observable exchange before consulting the cache, so observation keeps tracking it.
+        guard let exchange, let call = exchange.grpc else {
+            return nil
+        }
+        return .messages(treeCache.timeline(for: call, startedAt: exchange.startedAt))
+    }
+}
+
+/// One call's messages as a tree timeline, keyed by `GRPCMessageEvent.sequence` as `GRPCTimelineCache` is: each
+/// message's JSON is indexed once, and the call keeps one timeline identity while it streams, so the tree updates in
+/// place.
+struct GRPCMessageTreeCache {
+    /// Messages larger than this aren't indexed for the tree; Text mode still shows them.
+    static let indexLimit = 1 << 20
+
+    private var startedAt: Date?
+    private var id = UUID()
+    private var timeline: MessageTimeline?
+
+    mutating func timeline(for call: GRPCCallRecord, startedAt: Date) -> MessageTimeline {
+        if startedAt != self.startedAt {
+            self.startedAt = startedAt
+            id = UUID()
+            timeline = nil
+        }
+        let events = call.events
+        if let timeline, timeline.messages.count == events.count, timeline.messages.first?.event.sequence == events.first?.sequence,
+           timeline.messages.last?.event.sequence == events.last?.sequence {
+            return timeline
+        }
+        let known = Dictionary((timeline?.messages ?? []).map { ($0.event.sequence, $0) }, uniquingKeysWith: { first, _ in first })
+        let messages = events.map { event in
+            known[event.sequence] ?? MessageTimeline.Message(event: event, index: Self.index(event))
+        }
+        let value = MessageTimeline(id: id, messages: messages)
+        timeline = value
+        return value
+    }
+
+    private static func index(_ event: GRPCMessageEvent) -> JSONStructureIndex? {
+        guard event.json.utf8.count <= indexLimit else {
+            return nil
+        }
+        return try? JSONStructureIndex.build(Data(event.json.utf8))
     }
 }
 

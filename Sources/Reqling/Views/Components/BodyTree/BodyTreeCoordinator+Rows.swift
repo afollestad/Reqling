@@ -17,8 +17,10 @@ extension BodyTreeCoordinator {
         case (nil, _), (.document, _):
             parts.add("[\(item.range.lowerBound.formatted()) … \((item.range.upperBound - 1).formatted())]", .secondaryLabelColor)
             parts.label = "Items \(item.range.lowerBound) to \(item.range.upperBound - 1)"
-        case (.json(let entry), .json(let index)):
+        case (.json(let entry, let index), _):
             jsonRow(entry, item: item, index: index, into: &parts)
+        case (.message(let message), _):
+            messageRow(message, into: &parts)
         case (.xml(let node), .xml(let index)):
             xmlRow(index.nodes[node], node: node, index: index, into: &parts)
         default:
@@ -29,7 +31,9 @@ extension BodyTreeCoordinator {
 
     func value(of item: BodyTreeItem) -> String {
         switch (item.node, structure) {
-        case (.json(let entry), .json(let index)):
+        case (.message(let message), _):
+            return message.event.json
+        case (.json(let entry, let index), _):
             switch entry.kind {
             case .string:
                 return index.string(entry.valueRange)
@@ -49,7 +53,7 @@ extension BodyTreeCoordinator {
 
     func key(of item: BodyTreeItem) -> String? {
         switch (item.node, structure) {
-        case (.json(let entry), _):
+        case (.json(let entry, _), _):
             entry.key
         case (.xml(let node), .xml(let index)):
             index.nodes[node].name.isEmpty ? nil : index.nodes[node].name
@@ -77,7 +81,7 @@ extension BodyTreeCoordinator {
 
     private func pathComponent(of item: BodyTreeItem) -> BodyTreePathComponent? {
         switch (item.node, structure) {
-        case (.json(let entry), _):
+        case (.json(let entry, _), _):
             if let key = entry.key {
                 return .key(key)
             }
@@ -135,6 +139,28 @@ extension BodyTreeCoordinator {
             parts.add(description, SyntaxPalette.keyword)
         }
         parts.label = [labelKey, "\(entry.kind)", description].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// A message's header: which way it went, when, its size, fields the schema lacks, and why it has no fields when it
+    /// doesn't parse.
+    private func messageRow(_ message: MessageTimeline.Message, into parts: inout RowParts) {
+        let event = message.event
+        let isSent = event.direction == .sent
+        parts.add(isSent ? "↑ Sent" : "↓ Received", isSent ? accent : .systemTeal)
+        let offset = ResponseStatusBar.duration(event.offset)
+        let size = ByteCountFormatter.string(fromByteCount: Int64(event.byteCount), countStyle: .binary)
+        parts.add("  +\(offset) · \(size)", .secondaryLabelColor)
+        var label = "\(isSent ? "Sent" : "Received") message, \(offset) into the call, \(size)"
+        if event.unknownFieldCount > 0 {
+            let unknown = event.unknownFieldCount == 1 ? "1 unknown field" : "\(event.unknownFieldCount) unknown fields"
+            parts.add("  ⚠ \(unknown)", .systemOrange)
+            label += ", \(unknown)"
+        }
+        if message.index == nil {
+            parts.add("  Not shown as a tree; switch to Text to read it", .secondaryLabelColor)
+            label += ", not shown as a tree"
+        }
+        parts.label = label
     }
 
     private func xmlRow(_ node: XMLStructureIndex.Node, node position: Int, index: XMLStructureIndex, into parts: inout RowParts) {

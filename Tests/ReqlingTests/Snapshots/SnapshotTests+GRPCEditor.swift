@@ -49,6 +49,14 @@ extension SnapshotTests {
         assertBothAppearances(GRPCResponseView(response: response), size: Self.grpcResponseSize)
     }
 
+    /// Text mode keeps each message's JSON as highlighted text under its header.
+    func testGRPCResponseTextTimeline() async throws {
+        let response = try await grpcResponse(Self.chatRecord(status: GRPCStatusRecord(code: 0, name: "OK", message: "")))
+        response.messagesMode = .text
+
+        assertBothAppearances(GRPCResponseView(response: response), size: Self.grpcResponseSize)
+    }
+
     /// An open call: Streaming… in place of a status, and its messages so far.
     func testGRPCResponseStreaming() async throws {
         var record = Self.chatRecord(status: nil, eventCount: 2)
