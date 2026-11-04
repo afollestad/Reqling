@@ -66,13 +66,24 @@ final class CodeViewerView: NSView {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        let clipView = CodeViewerClipView()
-        clipView.drawsBackground = false
-        clipView.onBoundsChange = { [weak self] in self?.canvas.needsDisplay = true }
-        scrollView.contentView = clipView
+        scrollView.contentView.drawsBackground = false
         scrollView.documentView = documentView
         addSubview(canvas)
         addSubview(scrollView)
+        // The clip view's notifications are the only signal every scroll sends: AppKit moves it with
+        // `translateOrigin(to:)`, which skips an overridden `setBoundsOrigin(_:)`, and the canvas is outside the
+        // scroll view, so its layer is never redrawn along with it.
+        let clipView = scrollView.contentView
+        clipView.postsBoundsChangedNotifications = true
+        clipView.postsFrameChangedNotifications = true
+        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(clipViewDidChange(_:)), name: name, object: clipView)
+        }
+    }
+
+    /// The rows in view changed: redraw them.
+    @objc private func clipViewDidChange(_ notification: Notification) {
+        canvas.needsDisplay = true
     }
 
     @available(*, unavailable)
@@ -255,21 +266,6 @@ struct CodeViewerMetrics {
         rowHeight = NSLayoutManager().defaultLineHeight(for: font)
         baseline = ((rowHeight - (font.ascender - font.descender)) / 2 + font.ascender).rounded()
         characterWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
-    }
-}
-
-/// Reports every scroll, momentum and elastic bounce included, so the canvas redraws the rows now in view.
-final class CodeViewerClipView: NSClipView {
-    var onBoundsChange: (() -> Void)?
-
-    override func setBoundsOrigin(_ newOrigin: NSPoint) {
-        super.setBoundsOrigin(newOrigin)
-        onBoundsChange?()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        onBoundsChange?()
     }
 }
 

@@ -110,4 +110,27 @@ final class CodeViewerTests: XCTestCase {
 
         XCTAssertEqual(received, [.nextMatch])
     }
+
+    /// A wheel scroll moves the clip view without redrawing the canvas behind it, whose layer only redraws when the
+    /// viewer asks; layer-backed like every view in the app, since without layers AppKit would invalidate it anyway.
+    func testWheelScrollingRedrawsTheCanvas() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let viewer = CodeViewerView(frame: window.contentLayoutRect)
+        viewer.wantsLayer = true
+        window.contentView = viewer
+        let text = (0..<2_000).map { "line \($0)" }.joined(separator: "\n")
+        viewer.setDocument(try XCTUnwrap(try TextDocument.make(Data(text.utf8), language: .plainText)))
+        window.displayIfNeeded()
+        let canvas = try XCTUnwrap(viewer.canvas.layer)
+        canvas.displayIfNeeded()
+        XCTAssertFalse(canvas.needsDisplay())
+        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -300, wheel2: 0, wheel3: 0))
+
+        viewer.scrollView.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: wheel)))
+
+        XCTAssertGreaterThan(viewer.scrollView.contentView.bounds.minY, 0, "the scroll view moved")
+        XCTAssertTrue(canvas.needsDisplay(), "the canvas redraws the rows now in view")
+    }
 }
