@@ -57,7 +57,7 @@ final class MCPSettingsModel {
             try server.loadToken()
             tokenError = nil
         } catch {
-            tokenError = "Couldn't read the token from your Keychain: \(error.localizedDescription)"
+            tokenError = "Couldn't read the token. \(error.localizedDescription)"
         }
     }
 
@@ -66,7 +66,7 @@ final class MCPSettingsModel {
             try server.regenerateToken()
             tokenError = nil
         } catch {
-            tokenError = "Couldn't save a new token to your Keychain: \(error.localizedDescription)"
+            tokenError = "Couldn't save a new token. \(error.localizedDescription)"
         }
     }
 

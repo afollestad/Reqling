@@ -75,10 +75,7 @@ private struct MCPServerStatusView: View {
                 .foregroundStyle(.green)
                 .textSelection(.enabled)
         case .failed(let message):
-            Label(message, systemImage: "xmark.octagon")
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            SettingsErrorLabel(message)
         }
     }
 }
@@ -126,10 +123,7 @@ private struct MCPTokenControls: View {
             }
             .disabled(model.server.token == nil)
             if let error = model.tokenError {
-                Label(error, systemImage: "xmark.octagon")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsErrorLabel(error)
             }
         }
         .confirmationDialog("Regenerate the MCP token?", isPresented: $isConfirmingRegeneration) {

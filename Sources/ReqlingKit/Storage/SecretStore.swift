@@ -129,6 +129,12 @@ public enum SecretStoreError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .keychain(let status) where [errSecAuthFailed, errSecInteractionNotAllowed, errSecUserCanceled].contains(status):
+            // macOS words these as a wrong password, which they rarely are.
+            if RunningCodeSignature.hasChangedOnDisk {
+                return "Reqling changed on disk after it opened, so macOS won't let it use the Keychain. Quit and reopen Reqling."
+            }
+            return "macOS didn't allow Reqling to use the Keychain. Try again, and choose Allow if macOS asks."
         case .keychain(let status):
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
             return "The Keychain refused the request: \(message)"

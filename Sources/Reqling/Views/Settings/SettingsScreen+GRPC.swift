@@ -91,9 +91,7 @@ struct ProtocDetectionSummary: View {
             Text("Not installed")
                 .foregroundStyle(.secondary)
         case .invalidOverride(let message):
-            Label(message, systemImage: "xmark.octagon")
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsErrorLabel(message)
         }
     }
 
@@ -124,11 +122,7 @@ struct ProtocInstallControl: View {
             ProtocInstallProgress(phase: phase) { tooling.cancelInstall() }
         case .failed(let message):
             VStack(alignment: alignment, spacing: 6) {
-                Label(message, systemImage: "xmark.octagon")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                SettingsErrorLabel(message)
                 Button("Try Again") { tooling.install() }
             }
         }

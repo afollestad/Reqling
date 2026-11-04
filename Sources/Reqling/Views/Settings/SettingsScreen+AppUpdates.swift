@@ -163,11 +163,7 @@ private struct AppUpdateActionView: View {
             }
         case .failed(let message):
             VStack(alignment: .trailing, spacing: 6) {
-                Label(message, systemImage: "xmark.octagon")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                SettingsErrorLabel(message)
                 Button("Try Again") { model.downloadUpdate() }
             }
         }
