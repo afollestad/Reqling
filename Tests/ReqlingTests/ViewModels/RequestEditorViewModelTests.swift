@@ -32,7 +32,7 @@ final class RequestEditorViewModelTests: XCTestCase {
     }
 
     private var editor: RequestEditorViewModel {
-        fixture.model.editor!
+        fixture.model.editor!.asHTTP!
     }
 
     private var savedSpec: HTTPRequestSpec? {

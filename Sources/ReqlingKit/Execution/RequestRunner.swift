@@ -11,17 +11,23 @@ public struct RunOptions: Sendable {
     public var specOverride: (@Sendable (inout HTTPRequestSpec) -> Void)?
     /// Send even when some `{{variables}}` cannot be resolved; they go out verbatim.
     public var allowUnresolved: Bool
+    /// For client-streaming and bidirectional gRPC calls: leave the request stream open after the request's own
+    /// messages, for `RequestRunner.sendMessage` and `endStream`. The editor sets it; agents and tests leave it off, so
+    /// a call runs to completion unattended.
+    public var keepsStreamOpen: Bool
 
     public init(
         environmentID: EnvironmentID? = nil,
         variableOverrides: [String: String] = [:],
         specOverride: (@Sendable (inout HTTPRequestSpec) -> Void)? = nil,
-        allowUnresolved: Bool = false
+        allowUnresolved: Bool = false,
+        keepsStreamOpen: Bool = false
     ) {
         self.environmentID = environmentID
         self.variableOverrides = variableOverrides
         self.specOverride = specOverride
         self.allowUnresolved = allowUnresolved
+        self.keepsStreamOpen = keepsStreamOpen
     }
 }
 
@@ -42,23 +48,32 @@ public struct RunKey: Hashable, Sendable {
 @MainActor
 @Observable
 public final class RequestRunner {
-    public private(set) var inFlight: Set<RunKey> = []
-    public private(set) var latest: [RunKey: RequestExchange] = [:]
+    public internal(set) var inFlight: Set<RunKey> = []
+    /// The latest exchange per run; an open gRPC call publishes partial ones (status still `nil`) as it goes.
+    public internal(set) var latest: [RunKey: RequestExchange] = [:]
     /// Bumped whenever any request's outcome changes; `outcome(for:in:)` reads it so views re-filter.
     public private(set) var outcomeRevision = 0
+    /// gRPC calls whose request stream is open for `sendMessage`; `endStream` closes one.
+    public internal(set) var openStreams: Set<RunKey> = []
 
-    @ObservationIgnored private let library: ProjectLibrary
-    @ObservationIgnored private let workspace: WorkspaceStateStore
-    @ObservationIgnored private let settings: SettingsStore
+    @ObservationIgnored let library: ProjectLibrary
+    @ObservationIgnored let workspace: WorkspaceStateStore
+    @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored private let keychain: any KeychainIdentityStore
     @ObservationIgnored private let cache: ResponseCache
     @ObservationIgnored private let userAgent: String
     @ObservationIgnored private let dynamic: DynamicVariables
     @ObservationIgnored private let makeExecutor: @MainActor () -> HTTPExecutor
+    /// `nil` only where gRPC is never run; its requests then fail with an explanation. Public so the editor's Refresh
+    /// drops the same reflection cache runs use.
+    @ObservationIgnored public let grpcSchemas: GRPCSchemaService?
     @ObservationIgnored private var executors: [ProjectID: HTTPExecutor] = [:]
     @ObservationIgnored private var tasks: [RunKey: Task<RequestExchange, Never>] = [:]
     /// Per-project outcomes, loaded from the cache's index on first use.
     @ObservationIgnored private var outcomes: [ProjectID: [RequestNodeID: RunOutcomeKind]] = [:]
+    /// Each running gRPC call's timeline and outbox, by run. A run only touches its own entry (checked by identity),
+    /// so a replaced or forgotten run's late events never reach the newer one.
+    @ObservationIgnored var liveCalls: [RunKey: GRPCLiveCall] = [:]
 
     public init(
         library: ProjectLibrary,
@@ -68,6 +83,7 @@ public final class RequestRunner {
         cache: ResponseCache,
         userAgent: String,
         dynamic: DynamicVariables = .live,
+        grpcSchemas: GRPCSchemaService? = nil,
         makeExecutor: @escaping @MainActor () -> HTTPExecutor = { HTTPExecutor() }
     ) {
         self.library = library
@@ -77,6 +93,7 @@ public final class RequestRunner {
         self.cache = cache
         self.userAgent = userAgent
         self.dynamic = dynamic
+        self.grpcSchemas = grpcSchemas
         self.makeExecutor = makeExecutor
     }
 
@@ -102,7 +119,7 @@ public final class RequestRunner {
         return outcomes[project]?[request] ?? .notSent
     }
 
-    /// Builds the request exactly as a run would, without sending it.
+    /// Builds an HTTP request exactly as a run would, without sending it; a gRPC request fails.
     public func prepare(
         _ request: RequestNodeID,
         in project: ProjectID,
@@ -112,29 +129,67 @@ public final class RequestRunner {
     }
 
     /// Runs a saved request and waits for the result. Starting a run of a request that is already in flight in the
-    /// same project cancels the earlier one.
+    /// same project cancels the earlier one. Cancelling the task awaiting this cancels the run, even one cancelled
+    /// before it started, which `cancel(_:in:)` cannot see yet.
     @discardableResult
     public func run(_ request: RequestNodeID, in project: ProjectID, options: RunOptions = RunOptions()) async -> RequestExchange {
         let key = RunKey(request, in: project)
         // Detach the earlier run before anything can fail, so its late completion can never overwrite this one.
         tasks.removeValue(forKey: key)?.cancel()
         inFlight.remove(key)
+        liveCalls[key] = nil
+        openStreams.remove(key)
         let startedAt = Date()
-        let preparation: PreparedRun
-        do {
-            preparation = try prepareRun(request, in: project, options: options)
-        } catch {
-            return record(RequestExchange(
-                projectID: project,
-                requestID: request,
-                startedAt: startedAt,
-                environmentName: nil,
-                request: nil,
-                outcome: .failure(error)
-            ))
+        let task: Task<RequestExchange, Never>
+        if library.document(project)?.request(request)?.kind.grpcSpec != nil {
+            // Inside the task, unlike HTTP's preparation: finding the schema can compile protos or ask the server, so
+            // it must count as in flight and be cancellable.
+            task = Task { await self.runGRPC(request, in: project, options: options, startedAt: startedAt) }
+        } else {
+            let preparation: PreparedRun
+            do {
+                preparation = try prepareRun(request, in: project, options: options)
+            } catch {
+                return record(failedExchange(request, in: project, startedAt: startedAt, error))
+            }
+            task = httpTask(preparation, request: request, in: project, startedAt: startedAt)
         }
+        tasks[key] = task
+        inFlight.insert(key)
+        // The run is an unstructured task, so it outlives a replaced caller; the caller's cancellation is forwarded.
+        let exchange = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        // A newer run may have replaced this one, or `forget` dropped it; only the current run publishes.
+        guard tasks[key] == task else {
+            return exchange
+        }
+        tasks[key] = nil
+        inFlight.remove(key)
+        return record(exchange)
+    }
+
+    func failedExchange(_ request: RequestNodeID, in project: ProjectID, startedAt: Date, _ failure: RunFailure) -> RequestExchange {
+        RequestExchange(
+            projectID: project,
+            requestID: request,
+            startedAt: startedAt,
+            environmentName: nil,
+            request: nil,
+            outcome: .failure(failure)
+        )
+    }
+
+    private func httpTask(
+        _ preparation: PreparedRun,
+        request: RequestNodeID,
+        in project: ProjectID,
+        startedAt: Date
+    ) -> Task<RequestExchange, Never> {
         let executor = executor(for: project)
-        let task = Task<RequestExchange, Never> {
+        return Task<RequestExchange, Never> {
             let outcome: RequestExchange.Outcome
             do {
                 outcome = .response(try await executor.execute(preparation.prepared, tls: preparation.tls))
@@ -151,22 +206,13 @@ public final class RequestRunner {
                 unresolvedVariables: preparation.prepared.unresolvedVariables
             )
         }
-        tasks[key] = task
-        inFlight.insert(key)
-        let exchange = await task.value
-        // A newer run may have replaced this one, or `forget` dropped it; only the current run publishes.
-        guard tasks[key] == task else {
-            return exchange
-        }
-        tasks[key] = nil
-        inFlight.remove(key)
-        return record(exchange)
     }
 
     public func isInFlight(_ request: RequestNodeID, in project: ProjectID) -> Bool {
         inFlight.contains(RunKey(request, in: project))
     }
 
+    /// Cancels the run in flight; one whose task has not started yet is unaffected (cancel the task awaiting `run`).
     public func cancel(_ request: RequestNodeID, in project: ProjectID) {
         tasks[RunKey(request, in: project)]?.cancel()
     }
@@ -179,6 +225,9 @@ public final class RequestRunner {
             tasks[key] = nil
             inFlight.remove(key)
         }
+        liveCalls = liveCalls.filter { $0.key.projectID != project }
+        openStreams = openStreams.filter { $0.projectID != project }
+        grpcSchemas?.refreshReflection(in: project)
         executors.removeValue(forKey: project)?.invalidate()
         cache.removeAll(in: project)
         latest = latest.filter { $0.key.projectID != project }
@@ -192,16 +241,29 @@ public final class RequestRunner {
         var environmentName: String?
     }
 
-    private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
+    /// What every run of a request resolves against, whatever its kind.
+    struct RunContext {
+        let item: RequestItem
+        let document: ProjectDocument
+        let resolver: TemplateResolver
+        /// Errors thrown before a prepared request exists are scrubbed with the same secrets it would carry.
+        let redaction: SecretRedaction
+        let paths: ProjectPathResolver
+        let environmentName: String
+
+        /// The project's auth followed by each enclosing folder's, outermost first.
+        var authChain: [HTTPAuth] {
+            [document.auth] + document.ancestors(of: item.id).map(\.auth)
+        }
+    }
+
+    func runContext(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> RunContext {
         guard let project = library.project(projectID), let document = project.document else {
             throw RunFailure(kind: .invalidRequest, message: "The project is not available.")
         }
-        guard let item = document.request(request), var spec = item.kind.httpSpec else {
+        guard let item = document.request(request) else {
             throw RunFailure(kind: .invalidRequest, message: "The request no longer exists.")
         }
-        spec = spec.normalized()
-        options.specOverride?(&spec)
-
         // An environment an agent names must exist; a stored selection whose environment was deleted (perhaps on
         // another Mac) falls back to Default, as the window shows it.
         let environmentID: EnvironmentID?
@@ -215,48 +277,62 @@ public final class RequestRunner {
         }
         let scope = VariableScope(document: document, activeEnvironmentID: environmentID, overrides: options.variableOverrides)
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
-        // Errors thrown before a prepared request exists are scrubbed with the same secrets it would carry.
-        let redaction = SecretRedaction(resolver: resolver)
         let localPaths = Dictionary(uniqueKeysWithValues: workspace.state.localPaths.compactMap { key, value in
             LocalPathID(string: key).map { ($0, value) }
         })
-        let paths = ProjectPathResolver(projectRoot: project.url, localPaths: localPaths)
-        let context = HTTPBuildContext(
+        return RunContext(
+            item: item,
+            document: document,
             resolver: resolver,
-            authChain: [document.auth] + document.ancestors(of: request).map(\.auth),
-            paths: paths,
+            redaction: SecretRedaction(resolver: resolver),
+            paths: ProjectPathResolver(projectRoot: project.url, localPaths: localPaths),
+            environmentName: environmentID.flatMap { document.environment($0)?.name } ?? RequestEnvironment.defaultName
+        )
+    }
+
+    private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
+        let context = try runContext(request, in: projectID, options: options)
+        guard var spec = context.item.kind.httpSpec else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a gRPC request; this works only with HTTP requests.")
+        }
+        spec = spec.normalized()
+        options.specOverride?(&spec)
+        let buildContext = HTTPBuildContext(
+            resolver: context.resolver,
+            authChain: context.authChain,
+            paths: context.paths,
             defaults: settings.settings.requestDefaults,
             userAgent: userAgent
         )
         let prepared: PreparedHTTPRequest
         do {
-            prepared = try HTTPRequestBuilder.prepare(spec, context: context)
+            prepared = try HTTPRequestBuilder.prepare(spec, context: buildContext)
         } catch {
-            throw RunFailure(kind: .invalidRequest, message: error.localizedDescription).redacting(redaction)
+            throw RunFailure(kind: .invalidRequest, message: error.localizedDescription).redacting(context.redaction)
         }
         if !options.allowUnresolved, !prepared.unresolvedVariables.isEmpty {
-            let names = prepared.unresolvedVariables.map { "{{\($0)}}" }.joined(separator: ", ")
-            throw RunFailure(kind: .invalidRequest, message: "Undefined variables: \(names). Define them in an environment, or remove them.")
+            throw RunFailure.undefinedVariables(prepared.unresolvedVariables)
         }
-
+        let url = prepared.urlRequest.url
         let tls: TLSContext
         do {
-            tls = try tlsContext(for: prepared, project: projectID, configuration: document.tls, paths: paths)
+            tls = try tlsContext(
+                host: url?.host ?? "",
+                port: url?.port ?? (url?.scheme?.lowercased() == "https" ? 443 : 80),
+                verifiesServer: prepared.verifyTLS,
+                project: projectID,
+                context: context
+            )
         } catch {
-            throw error.redacting(redaction)
+            throw error.redacting(context.redaction)
         }
-        let environmentName = environmentID.flatMap { document.environment($0)?.name } ?? RequestEnvironment.defaultName
-        return PreparedRun(prepared: prepared, tls: tls, environmentName: environmentName)
+        return PreparedRun(prepared: prepared, tls: tls, environmentName: context.environmentName)
     }
 
-    /// Snapshots what the TLS delegate may need off the main actor (passphrases and Keychain references), then loads
-    /// the identity and CAs for the request's host.
-    private func tlsContext(
-        for prepared: PreparedHTTPRequest,
-        project: ProjectID,
-        configuration: ProjectTLSConfiguration,
-        paths: ProjectPathResolver
-    ) throws(RunFailure) -> TLSContext {
+    /// Snapshots what TLS needs off the main actor (passphrases and Keychain references), then loads the identity and
+    /// CAs for `host` and `port`. HTTP and gRPC both build their context here, so one host gets the same certificates.
+    func tlsContext(host: String, port: Int?, verifiesServer: Bool, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
+        let configuration = context.document.tls
         let entries = configuration.clientCertificates
         let passphrases = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
             library.certificatePassphrase(for: entry.id, in: project).map { (entry.id, $0) }
@@ -266,15 +342,13 @@ public final class RequestRunner {
         })
         let resolver = ProjectTLSResolver(
             configuration: configuration,
-            paths: paths,
+            paths: context.paths,
             passphrase: { passphrases[$0] },
             keychainIdentityReference: { references[$0] },
             keychain: keychain
         )
-        let url = prepared.urlRequest.url
-        let port = url?.port ?? (url?.scheme?.lowercased() == "https" ? 443 : 80)
         do {
-            return try resolver.context(host: url?.host ?? "", port: port, verifiesServer: prepared.verifyTLS)
+            return try resolver.context(host: host, port: port, verifiesServer: verifiesServer)
         } catch {
             throw RunFailure(kind: .tls, message: error.localizedDescription)
         }
@@ -290,7 +364,7 @@ public final class RequestRunner {
     }
 
     /// Publishes and caches an exchange, unless its project is gone: a deleted project must leave nothing on disk.
-    private func record(_ exchange: RequestExchange) -> RequestExchange {
+    func record(_ exchange: RequestExchange) -> RequestExchange {
         guard library.project(exchange.projectID) != nil else {
             return exchange
         }

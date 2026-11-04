@@ -15,6 +15,7 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
         case name
         case kind
         case http
+        case grpc
     }
 
     public init(from decoder: any Decoder) throws {
@@ -25,6 +26,8 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
         switch RequestKind.Name(rawValue: kindName) {
         case .http:
             kind = .http(try container.decodeIfPresent(HTTPRequestSpec.self, forKey: .http) ?? HTTPRequestSpec())
+        case .grpc:
+            kind = .grpc(try container.decodeIfPresent(GRPCRequestSpec.self, forKey: .grpc) ?? GRPCRequestSpec())
         case nil:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: container, debugDescription: "Unknown request kind: \(kindName)")
         }
@@ -38,6 +41,8 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
         switch kind {
         case .http(let spec):
             try container.encode(spec, forKey: .http)
+        case .grpc(let spec):
+            try container.encode(spec, forKey: .grpc)
         }
     }
 }
@@ -45,19 +50,29 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
 /// The protocol a request speaks, with its protocol-specific spec.
 public enum RequestKind: Hashable, Sendable {
     case http(HTTPRequestSpec)
+    case grpc(GRPCRequestSpec)
 
     public enum Name: String, Hashable, Sendable, Codable, CaseIterable {
         case http
+        case grpc
     }
 
     public var name: Name {
         switch self {
         case .http: .http
+        case .grpc: .grpc
         }
     }
 
     public var httpSpec: HTTPRequestSpec? {
         if case .http(let spec) = self {
+            return spec
+        }
+        return nil
+    }
+
+    public var grpcSpec: GRPCRequestSpec? {
+        if case .grpc(let spec) = self {
             return spec
         }
         return nil

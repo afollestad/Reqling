@@ -18,6 +18,15 @@ public struct AppSettings: Hashable, Sendable, Codable {
     }
     public var followRedirects = true
     public var verifyTLS = true
+    /// A `protoc` to use instead of searching for one; blank means search. `ProtocLocator` reports a broken override
+    /// rather than falling back to another protoc.
+    public var protocPath: String? {
+        didSet { protocPath = Self.normalizedPath(protocPath) }
+    }
+    /// The deadline for a gRPC call, clamped to the same range as the HTTP request timeout.
+    public var grpcDeadlineSeconds: Double = 30 {
+        didSet { grpcDeadlineSeconds = Self.clamp(grpcDeadlineSeconds) }
+    }
 
     public init() {}
 
@@ -33,6 +42,9 @@ public struct AppSettings: Hashable, Sendable, Codable {
         requestTimeoutSeconds = Self.clamp(timeout ?? defaults.requestTimeoutSeconds)
         followRedirects = (try? container.decodeIfPresent(Bool.self, forKey: .followRedirects)) ?? defaults.followRedirects
         verifyTLS = (try? container.decodeIfPresent(Bool.self, forKey: .verifyTLS)) ?? defaults.verifyTLS
+        protocPath = Self.normalizedPath((try? container.decodeIfPresent(String.self, forKey: .protocPath)) ?? nil)
+        let deadline = try? container.decodeIfPresent(Double.self, forKey: .grpcDeadlineSeconds)
+        grpcDeadlineSeconds = Self.clamp(deadline ?? defaults.grpcDeadlineSeconds)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -40,10 +52,20 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case requestTimeoutSeconds
         case followRedirects
         case verifyTLS
+        case protocPath
+        case grpcDeadlineSeconds
     }
 
     private static func clamp(_ value: Double) -> Double {
         value.isFinite ? min(max(value, timeoutRange.lowerBound), timeoutRange.upperBound) : 30
+    }
+
+    /// A text field clears to `""`, which must mean "no override", not a path to nothing.
+    private static func normalizedPath(_ path: String?) -> String? {
+        guard let trimmed = path?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 }
 

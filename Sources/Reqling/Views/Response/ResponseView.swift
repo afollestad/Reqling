@@ -35,7 +35,7 @@ struct ResponseView: View {
     }
 }
 
-private struct ResponseStatusBar: View {
+struct ResponseStatusBar: View {
     let exchange: RequestExchange?
     let isSending: Bool
 
@@ -65,10 +65,7 @@ private struct ResponseStatusBar: View {
                     .accessibilityLabel("Sending")
             }
             if let environment = exchange?.environmentName {
-                Label(environment, systemImage: "square.stack.3d.up")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .help("Sent with the \(environment) environment")
+                ResponseEnvironmentLabel(name: environment)
             }
         }
         .padding(.horizontal, AppMetrics.paneInset)
@@ -80,7 +77,19 @@ private struct ResponseStatusBar: View {
     }
 }
 
-private struct ResponseMetric: View {
+/// The environment a run resolved its variables against, at the trailing end of a status bar.
+struct ResponseEnvironmentLabel: View {
+    let name: String
+
+    var body: some View {
+        Label(name, systemImage: "square.stack.3d.up")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help("Sent with the \(name) environment")
+    }
+}
+
+struct ResponseMetric: View {
     let label: String
     let value: String
 
@@ -96,7 +105,7 @@ private struct ResponseMetric: View {
     }
 }
 
-private struct ResponseFailureView: View {
+struct ResponseFailureView: View {
     let failure: RunFailure
 
     var body: some View {

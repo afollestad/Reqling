@@ -24,7 +24,7 @@ My API.reqling/
   requests/users/list-users.json
 ```
 
-Create a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar. **Add Project Folder…** opens one someone else shared. Renames move files rather than rewriting them, deletions go to the Trash, and edits made outside Reqling (a `git pull`, an editor) appear in the window as soon as they land. Filter the sidebar by name, method, or URL, and narrow it by method or by how each request's last run went.
+Create a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar. **Add Project Folder…** opens one someone else shared. Renames move files rather than rewriting them, deletions go to the Trash, and edits made outside Reqling (a `git pull`, an editor) appear in the window as soon as they land. Filter the sidebar by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
 
 ## Environments and variables
 
@@ -41,6 +41,18 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
 - Responses show status, timing per phase, headers, and the body: JSON is pretty-printed without reordering keys and highlighted, and images preview.
 - ⌘F finds within the focused body or response.
+
+## gRPC
+
+A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
+
+The schema comes from one of three places:
+
+- **Project protos.** In **Project Settings**, add the folders your `.proto` files live in (and, optionally, which files to compile). Folders inside the project's own folder or repository are stored relative to it, so the project works for everyone who clones it; anything else is remembered on this Mac only. Reqling compiles them with `protoc` and recompiles when they change. If `protoc` isn't installed, Reqling offers to install it, or uses one from Homebrew or your `PATH`.
+- **Descriptor sets** (`.protoset`, `.binpb`), which need no `protoc`.
+- **Server reflection**, for servers that expose it.
+
+**Example** fills a message with every field of its type. Calls use the project's client certificates and CA certificates, the same as HTTP requests.
 
 ## TLS and client certificates
 
@@ -61,6 +73,7 @@ A project's **Project Settings** take client certificates for mutual TLS — a P
 ./scripts/test.sh [filter ...]   # run the tests; filters are `swift test --filter` patterns
 ./scripts/snapshots.sh verify    # verify snapshot baselines; `record` re-records them
 ./scripts/lint.sh                # run SwiftLint (--fix to autocorrect)
+./scripts/generate-protos.sh     # regenerate protobuf code and descriptor sets after changing a .proto
 ```
 
 Reqling is a SwiftPM package; `scripts/build.sh` assembles the `.app` bundle and compiles its assets with `actool`. Launch it through `scripts/run.sh` rather than `swift run` or Xcode, since only the assembled bundle has its Info.plist, icon, and signature.

@@ -1,0 +1,9 @@
+// Workspace fixture: imported by the `common` root, so each root imports from the other.
+syntax = "proto3";
+
+package acme.api.v1;
+
+enum Health {
+  HEALTH_UNSPECIFIED = 0;
+  HEALTH_SERVING = 1;
+}

@@ -271,9 +271,7 @@ final class RequestRunnerTests: XCTestCase {
     }
 
     func testARemovedRequestFailsCleanly() async throws {
-        let fixtureProject = try makeProject(base: "http://127.0.0.1:1")
-        let project = fixtureProject.id
-        let request = fixtureProject.request
+        let project = try makeProject(base: "http://127.0.0.1:1").id
 
         let exchange = await makeRunner().run(RequestNodeID(), in: project)
 
@@ -304,7 +302,8 @@ final class RequestRunnerTests: XCTestCase {
     }
 }
 
-private struct EmptyKeychain: KeychainIdentityStore {
+/// A Keychain with nothing in it, so no test reaches the developer's real one.
+struct EmptyKeychain: KeychainIdentityStore {
     func availableIdentities() -> [KeychainIdentityInfo] {
         []
     }

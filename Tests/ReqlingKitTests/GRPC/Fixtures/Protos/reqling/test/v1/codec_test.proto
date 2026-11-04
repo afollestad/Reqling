@@ -1,0 +1,99 @@
+// Covers every field shape the dynamic codec must handle, plus an echo service with all four call types. The codec
+// tests compare against the Swift types `scripts/generate-protos.sh` generates from this file.
+syntax = "proto3";
+
+package reqling.test.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  COLOR_RED = 1;
+  COLOR_GREEN = 2;
+}
+
+message Scalars {
+  double d = 1;
+  float f = 2;
+  int32 i32 = 3;
+  int64 i64 = 4;
+  uint32 u32 = 5;
+  uint64 u64 = 6;
+  sint32 s32 = 7;
+  sint64 s64 = 8;
+  fixed32 fx32 = 9;
+  fixed64 fx64 = 10;
+  sfixed32 sfx32 = 11;
+  sfixed64 sfx64 = 12;
+  bool flag = 13;
+  string text = 14;
+  bytes data = 15;
+}
+
+message Everything {
+  message Nested {
+    enum Mood {
+      MOOD_UNSPECIFIED = 0;
+      MOOD_CALM = 1;
+    }
+    Mood mood = 1;
+    repeated Nested children = 2;
+  }
+
+  Scalars scalars = 1;
+  Color color = 2;
+  repeated int32 packed_numbers = 3;
+  repeated string tags = 4;
+  repeated Scalars rows = 5;
+  map<string, int32> counts = 6;
+  map<int64, Scalars> by_id = 7;
+  map<bool, string> flags = 8;
+  oneof choice {
+    string choice_text = 9;
+    Scalars choice_scalars = 10;
+    Color choice_color = 11;
+  }
+  optional int32 maybe = 12;
+  Nested nested = 13;
+  string renamed = 14 [json_name = "customName"];
+  repeated Color colors = 15;
+  repeated double packed_doubles = 16;
+
+  google.protobuf.Timestamp at = 20;
+  google.protobuf.Duration elapsed = 21;
+  google.protobuf.FieldMask mask = 22;
+  google.protobuf.Struct attributes = 23;
+  google.protobuf.Value value = 24;
+  google.protobuf.ListValue list = 25;
+  google.protobuf.Int64Value wrapped_int64 = 26;
+  google.protobuf.StringValue wrapped_string = 27;
+  google.protobuf.BoolValue wrapped_bool = 28;
+  google.protobuf.BytesValue wrapped_bytes = 29;
+  google.protobuf.DoubleValue wrapped_double = 30;
+  google.protobuf.Empty nothing = 31;
+  google.protobuf.Any extra = 32;
+  google.protobuf.FloatValue wrapped_float = 33;
+  google.protobuf.Int32Value wrapped_int32 = 34;
+  google.protobuf.UInt32Value wrapped_uint32 = 35;
+  google.protobuf.UInt64Value wrapped_uint64 = 36;
+  map<uint32, Color> color_by_id = 37;
+  repeated google.protobuf.Any extras = 38;
+}
+
+message EchoMessage {
+  string text = 1;
+  int32 index = 2;
+}
+
+service EchoService {
+  rpc Unary(EchoMessage) returns (EchoMessage);
+  rpc ServerStream(EchoMessage) returns (stream EchoMessage);
+  rpc ClientStream(stream EchoMessage) returns (EchoMessage);
+  rpc Bidi(stream EchoMessage) returns (stream EchoMessage);
+}

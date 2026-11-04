@@ -31,10 +31,13 @@ public struct RequestFilter: Hashable, Sendable {
         }
     }
 
+    public var protocols: Set<RequestKind.Name>
+    /// HTTP methods; a gRPC request never matches a method constraint.
     public var methods: Set<MethodGroup>
     public var outcomes: Set<RunOutcomeKind>
 
-    public init(methods: Set<MethodGroup> = [], outcomes: Set<RunOutcomeKind> = []) {
+    public init(protocols: Set<RequestKind.Name> = [], methods: Set<MethodGroup> = [], outcomes: Set<RunOutcomeKind> = []) {
+        self.protocols = protocols
         self.methods = methods
         self.outcomes = outcomes
     }
@@ -42,10 +45,13 @@ public struct RequestFilter: Hashable, Sendable {
     public static let none = RequestFilter()
 
     public var isActive: Bool {
-        !methods.isEmpty || !outcomes.isEmpty
+        !protocols.isEmpty || !methods.isEmpty || !outcomes.isEmpty
     }
 
     func admits(_ request: RequestItem, outcome: RunOutcomeKind) -> Bool {
+        if !protocols.isEmpty, !protocols.contains(request.kind.name) {
+            return false
+        }
         if !methods.isEmpty {
             guard let method = request.kind.httpSpec?.method, methods.contains(MethodGroup(method)) else {
                 return false

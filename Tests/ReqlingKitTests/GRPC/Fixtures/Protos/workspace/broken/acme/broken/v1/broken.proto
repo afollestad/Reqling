@@ -1,0 +1,9 @@
+// Workspace fixture: the missing semicolon after `name` must surface as a positioned diagnostic (8:3).
+syntax = "proto3";
+
+package acme.broken.v1;
+
+message Broken {
+  string name = 1
+  int32 count = 2;
+}

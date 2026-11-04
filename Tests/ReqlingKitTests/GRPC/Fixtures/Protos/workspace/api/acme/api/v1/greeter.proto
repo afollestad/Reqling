@@ -1,0 +1,22 @@
+// Workspace fixture: lives under the `api` root and imports from the `common` root, plus a well-known type.
+syntax = "proto3";
+
+package acme.api.v1;
+
+import "acme/common/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+service Greeter {
+  rpc SayHello(HelloRequest) returns (HelloReply);
+  rpc StreamHellos(HelloRequest) returns (stream HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+  acme.common.v1.Locale locale = 2;
+}
+
+message HelloReply {
+  string message = 1;
+  google.protobuf.Timestamp sent_at = 2;
+}

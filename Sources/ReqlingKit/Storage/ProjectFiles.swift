@@ -40,6 +40,7 @@ struct ProjectFile: Codable, Equatable {
     var rootOrder: [String]
     var auth: HTTPAuth
     var tls: ProjectTLSConfiguration
+    var grpc: ProjectGRPCConfiguration
 
     init(
         formatVersion: Int,
@@ -48,7 +49,8 @@ struct ProjectFile: Codable, Equatable {
         environmentOrder: [EnvironmentID],
         rootOrder: [String],
         auth: HTTPAuth,
-        tls: ProjectTLSConfiguration
+        tls: ProjectTLSConfiguration,
+        grpc: ProjectGRPCConfiguration
     ) {
         self.formatVersion = formatVersion
         self.id = id
@@ -57,6 +59,7 @@ struct ProjectFile: Codable, Equatable {
         self.rootOrder = rootOrder
         self.auth = auth
         self.tls = tls
+        self.grpc = grpc
     }
 
     init(from decoder: any Decoder) throws {
@@ -68,6 +71,7 @@ struct ProjectFile: Codable, Equatable {
         rootOrder = try container.decodeIfPresent([String].self, forKey: .rootOrder) ?? []
         auth = try container.decodeIfPresent(HTTPAuth.self, forKey: .auth) ?? .none
         tls = try container.decodeIfPresent(ProjectTLSConfiguration.self, forKey: .tls) ?? ProjectTLSConfiguration()
+        grpc = try container.decodeIfPresent(ProjectGRPCConfiguration.self, forKey: .grpc) ?? ProjectGRPCConfiguration()
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -81,6 +85,9 @@ struct ProjectFile: Codable, Equatable {
         if !tls.isEmpty {
             try container.encode(tls, forKey: .tls)
         }
+        if !grpc.isEmpty || !grpc.protoFiles.isEmpty {
+            try container.encode(grpc, forKey: .grpc)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -91,6 +98,7 @@ struct ProjectFile: Codable, Equatable {
         case rootOrder
         case auth
         case tls
+        case grpc
     }
 }
 

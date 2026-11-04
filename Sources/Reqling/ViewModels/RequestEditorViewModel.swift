@@ -14,9 +14,9 @@ enum RequestEditorTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Edits one saved HTTP request. The draft autosaves after a short pause, and every save goes through
-/// `ProjectLibrary.mutate`. An edit made elsewhere (MCP, a `git pull`) is adopted while the draft is clean; while it is
-/// dirty, the next save merges it in per field (see `merge`), so it survives unless the draft changed the same field.
+/// Edits one saved HTTP request. The draft autosaves after a short pause through `RequestDraft`, which also adopts
+/// an edit made elsewhere (MCP, a `git pull`) while the draft is clean and merges it in per field (see `merge`) while
+/// it is dirty.
 @MainActor
 @Observable
 final class RequestEditorViewModel {
@@ -29,9 +29,7 @@ final class RequestEditorViewModel {
             if !Self.urlBar(typedURL, describes: spec) {
                 typedURL = spec.displayURL
             }
-            if spec != savedSpec {
-                scheduleSave()
-            }
+            draft.draftDidChange(spec)
         }
     }
     var tab: RequestEditorTab = .params
@@ -45,40 +43,29 @@ final class RequestEditorViewModel {
     private var typedURL: String
 
     @ObservationIgnored private unowned let app: AppModel
-    /// The spec as last read from or written to the library: the dirtiness baseline and the base of a save's merge.
-    @ObservationIgnored private var savedSpec: HTTPRequestSpec
-    @ObservationIgnored private var saveTask: Task<Void, Never>?
-    /// Set when a save found the project unavailable, so the draft saves once the project loads again rather than
-    /// at the next flush. A failed write never sets it: retrying that on every library change would repeat its alert.
-    @ObservationIgnored private var isWaitingForProject = false
-    /// The name as last seen, so the header keeps it while the project is unavailable.
-    @ObservationIgnored private var lastKnownName: String
+    @ObservationIgnored private let draft: RequestDraft<HTTPRequestSpec>
 
     init(projectID: ProjectID, requestID: RequestNodeID, app: AppModel) {
         self.projectID = projectID
         self.requestID = requestID
         self.app = app
-        let saved = (app.library.document(projectID)?.request(requestID)?.kind.httpSpec ?? HTTPRequestSpec()).normalized()
-        spec = saved
-        savedSpec = saved
-        typedURL = saved.displayURL
-        lastKnownName = app.library.document(projectID)?.request(requestID)?.name ?? ""
+        let draft = RequestDraft(projectID: projectID, requestID: requestID, app: app, coding: Self.coding, fallback: HTTPRequestSpec())
+        self.draft = draft
+        spec = draft.saved
+        typedURL = draft.saved.displayURL
         response = ResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner)
+        draft.onAutosave = { [weak self] in
+            guard let self else {
+                return
+            }
+            show(self.draft.autosave(spec))
+        }
     }
 
     // MARK: - Derived state
 
-    /// What this editor edits, in the sidebar's terms; request IDs alone can repeat across projects.
-    var identity: SidebarItem {
-        .node(projectID, requestID)
-    }
-
     var name: String {
-        guard let current = app.library.document(projectID)?.request(requestID)?.name else {
-            return lastKnownName
-        }
-        lastKnownName = current
-        return current
+        draft.name
     }
 
     var tokenContext: TemplateTokenContext {
@@ -93,27 +80,20 @@ final class RequestEditorViewModel {
         app.runner.isInFlight(requestID, in: projectID)
     }
 
-    /// Off for a project saved by a newer Reqling, and while the project is listed but did not load (moved,
-    /// mid-checkout): there is nothing to save into then, so anything typed would only be stranded.
     var isReadOnly: Bool {
-        guard let project = app.library.project(projectID) else {
-            return true
-        }
-        return project.isReadOnly || project.document == nil
+        draft.isReadOnly
     }
 
-    /// Explains the pause while the project is listed but did not load; `nil` otherwise.
     var unavailableNote: String? {
-        guard let project = app.library.project(projectID), project.document == nil else {
-            return nil
-        }
-        return "“\(project.name)” isn't available right now, so this request is read-only until it loads again. "
-            + "Unsaved changes save then, as long as this request stays open."
+        draft.unavailableNote
     }
 
-    /// A draft that could not save because its project is unavailable; replacing this editor discards it.
     var hasStrandedChanges: Bool {
-        isWaitingForProject && spec != savedSpec
+        draft.hasStrandedChanges(spec)
+    }
+
+    var hasUnsavedChanges: Bool {
+        draft.isDirty(spec)
     }
 
     /// The URL bar's text: the URL plus enabled query rows, kept as typed. Setting it applies the text to `spec`.
@@ -200,104 +180,25 @@ final class RequestEditorViewModel {
 
     // MARK: - Saving
 
-    /// Saves a dirty draft now; called before sending, switching selection, and quitting. Dirtiness decides, not a
-    /// pending timer, so an autosave that failed is retried here instead of being dropped.
     func flush() {
-        saveTask?.cancel()
-        saveTask = nil
-        save()
+        show(draft.flush(spec))
     }
 
-    /// Takes the stored version when it changed underneath and the draft is clean. A dirty draft is never replaced:
-    /// its save merges the stored change in instead. A save that waited on an unavailable project is rescheduled here.
     func adoptExternalChange() {
-        guard spec == savedSpec else {
-            resumeDirtyDraft()
-            return
-        }
-        guard let stored = storedSpec(), stored != savedSpec else {
-            return
-        }
-        savedSpec = stored
-        spec = stored
+        show(draft.adoptExternalChange(spec))
     }
 
-    /// Picks an idle dirty draft back up after a library change. A project that loaded again gets its save rescheduled;
-    /// one that came back read-only can never take the draft, so it is discarded rather than retried every pause.
-    private func resumeDirtyDraft() {
-        guard saveTask == nil, let project = app.library.project(projectID), project.document != nil else {
-            return
-        }
-        if project.isReadOnly {
-            discardDraft()
-        } else if isWaitingForProject {
-            scheduleSave()
+    private func show(_ stored: HTTPRequestSpec?) {
+        if let stored, stored != spec {
+            spec = stored
         }
     }
 
-    /// Drops a draft its read-only project can never take, shows the stored version, and says so.
-    private func discardDraft() {
-        isWaitingForProject = false
-        let stored = storedSpec() ?? savedSpec
-        savedSpec = stored
-        spec = stored
-        app.alert = AppAlert(
-            title: "Unsaved Changes Discarded",
-            message: "“\(name)” is now read-only: its project was saved by a newer version of Reqling."
-        )
-    }
-
-    private func storedSpec() -> HTTPRequestSpec? {
-        app.library.document(projectID)?.request(requestID)?.kind.httpSpec?.normalized()
-    }
-
-    private func scheduleSave() {
-        saveTask?.cancel()
-        let sleep = app.sleep
-        saveTask = Task { [weak self] in
-            try? await sleep(Self.autosaveDelay)
-            guard !Task.isCancelled, let self else {
-                return
-            }
-            saveTask = nil
-            save()
-            // An edit undone before the pause ends leaves nothing to save, but a stored change may still need adopting.
-            adoptExternalChange()
-        }
-    }
-
-    /// Writes a dirty draft, merged with whatever the library stored since `savedSpec`, and shows the merged result.
-    /// A request that no longer exists has nothing to save into and drops the draft silently (its delete is the news);
-    /// an unavailable project keeps the draft dirty until it loads again.
-    private func save() {
-        let draft = spec
-        guard draft != savedSpec, let project = app.library.project(projectID) else {
-            return
-        }
-        guard let document = project.document else {
-            isWaitingForProject = true
-            return
-        }
-        guard !project.isReadOnly else {
-            discardDraft()
-            return
-        }
-        isWaitingForProject = false
-        guard let stored = document.request(requestID)?.kind.httpSpec?.normalized() else {
-            return
-        }
-        let merged = stored == savedSpec ? draft : Self.merge(base: savedSpec, draft: draft, stored: stored)
-        let saved: Void? = app.perform("Couldn't Save the Request") {
-            try app.library.mutate(projectID) { try $0.updateRequest(requestID) { $0.kind = .http(merged) } }
-        }
-        guard saved != nil else {
-            return
-        }
-        savedSpec = merged
-        if spec != merged {
-            spec = merged
-        }
-    }
+    private static let coding = RequestDraft<HTTPRequestSpec>.Coding(
+        read: { $0.httpSpec?.normalized() },
+        wrap: { .http($0) },
+        merge: merge(base:draft:stored:)
+    )
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. The body and
@@ -305,7 +206,7 @@ final class RequestEditorViewModel {
     /// headers, form fields) and the auth is one field: if both sides edited the same list, the draft's whole list wins.
     /// A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions` must be listed here, or the draft wins it
     /// unconditionally.
-    private static func merge(base: HTTPRequestSpec, draft: HTTPRequestSpec, stored: HTTPRequestSpec) -> HTTPRequestSpec {
+    private nonisolated static func merge(base: HTTPRequestSpec, draft: HTTPRequestSpec, stored: HTTPRequestSpec) -> HTTPRequestSpec {
         var merged = draft
         func takeStored<Value: Equatable>(_ field: WritableKeyPath<HTTPRequestSpec, Value>) {
             if draft[keyPath: field] == base[keyPath: field] {

@@ -1,7 +1,7 @@
 import ReqlingKit
 import SwiftUI
 
-/// A project's name, project-level auth, and TLS certificates.
+/// A project's name, project-level auth, TLS certificates, and proto definitions.
 struct ProjectSettingsSheet: View {
     @State var settings: ProjectSettingsModel
     let tokenContext: TemplateTokenContext
@@ -28,6 +28,7 @@ struct ProjectSettingsSheet: View {
                 }
                 ClientCertificatesSection(settings: settings)
                 CACertificatesSection(settings: settings)
+                ProjectSettingsProtoDefinitions(settings: settings, status: settings.workspaceStatus, warnings: settings.workspaceWarnings)
             }
             .formStyle(.grouped)
             SheetFooter {

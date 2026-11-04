@@ -52,7 +52,7 @@ struct SnapshotProject {
             try fixture.library.mutate(id) { try $0.updateRequest(request) { $0.kind = .http(spec) } }
         }
         fixture.model.selection = .node(id, request)
-        return fixture.model.editor!
+        return fixture.model.editor!.asHTTP!
     }
 
     /// Stores an exchange as if a run had just finished, so the response pane has something to show.

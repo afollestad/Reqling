@@ -21,6 +21,20 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.requestTimeoutSeconds, AppSettings.timeoutRange.lowerBound)
     }
 
+    func testGRPCSettingsDecodeLeniently() throws {
+        let json = #"{"protocPath": "  ", "grpcDeadlineSeconds": -4}"#
+        var decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertNil(decoded.protocPath, "a blank override means search")
+        XCTAssertEqual(decoded.grpcDeadlineSeconds, AppSettings.timeoutRange.lowerBound)
+        decoded.protocPath = " /opt/protoc/bin/protoc\n"
+        decoded.grpcDeadlineSeconds = .infinity
+        let roundTripped = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(decoded))
+        XCTAssertEqual(roundTripped.protocPath, "/opt/protoc/bin/protoc")
+        XCTAssertEqual(roundTripped.grpcDeadlineSeconds, 30)
+        XCTAssertNil(AppSettings().protocPath)
+    }
+
     @MainActor
     func testTheStorePersistsToItsDefaultsDomain() throws {
         let suite = "com.afollestad.reqling.tests.settings.\(UUID().uuidString)"

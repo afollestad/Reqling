@@ -88,6 +88,7 @@ private struct SidebarProjectMenu: View {
     var body: some View {
         if project.document != nil {
             Button("New Request") { model.selection = .project(project.id); model.newRequest(in: project.id) }
+            Button("New gRPC Request") { model.selection = .project(project.id); model.newGRPCRequest(in: project.id) }
             Button("New Folder") { model.selection = .project(project.id); model.newFolder(in: project.id) }
             Divider()
             Button("Environments…") { model.sheet = .environments(project.id) }
@@ -136,12 +137,12 @@ private struct SidebarRequestLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            MethodPill(method: request.kind.httpSpec?.method ?? .get)
+            RequestKindPill(kind: request.kind)
             Text(request.name)
                 .lineLimit(1)
         }
         .tag(SidebarItem.node(projectID, request.id))
-        .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, isRequest: true, model: model) }
+        .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, request: request.kind.name, model: model) }
         .draggable(SidebarDragItem(projectID: projectID, nodeID: request.id))
         .dropDestination(for: SidebarDragItem.self) { items, _ in
             // Dropping on a request places the item just before it.
@@ -180,7 +181,7 @@ private struct SidebarFolderLabel: View {
             SidebarCount(count: folder.children.count)
         }
             .tag(SidebarItem.node(projectID, folder.id))
-            .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, isRequest: false, model: model) }
+            .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, request: nil, model: model) }
             .draggable(SidebarDragItem(projectID: projectID, nodeID: folder.id))
             .dropDestination(for: SidebarDragItem.self) { items, _ in
                 var moved = false
@@ -196,19 +197,21 @@ private struct SidebarFolderLabel: View {
 private struct SidebarItemMenu: View {
     let nodeID: RequestNodeID
     let projectID: ProjectID
-    let isRequest: Bool
+    /// The request's protocol; `nil` for a folder.
+    let request: RequestKind.Name?
     let model: AppModel
 
     var body: some View {
         Button("New Request") { model.selection = .node(projectID, nodeID); model.newRequest(in: projectID) }
+        Button("New gRPC Request") { model.selection = .node(projectID, nodeID); model.newGRPCRequest(in: projectID) }
         Button("New Folder") { model.selection = .node(projectID, nodeID); model.newFolder(in: projectID) }
         Divider()
         Button("Rename…") { model.beginRename(nodeID, in: projectID) }
         Button("Duplicate") { model.duplicate(nodeID, in: projectID) }
-        if isRequest {
+        if request == .http {
             Button("Copy as cURL") {
                 model.selection = .node(projectID, nodeID)
-                model.editor?.copyAsCurl()
+                model.editor?.asHTTP?.copyAsCurl()
             }
         }
         Divider()
@@ -228,16 +231,30 @@ private struct SidebarCount: View {
     }
 }
 
-/// A compact method name on a tinted pill, sized so request names line up.
-private struct MethodPill: View {
-    let method: HTTPMethod
+/// A compact method name, or "gRPC", on a tinted pill, sized so request names line up.
+private struct RequestKindPill: View {
+    let kind: RequestKind
 
     var body: some View {
-        MethodBadge(method: method, compact: true)
-            .frame(width: 38, height: 16)
-            .background(
-                RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius, style: .continuous)
-                    .fill(MethodBadge.color(for: method).opacity(0.16))
-            )
+        Group {
+            switch kind {
+            case .http(let spec):
+                MethodBadge(method: spec.method, compact: true)
+            case .grpc:
+                GRPCBadge(compact: true)
+            }
+        }
+        .frame(width: 38, height: 16)
+        .background(
+            RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius, style: .continuous)
+                .fill(tint.opacity(0.16))
+        )
+    }
+
+    private var tint: Color {
+        switch kind {
+        case .http(let spec): MethodBadge.color(for: spec.method)
+        case .grpc: GRPCBadge.color
+        }
     }
 }

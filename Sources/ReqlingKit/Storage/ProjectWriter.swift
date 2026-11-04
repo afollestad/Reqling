@@ -71,7 +71,8 @@ struct ProjectWriter {
             environmentOrder: document.environments.map(\.id),
             rootOrder: rootOrder,
             auth: document.auth,
-            tls: document.tls
+            tls: document.tls,
+            grpc: document.grpc
         )
         var files = [PlannedFile(path: ProjectLayout.projectFile, data: try ProjectJSON.encode(projectFile), source: ProjectLayout.projectFile)]
         var defaultEnvironment = document.defaultEnvironment

@@ -100,6 +100,18 @@ struct AuthEditor: View {
         }
     }
 
+    /// Names the folder or project a request inherits auth from, and what kind it is, for `inheritedDescription`.
+    static func inheritedDescription(for request: RequestNodeID, in project: ProjectID, model: AppModel) -> String {
+        guard let document = model.library.document(project) else {
+            return "Uses the auth of the enclosing folder or project."
+        }
+        for folder in document.ancestors(of: request).reversed() where folder.auth != .inherit {
+            return "Uses \(title(for: folder.auth.kind)) from the “\(folder.name)” folder."
+        }
+        let projectAuth = document.auth == .inherit ? HTTPAuth.none : document.auth
+        return "Uses \(title(for: projectAuth.kind)) from the project's settings."
+    }
+
     static func title(for kind: HTTPAuth.Kind) -> String {
         switch kind {
         case .inherit: "Inherit"

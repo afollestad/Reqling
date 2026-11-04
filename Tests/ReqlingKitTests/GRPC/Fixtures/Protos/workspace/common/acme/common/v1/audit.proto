@@ -1,0 +1,18 @@
+// Workspace fixture: lives under the `common` root and imports from the `api` root.
+syntax = "proto3";
+
+package acme.common.v1;
+
+import "acme/api/v1/status.proto";
+
+service Audit {
+  rpc Check(AuditRequest) returns (AuditReply);
+}
+
+message AuditRequest {
+  string subject = 1;
+}
+
+message AuditReply {
+  acme.api.v1.Health health = 1;
+}

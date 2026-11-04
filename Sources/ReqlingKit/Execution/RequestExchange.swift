@@ -9,11 +9,14 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     public var request: ResolvedHTTPRequest?
     public var outcome: Outcome
     public var unresolvedVariables: [String]
-    /// The stored body was cut to `ResponseCache.bodyLimit`; the run itself saw it all.
+    /// The stored HTTP body, or the stored gRPC messages, were cut to fit the cache (`ResponseCache.bodyLimit` and
+    /// `grpcMessageLimit`); the run itself saw them all.
     public var isBodyTruncated: Bool
 
     public enum Outcome: Hashable, Sendable, Codable {
         case response(HTTPResponseRecord)
+        /// A gRPC call that reached the server, whatever its status; a call that never connected is a `failure`.
+        case grpc(GRPCCallRecord)
         case failure(RunFailure)
     }
 
@@ -44,6 +47,13 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         return nil
     }
 
+    public var grpc: GRPCCallRecord? {
+        if case .grpc(let call) = outcome {
+            return call
+        }
+        return nil
+    }
+
     public var failure: RunFailure? {
         if case .failure(let failure) = outcome {
             return failure
@@ -54,6 +64,7 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     public var outcomeKind: RunOutcomeKind {
         switch outcome {
         case .response(let response): response.statusCode < 400 ? .succeeded : .failed
+        case .grpc(let call): call.status?.isOK == true ? .succeeded : .failed
         case .failure: .failed
         }
     }
@@ -82,12 +93,31 @@ public struct RunFailure: Hashable, Sendable, Codable, Error {
     func redacting(_ redaction: SecretRedaction) -> RunFailure {
         RunFailure(kind: kind, message: redaction.apply(message))
     }
+
+    /// Unresolved `{{variables}}` stop a run before anything is sent, unless `RunOptions.allowUnresolved` is set.
+    static func undefinedVariables(_ names: [String]) -> RunFailure {
+        let list = names.map { "{{\($0)}}" }.joined(separator: ", ")
+        return RunFailure(kind: .invalidRequest, message: "Undefined variables: \(list). Define them in an environment, or remove them.")
+    }
+
+    /// A gRPC call that ended without a status; TLS failures of either kind share `.tls`, as HTTP's do.
+    init(_ error: GRPCCallError) {
+        let kind: Kind = switch error {
+        case .invalidRequest: .invalidRequest
+        case .connectionFailed: .transport
+        case .untrustedServer, .tlsFailed: .tls
+        case .cancelled: .cancelled
+        }
+        self.init(kind: kind, message: error.localizedDescription)
+    }
 }
 
 /// Keeps each request's latest exchange on disk so the response pane survives a relaunch. Bodies over `bodyLimit`
 /// are cut, and the exchange says so.
 public struct ResponseCache: Sendable {
     public static let bodyLimit = 5 * 1024 * 1024
+    /// Each cached gRPC message's JSON is cut to this; all of a call's messages together share `bodyLimit`.
+    public static let grpcMessageLimit = 64 * 1024
 
     public let directory: URL
 
@@ -114,10 +144,19 @@ public struct ResponseCache: Sendable {
 
     public func save(_ exchange: RequestExchange) {
         var stored = exchange
-        if case .response(var response) = exchange.outcome, response.body.count > Self.bodyLimit {
+        switch exchange.outcome {
+        case .response(var response) where response.body.count > Self.bodyLimit:
             response.body = response.body.prefix(Self.bodyLimit)
             stored.outcome = .response(response)
             stored.isBodyTruncated = true
+        case .grpc(let call):
+            let fitted = call.fittingCache(messageLimit: Self.grpcMessageLimit, totalLimit: Self.bodyLimit)
+            if fitted.wasCut {
+                stored.outcome = .grpc(fitted.record)
+                stored.isBodyTruncated = true
+            }
+        default:
+            break
         }
         let url = fileURL(exchange.requestID, in: exchange.projectID)
         do {

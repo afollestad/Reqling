@@ -60,7 +60,8 @@ extension AppComponent {
                 settings: settingsStore,
                 keychain: keychainIdentities,
                 cache: ResponseCache(directory: storageProfile.responsesDirectory),
-                userAgent: appInfo.userAgent
+                userAgent: appInfo.userAgent,
+                grpcSchemas: grpcSchema
             )
         }
     }
@@ -74,7 +75,9 @@ extension AppComponent {
                 settings: settingsStore,
                 appInfo: appInfo,
                 keychain: keychainIdentities,
-                system: AppKitSystemIntegration()
+                system: systemIntegration,
+                protoWorkspaces: protoWorkspaces,
+                protocTooling: protocTooling
             )
         }
     }

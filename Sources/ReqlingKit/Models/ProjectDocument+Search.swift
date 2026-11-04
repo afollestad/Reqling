@@ -54,6 +54,8 @@ extension ProjectDocument {
         switch request.kind {
         case .http(let spec):
             "\(request.name) \(spec.method.rawValue) \(spec.displayURL)"
+        case .grpc(let spec):
+            "\(request.name) gRPC \(spec.methodPath) \(spec.target)"
         }
     }
 

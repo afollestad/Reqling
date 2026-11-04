@@ -72,6 +72,16 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("Responses", isDirectory: true)
     }
 
+    /// Tools Reqling installs itself, such as `protoc` under `protoc/<version>`.
+    var toolsDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Tools", isDirectory: true)
+    }
+
+    /// Compiled descriptor sets kept across launches, so reopening a project does not rerun protoc on unchanged protos.
+    var protocCacheDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("ProtocCache", isDirectory: true)
+    }
+
     /// Ephemeral profiles "trash" into their own directory; the real Trash belongs to the user.
     var trashDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("Trash", isDirectory: true)

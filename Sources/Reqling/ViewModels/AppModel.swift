@@ -77,7 +77,8 @@ final class AppModel {
     var renaming: RenameTarget?
     /// Drives the rename dialog; `renaming` holds its data.
     var isRenaming = false
-    private(set) var editor: RequestEditorViewModel?
+    /// The selected request's editor, HTTP or gRPC.
+    private(set) var editor: RequestEditor?
     /// A folder's auth while it is edited, so typing a token is not a disk write per keystroke. It saves after the
     /// autosave pause, or sooner through `flushPendingEdits()`.
     private(set) var folderAuthDraft: FolderAuthDraft?
@@ -91,6 +92,9 @@ final class AppModel {
     @ObservationIgnored let appInfo: AppInfo
     @ObservationIgnored let keychain: any KeychainIdentityStore
     @ObservationIgnored let system: any SystemIntegration
+    /// One workspace per project with proto definitions, kept in step by `syncProtoWorkspaces()`.
+    @ObservationIgnored let protoWorkspaces: ProtoWorkspaceStore
+    @ObservationIgnored let protocTooling: ProtocToolingModel
     /// Injected so editor autosave debounces deterministically in tests.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
 
@@ -102,6 +106,8 @@ final class AppModel {
         appInfo: AppInfo,
         keychain: any KeychainIdentityStore,
         system: any SystemIntegration,
+        protoWorkspaces: ProtoWorkspaceStore,
+        protocTooling: ProtocToolingModel,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.library = library
@@ -111,7 +117,10 @@ final class AppModel {
         self.appInfo = appInfo
         self.keychain = keychain
         self.system = system
+        self.protoWorkspaces = protoWorkspaces
+        self.protocTooling = protocTooling
         self.sleep = sleep
+        syncProtoWorkspaces()
         if let restored = workspace.state.selection, let project = library.project(restored.projectID) {
             selection = Self.restoredSelection(restored, in: project)
             selectionDidChange(from: nil)
@@ -143,20 +152,7 @@ final class AppModel {
 
     private func selectionDidChange(from oldValue: SidebarItem?) {
         flushPendingEdits()
-        let previous = editor
-        if case .node(let projectID, let nodeID)? = selection, library.document(projectID)?.request(nodeID) != nil {
-            if editor?.identity != selection {
-                editor = RequestEditorViewModel(projectID: projectID, requestID: nodeID, app: self)
-            }
-        } else {
-            editor = nil
-        }
-        if let previous, previous !== editor, previous.hasStrandedChanges {
-            alert = AppAlert(
-                title: "Unsaved Changes Discarded",
-                message: "“\(previous.name)” couldn't be saved because its project isn't available."
-            )
-        }
+        syncEditor()
         if selection != nil {
             isShowingSettings = false
         }
@@ -169,6 +165,7 @@ final class AppModel {
     /// that left the library clears it: one that is listed but failed to load (moved, mid-checkout) keeps the
     /// selection and the editor's draft, which saves once the project loads again.
     func libraryDidChange() {
+        syncProtoWorkspaces()
         guard let selection else {
             return
         }
@@ -182,7 +179,36 @@ final class AppModel {
         if let nodeID = selection.nodeID, document.node(nodeID) == nil {
             self.selection = .project(selection.projectID)
         } else {
+            syncEditor()
             editor?.adoptExternalChange()
+        }
+    }
+
+    /// Gives the selection the editor it needs: none, or one for the selected request's kind. The current editor stays
+    /// while it still fits; one whose request changed kind underneath (a `git pull` turning HTTP into gRPC) is
+    /// replaced, since its draft can no longer save. Says so when replacing an editor drops an edit.
+    private func syncEditor() {
+        let previous = editor
+        if case .node(let projectID, let nodeID)? = selection, let request = library.document(projectID)?.request(nodeID) {
+            if editor?.identity != selection || editor?.kind != request.kind.name {
+                editor = RequestEditor(projectID: projectID, requestID: nodeID, kind: request.kind.name, app: self)
+            }
+        } else {
+            editor = nil
+        }
+        guard let previous, previous != editor else {
+            return
+        }
+        if previous.hasStrandedChanges {
+            alert = AppAlert(
+                title: "Unsaved Changes Discarded",
+                message: "“\(previous.name)” couldn't be saved because its project isn't available."
+            )
+        } else if previous.identity == editor?.identity, previous.hasUnsavedChanges {
+            alert = AppAlert(
+                title: "Unsaved Changes Discarded",
+                message: "“\(previous.name)” was changed elsewhere into a different kind of request, so your edits to it couldn't be kept."
+            )
         }
     }
 
@@ -314,6 +340,7 @@ final class AppModel {
 
 /// The in-window Settings pages, alphabetical by title; `allCases` drives both the side list and the compact strip.
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
+    case grpc
     case interface
     case requests
 
@@ -323,6 +350,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
+        case .grpc: "gRPC"
         case .interface: "Interface"
         case .requests: "Requests"
         }
@@ -330,6 +358,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .grpc: "point.3.connected.trianglepath.dotted"
         case .interface: "paintbrush"
         case .requests: "arrow.up.arrow.down"
         }
@@ -337,6 +366,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var description: String {
         switch self {
+        case .grpc: "The protoc that compiles project protos, and defaults for gRPC calls."
         case .interface: "How Reqling looks."
         case .requests: "Defaults for every request; a request's own options override them."
         }

@@ -97,8 +97,14 @@ private struct DetailView: View {
         if model.isShowingSettings {
             SettingsScreen(model: model)
         } else if let editor = model.editor {
-            RequestEditorView(editor: editor, model: model)
-                .id(editor.identity)
+            switch editor {
+            case .http(let http):
+                RequestEditorView(editor: http, model: model)
+                    .id(editor.identity)
+            case .grpc(let grpc):
+                GRPCEditorView(editor: grpc, model: model)
+                    .id(editor.identity)
+            }
         } else if case .node(let project, let node)? = model.selection, let folder = model.library.document(project)?.folder(node) {
             FolderDetailView(folder: folder, projectID: project, model: model)
         } else if let project = shownProject {

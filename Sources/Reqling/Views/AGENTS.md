@@ -17,6 +17,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 - **Lay out labeled inputs with `LabeledRow`**, never a bare `TextField` or a control's built-in label: in a grouped `Form`, macOS pushes the field to the trailing edge and draws a built-in label after its control.
 - **Use `SectionPicker` for segmented switchers**; macOS centers a segmented control inside a wider frame, pulling it off the pane's leading edge.
 - **Use `TemplateField` or `CodeEditor` for any text that accepts `{{variables}}`**; a plain `TextField` silently loses the pills, tooltips, and completion.
+- **Give `ForEach` rows in a grouped `Form` IDs unique across all its sections.** Sections keyed by bare indices share IDs, and the form draws each card around the wrong rows.
 - End a sheet with `SheetFooter` and head a detail screen with `ScreenHeader`. In a column too narrow for `ContentUnavailableView`, which clips there, use `CompactEmptyState`.
 
 ## Render Cost

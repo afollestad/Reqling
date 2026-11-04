@@ -11,6 +11,7 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
     /// The auth inherited by top-level items; `.inherit` here means none.
     public var auth: HTTPAuth
     public var tls: ProjectTLSConfiguration
+    public var grpc: ProjectGRPCConfiguration
     public var defaultEnvironment: RequestEnvironment
     public var environments: [RequestEnvironment]
     public var items: [RequestNode]
@@ -21,6 +22,7 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
         formatVersion: Int = ProjectDocument.currentFormatVersion,
         auth: HTTPAuth = .none,
         tls: ProjectTLSConfiguration = ProjectTLSConfiguration(),
+        grpc: ProjectGRPCConfiguration = ProjectGRPCConfiguration(),
         defaultEnvironment: RequestEnvironment = RequestEnvironment(name: RequestEnvironment.defaultName),
         environments: [RequestEnvironment] = [],
         items: [RequestNode] = []
@@ -30,6 +32,7 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
         self.formatVersion = formatVersion
         self.auth = auth
         self.tls = tls
+        self.grpc = grpc
         self.defaultEnvironment = defaultEnvironment
         self.environments = environments
         self.items = items

@@ -48,13 +48,18 @@ struct SidebarSearchBar: View {
     }
 }
 
-/// Narrows the sidebar by method and by how each request's last run went.
+/// Narrows the sidebar by protocol, by HTTP method, and by how each request's last run went.
 private struct SidebarFilterMenu: View {
     @Binding var filter: RequestFilter
     @Environment(\.appAccent) private var accent
 
     var body: some View {
         Menu {
+            Section("Protocol") {
+                ForEach(RequestKind.Name.allCases, id: \.self) { name in
+                    Toggle(Self.title(for: name), isOn: member(name, in: \.protocols))
+                }
+            }
             Section("Method") {
                 ForEach(RequestFilter.MethodGroup.allCases, id: \.self) { group in
                     Toggle(Self.title(for: group), isOn: member(group, in: \.methods))
@@ -75,7 +80,7 @@ private struct SidebarFilterMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(filter.isActive ? "Filters are on" : "Filter by method or last result")
+        .help(filter.isActive ? "Filters are on" : "Filter by protocol, method, or last result")
         .accessibilityLabel("Filters")
         .accessibilityValue(filter.isActive ? "On" : "Off")
     }
@@ -91,6 +96,13 @@ private struct SidebarFilterMenu: View {
                 }
             }
         )
+    }
+
+    static func title(for name: RequestKind.Name) -> String {
+        switch name {
+        case .http: "HTTP"
+        case .grpc: "gRPC"
+        }
     }
 
     static func title(for group: RequestFilter.MethodGroup) -> String {

@@ -155,6 +155,8 @@ private struct SidebarFooter: View {
             .help("Add a request beside the selection")
             Spacer()
             Menu {
+                Button("New gRPC Request") { model.newGRPCRequest() }
+                    .disabled(model.activeProjectID == nil)
                 Button("New Folder") { model.newFolder() }
                     .disabled(model.activeProjectID == nil)
                 Divider()

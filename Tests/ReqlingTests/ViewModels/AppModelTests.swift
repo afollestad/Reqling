@@ -39,7 +39,9 @@ final class AppModelTests: XCTestCase {
             settings: fixture.component.settingsStore,
             appInfo: AppFixture.appInfo,
             keychain: fixture.component.keychainIdentities,
-            system: fixture.system
+            system: fixture.system,
+            protoWorkspaces: fixture.component.protoWorkspaces,
+            protocTooling: fixture.protoc.model
         )
     }
 
@@ -132,7 +134,7 @@ final class AppModelTests: XCTestCase {
         model.selection = .node(second, shared.id)
 
         XCTAssertEqual(model.editor?.projectID, second)
-        XCTAssertEqual(model.editor?.spec.url, "https://second")
+        XCTAssertEqual(model.editor?.asHTTP?.spec.url, "https://second")
     }
 
     func testFileReferencesAreRelativeInsideTheProjectAndAskedForOutside() throws {
@@ -172,7 +174,7 @@ final class AppModelTests: XCTestCase {
         model.newFolder()
         let inner = try XCTUnwrap(model.selection?.nodeID)
         model.newRequest()
-        model.editor?.spec.method = .post
+        model.editor?.asHTTP?.spec.method = .post
 
         model.delete(inner, in: project)
 
@@ -281,5 +283,61 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.activeEnvironmentID(for: project), document.defaultEnvironment.id)
         model.setActiveEnvironment(EnvironmentID(), for: project)
         XCTAssertEqual(model.activeEnvironmentID(for: project), document.defaultEnvironment.id)
+    }
+
+    // MARK: - Proto workspaces
+
+    func testProtoWorkspacesFollowEachProjectsProtoDefinitions() throws {
+        let withProtos = try makeProject()
+        model.createProject(named: "Other")
+        let without = try XCTUnwrap(model.selection?.projectID)
+        let protos = ProjectGRPCConfiguration(protoRoots: [.relative("protos")])
+        try fixture.library.mutate(withProtos) { $0.grpc = protos }
+        model.libraryDidChange()
+
+        let store = fixture.component.protoWorkspaces
+        XCTAssertEqual(Set(store.workspaces.keys), [withProtos])
+        XCTAssertEqual(store.workspace(for: withProtos)?.configuration, protos)
+        XCTAssertNil(store.workspace(for: without))
+
+        let edited = ProjectGRPCConfiguration(protoRoots: [.relative("protos")], protoFiles: ["acme/v1/users.proto"])
+        try fixture.library.mutate(withProtos) { $0.grpc = edited }
+        model.libraryDidChange()
+        XCTAssertEqual(store.workspace(for: withProtos)?.configuration, edited)
+
+        try fixture.library.mutate(withProtos) { $0.grpc = ProjectGRPCConfiguration() }
+        model.libraryDidChange()
+        XCTAssertTrue(store.workspaces.isEmpty, "clearing a project's protos drops its workspace")
+
+        try fixture.library.mutate(without) { $0.grpc = protos }
+        model.libraryDidChange()
+        model.removeProject(without)
+        model.libraryDidChange()
+        XCTAssertTrue(store.workspaces.isEmpty, "removing a project drops its workspace")
+    }
+
+    func testLaunchingCreatesWorkspacesForProjectsWithProtos() throws {
+        let project = try makeProject()
+        try fixture.library.mutate(project) { $0.grpc = ProjectGRPCConfiguration(descriptorSets: [.relative("api.protoset")]) }
+        XCTAssertNil(fixture.component.protoWorkspaces.workspace(for: project))
+
+        _ = relaunch()
+
+        XCTAssertNotNil(fixture.component.protoWorkspaces.workspace(for: project))
+    }
+
+    func testAProjectThatDidNotLoadKeepsItsWorkspace() throws {
+        let project = try makeProject()
+        try fixture.library.mutate(project) { $0.grpc = ProjectGRPCConfiguration(protoRoots: [.relative("protos")]) }
+        model.libraryDidChange()
+        let workspace = try XCTUnwrap(fixture.component.protoWorkspaces.workspace(for: project))
+
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("project.json"))
+        fixture.library.reload(project)
+        model.libraryDidChange()
+
+        XCTAssertNil(fixture.library.document(project))
+        XCTAssertTrue(fixture.component.protoWorkspaces.workspace(for: project) === workspace)
     }
 }

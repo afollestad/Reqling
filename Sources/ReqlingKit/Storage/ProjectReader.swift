@@ -57,6 +57,7 @@ struct ProjectReader {
             formatVersion: projectFile.formatVersion,
             auth: projectFile.auth,
             tls: projectFile.tls,
+            grpc: projectFile.grpc,
             defaultEnvironment: environments.defaultEnvironment,
             environments: environments.others,
             items: settleNodes(storedNodes + scratch.nodes, state: &state)

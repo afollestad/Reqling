@@ -6,6 +6,8 @@ included:
   - Package.swift
 excluded:
   - Sources/Reqling/DI/Generated
+  - Sources/ReqlingKit/GRPC/Reflection/Generated
+  - Tests/ReqlingKitTests/GRPC/Generated
 line_length:
   warning: 150
   error: 200

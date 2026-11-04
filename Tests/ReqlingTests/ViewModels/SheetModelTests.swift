@@ -109,4 +109,98 @@ final class SheetModelTests: XCTestCase {
         XCTAssertTrue(settings.isValidHostPattern("*.api.test:8443"))
         XCTAssertFalse(settings.isValidHostPattern("https://api.test"))
     }
+
+    func testProjectSettingsRoundTripProtoDefinitionsThroughTheDocument() throws {
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        let protos = root.appendingPathComponent("protos", isDirectory: true)
+        let external = fixture.profile.applicationSupportDirectory.appendingPathComponent("External protos", isDirectory: true)
+        let descriptorSet = root.appendingPathComponent("schema/api.protoset")
+        for directory in [protos, external, descriptorSet.deletingLastPathComponent()] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data().write(to: descriptorSet)
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+
+        fixture.system.directoryToChoose = protos
+        settings.addProtoRoot()
+        settings.addProtoRoot()
+        fixture.system.directoryToChoose = external
+        fixture.system.pathSharing = .thisMacOnly
+        settings.addProtoRoot()
+        settings.addEntryFile()
+        settings.protoEntryFiles[0].path = "  acme/v1/users.proto "
+        settings.addEntryFile()
+        fixture.system.fileToChoose = descriptorSet
+        settings.addDescriptorSet()
+
+        XCTAssertEqual(settings.protoRoots.count, 2, "adding the same folder twice keeps one")
+        XCTAssertEqual(settings.protoRoots.first, .relative("protos"))
+        XCTAssertEqual(settings.protoRoots.map(settings.sharing(of:)), [.shared, .thisMacOnly])
+        XCTAssertEqual(settings.descriptorSets, [.relative("schema/api.protoset")])
+        XCTAssertTrue(settings.hasUnsavedProtoChanges)
+        XCTAssertTrue(settings.save())
+
+        let saved = try XCTUnwrap(fixture.library.document(project)?.grpc)
+        XCTAssertEqual(saved, ProjectGRPCConfiguration(
+            protoRoots: settings.protoRoots,
+            protoFiles: ["acme/v1/users.proto"],
+            descriptorSets: [.relative("schema/api.protoset")]
+        ))
+        XCTAssertEqual(fixture.model.pathResolver(for: project)?.url(for: saved.protoRoots[1])?.path, external.path)
+
+        let reopened = ProjectSettingsModel(projectID: project, app: fixture.model)
+        XCTAssertEqual(reopened.protoRoots, saved.protoRoots)
+        XCTAssertEqual(reopened.protoEntryFiles.map(\.path), ["acme/v1/users.proto"])
+        XCTAssertEqual(reopened.descriptorSets, saved.descriptorSets)
+        XCTAssertFalse(reopened.hasUnsavedProtoChanges)
+        XCTAssertNil(reopened.workspaceStatus)
+        fixture.model.libraryDidChange()
+        XCTAssertNotNil(reopened.workspaceStatus, "a saved configuration gets a workspace")
+
+        reopened.removeProtoRoot(at: 1)
+        reopened.removeEntryFile(reopened.protoEntryFiles[0].id)
+        reopened.removeDescriptorSet(at: 0)
+        XCTAssertTrue(reopened.save())
+        XCTAssertEqual(fixture.library.document(project)?.grpc, ProjectGRPCConfiguration(protoRoots: [.relative("protos")]))
+    }
+
+    func testProjectSettingsPickingTheSameThisMacFolderOrFileAgainIsANoOp() throws {
+        let external = fixture.profile.applicationSupportDirectory.appendingPathComponent("External protos", isDirectory: true)
+        let descriptorSet = external.appendingPathComponent("api.protoset")
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try Data().write(to: descriptorSet)
+        fixture.system.pathSharing = .thisMacOnly
+        fixture.system.directoryToChoose = external
+        fixture.system.fileToChoose = descriptorSet
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+
+        settings.addProtoRoot()
+        settings.addProtoRoot()
+        settings.addDescriptorSet()
+        settings.addDescriptorSet()
+        XCTAssertTrue(settings.save())
+        let reopened = ProjectSettingsModel(projectID: project, app: fixture.model)
+        reopened.addProtoRoot()
+        reopened.addDescriptorSet()
+
+        XCTAssertEqual(reopened.protoRoots.count, 1)
+        XCTAssertEqual(reopened.descriptorSets.count, 1)
+        XCTAssertEqual(fixture.component.workspaceState.state.localPaths.count, 2, "a repeat pick records no second local path")
+    }
+
+    func testProjectSettingsEntryFileEditsLandOnlyOnTheirOwnRow() {
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+        settings.addEntryFile()
+        settings.addEntryFile()
+        let removed = settings.protoEntryFiles[0].id
+        let kept = settings.protoEntryFiles[1].id
+
+        settings.setEntryFilePath("kept.proto", for: kept)
+        settings.removeEntryFile(removed)
+        // A commit from the removed row arriving after it left must not overwrite the row now in its place.
+        settings.setEntryFilePath("late.proto", for: removed)
+
+        XCTAssertEqual(settings.protoEntryFiles.map(\.id), [kept])
+        XCTAssertEqual(settings.protoEntryFiles.map(\.path), ["kept.proto"])
+    }
 }

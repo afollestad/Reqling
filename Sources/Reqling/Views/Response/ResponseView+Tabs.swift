@@ -140,19 +140,28 @@ private struct HeaderList: View {
 
     var body: some View {
         ScrollView {
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
-                ForEach(headers.indices, id: \.self) { index in
-                    GridRow {
-                        Text(headers[index].key)
-                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                        Text(headers[index].value)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
+            HeaderGrid(headers: headers)
+        }
+    }
+}
+
+/// Names and values in two aligned columns: HTTP headers, gRPC metadata and trailers.
+struct HeaderGrid: View {
+    let headers: [KeyValuePair]
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
+            ForEach(headers.indices, id: \.self) { index in
+                GridRow {
+                    Text(headers[index].key)
+                        .font(.system(.body, design: .monospaced).weight(.semibold))
+                    Text(headers[index].value)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

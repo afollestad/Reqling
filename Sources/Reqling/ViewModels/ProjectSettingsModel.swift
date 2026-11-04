@@ -3,8 +3,9 @@ import Observation
 import ReqlingKit
 import UniformTypeIdentifiers
 
-/// Edits a project's name, project-level auth, client certificates, and CA certificates as a draft that commits on
-/// Done. Passphrases go to the Keychain and Keychain identity choices to this Mac's workspace state, never to files.
+/// Edits a project's name, project-level auth, client certificates, CA certificates, and proto definitions as a draft
+/// that commits on Done. Passphrases go to the Keychain and Keychain identity choices to this Mac's workspace state,
+/// never to files.
 @MainActor
 @Observable
 final class ProjectSettingsModel {
@@ -21,11 +22,14 @@ final class ProjectSettingsModel {
     var caCertificates: [ProjectPathReference]
     var passphrases: [CertificateEntryID: String]
     var keychainIdentities: [CertificateEntryID: Data]
+    var protoRoots: [ProjectPathReference]
+    var protoEntryFiles: [ProtoEntryFile]
+    var descriptorSets: [ProjectPathReference]
     /// Entries whose stored passphrase the Keychain refused to read. Their field starts empty without meaning "no
     /// passphrase": saving keeps the stored value unless the user types a new one.
     private(set) var unreadablePassphrases: Set<CertificateEntryID>
 
-    @ObservationIgnored private unowned let app: AppModel
+    @ObservationIgnored unowned let app: AppModel
     @ObservationIgnored private let now: () -> Date
     /// The passphrases as loaded, so saving writes only the ones the user changed. One the Keychain refused to read is
     /// absent here and in `passphrases`, so leaving its field alone can never save the blank over the stored value.
@@ -43,6 +47,10 @@ final class ProjectSettingsModel {
         let entries = document?.tls.clientCertificates ?? []
         clientCertificates = entries
         caCertificates = document?.tls.caCertificates ?? []
+        let grpc = document?.grpc ?? ProjectGRPCConfiguration()
+        protoRoots = grpc.protoRoots
+        protoEntryFiles = grpc.protoFiles.map { ProtoEntryFile(path: $0) }
+        descriptorSets = grpc.descriptorSets
         var passphrases: [CertificateEntryID: String] = [:]
         var unreadable: Set<CertificateEntryID> = []
         var identities: [CertificateEntryID: Data] = [:]
@@ -166,6 +174,7 @@ final class ProjectSettingsModel {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let tls = ProjectTLSConfiguration(clientCertificates: clientCertificates, caCertificates: caCertificates)
         let auth = auth
+        let grpc = grpcConfiguration
         let saved: Void? = app.perform("Couldn't Save the Project Settings") {
             try app.library.mutate(projectID) { document in
                 if !trimmedName.isEmpty {
@@ -173,6 +182,7 @@ final class ProjectSettingsModel {
                 }
                 document.auth = auth
                 document.tls = tls
+                document.grpc = grpc
             }
             try savePassphrasesAndIdentities()
         }

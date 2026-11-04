@@ -74,11 +74,19 @@ extension AppModel {
     }
 
     func newRequest(in project: ProjectID? = nil) {
+        insertRequest(RequestItem(name: "New Request", kind: .http(HTTPRequestSpec())), in: project)
+    }
+
+    /// A gRPC request on `.automatic`, so it uses the project's protos when it has any and server reflection otherwise.
+    func newGRPCRequest(in project: ProjectID? = nil) {
+        insertRequest(RequestItem(name: "New gRPC Request", kind: .grpc(GRPCRequestSpec(schema: .automatic))), in: project)
+    }
+
+    private func insertRequest(_ request: RequestItem, in project: ProjectID?) {
         guard let project = project ?? activeProjectID else {
             sheet = .newProject
             return
         }
-        let request = RequestItem(name: "New Request", kind: .http(HTTPRequestSpec()))
         let point = insertionPoint(in: project)
         guard perform("Couldn't Add the Request", {
             try library.mutate(project) { try $0.insert(.request(request), into: point.parent, at: point.index) }

@@ -13,6 +13,8 @@ struct ReqlingCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Request") { model.newRequest() }
                 .keyboardShortcut("n", modifiers: .command)
+            Button("New gRPC Request") { model.newGRPCRequest() }
+                .keyboardShortcut("n", modifiers: [.command, .control])
             Button("New Folder") { model.newFolder() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("New Project…") { model.sheet = .newProject }
@@ -37,16 +39,18 @@ struct ReqlingCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .option])
         }
         CommandMenu("Request") {
-            Button("Send") { model.editor?.send() }
+            // An open gRPC stream takes ⌘Return as its next message rather than a restarted call.
+            Button(model.editor?.asGRPC?.isStreamOpen == true ? "Send Message" : "Send") { model.editor?.send() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(model.editor == nil)
             Button("Cancel") { model.editor?.cancel() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.editor?.isSending != true)
             Divider()
-            Button("Copy as cURL") { model.editor?.copyAsCurl() }
+            // HTTP only: a gRPC call has no cURL form.
+            Button("Copy as cURL") { model.editor?.asHTTP?.copyAsCurl() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
-                .disabled(model.editor == nil)
+                .disabled(model.editor?.asHTTP == nil)
             Divider()
             Button("Environments…") {
                 if let project = model.activeProjectID {

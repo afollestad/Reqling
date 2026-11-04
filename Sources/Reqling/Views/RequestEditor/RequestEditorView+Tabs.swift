@@ -26,7 +26,7 @@ struct RequestEditorTabContent: View {
             ScrollView {
                 AuthEditor(
                     auth: $editor.spec.auth,
-                    inheritedDescription: inheritedAuthDescription,
+                    inheritedDescription: AuthEditor.inheritedDescription(for: editor.requestID, in: editor.projectID, model: model),
                     tokenContext: editor.tokenContext
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -34,18 +34,6 @@ struct RequestEditorTabContent: View {
         case .options:
             RequestOptionsEditor(options: $editor.spec.options, defaults: model.settings.settings.requestDefaults)
         }
-    }
-
-    /// Names the folder or project the request inherits auth from, and what kind it is.
-    private var inheritedAuthDescription: String {
-        guard let document = model.library.document(editor.projectID) else {
-            return "Uses the auth of the enclosing folder or project."
-        }
-        for folder in document.ancestors(of: editor.requestID).reversed() where folder.auth != .inherit {
-            return "Uses \(AuthEditor.title(for: folder.auth.kind)) from the “\(folder.name)” folder."
-        }
-        let projectAuth = document.auth == .inherit ? HTTPAuth.none : document.auth
-        return "Uses \(AuthEditor.title(for: projectAuth.kind)) from the project's settings."
     }
 }
 

@@ -1,0 +1,9 @@
+// Workspace fixture: imported by the `api` root.
+syntax = "proto3";
+
+package acme.common.v1;
+
+message Locale {
+  string language = 1;
+  string region = 2;
+}

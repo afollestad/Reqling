@@ -42,10 +42,10 @@ struct RequestEditorPane: View {
     }
 }
 
-/// The request's name. A label rather than a field, so opening a request never puts a stray keystroke into its
-/// name; double-click or Rename… edits it.
-private struct RequestEditorHeader: View {
-    let editor: RequestEditorViewModel
+/// The request's name, for either kind of request. A label rather than a field, so opening a request never puts a
+/// stray keystroke into its name; double-click or Rename… edits it.
+struct RequestEditorHeader: View {
+    let editor: any RequestEditing
     let model: AppModel
 
     var body: some View {
@@ -79,7 +79,7 @@ private struct RequestEditorHeader: View {
 }
 
 /// A note above the request's sections; `onDismiss` is `nil` for one that lasts as long as its cause.
-private struct RequestEditorNotice: View {
+struct RequestEditorNotice: View {
     let text: String
     let systemImage: String
     let onDismiss: (() -> Void)?
