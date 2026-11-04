@@ -11,6 +11,9 @@ public enum AppTheme: String, Hashable, Sendable, Codable, CaseIterable {
 /// clamped to their supported ranges, so a settings blob from another version cannot reset everything.
 public struct AppSettings: Hashable, Sendable, Codable {
     public static let timeoutRange: ClosedRange<Double> = 1...600
+    /// Unprivileged ports only, so the MCP server never needs elevated rights.
+    public static let mcpPortRange: ClosedRange<Int> = 1_024...65_535
+    public static let defaultMCPPort = 39_717
 
     public var theme: AppTheme = .system
     public var requestTimeoutSeconds: Double = 30 {
@@ -26,6 +29,11 @@ public struct AppSettings: Hashable, Sendable, Codable {
     /// The deadline for a gRPC call, clamped to the same range as the HTTP request timeout.
     public var grpcDeadlineSeconds: Double = 30 {
         didSet { grpcDeadlineSeconds = Self.clamp(grpcDeadlineSeconds) }
+    }
+    /// The built-in MCP server is off until the user turns it on.
+    public var mcpEnabled = false
+    public var mcpPort = AppSettings.defaultMCPPort {
+        didSet { mcpPort = Self.clampPort(mcpPort) }
     }
 
     public init() {}
@@ -45,6 +53,9 @@ public struct AppSettings: Hashable, Sendable, Codable {
         protocPath = Self.normalizedPath((try? container.decodeIfPresent(String.self, forKey: .protocPath)) ?? nil)
         let deadline = try? container.decodeIfPresent(Double.self, forKey: .grpcDeadlineSeconds)
         grpcDeadlineSeconds = Self.clamp(deadline ?? defaults.grpcDeadlineSeconds)
+        mcpEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? defaults.mcpEnabled
+        let port = try? container.decodeIfPresent(Int.self, forKey: .mcpPort)
+        mcpPort = Self.clampPort(port ?? defaults.mcpPort)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -54,10 +65,16 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case verifyTLS
         case protocPath
         case grpcDeadlineSeconds
+        case mcpEnabled
+        case mcpPort
     }
 
     private static func clamp(_ value: Double) -> Double {
         value.isFinite ? min(max(value, timeoutRange.lowerBound), timeoutRange.upperBound) : 30
+    }
+
+    private static func clampPort(_ port: Int) -> Int {
+        min(max(port, mcpPortRange.lowerBound), mcpPortRange.upperBound)
     }
 
     /// A text field clears to `""`, which must mean "no override", not a path to nothing.

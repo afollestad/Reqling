@@ -291,9 +291,10 @@ final class GRPCEditorViewModel {
     )
 
     /// A three-way merge per top-level field: each field the draft changed since `base` keeps the draft's value, and
-    /// every other field takes the stored one. The messages, metadata, and auth are each one field, and the service
-    /// and method one pair, so a merge never calls a method on a service that lacks it. A field added to
-    /// `GRPCRequestSpec` must be listed here, or the draft wins it unconditionally.
+    /// every other field takes the stored one. Metadata merges row by row by ID (`ListMerge`); the messages, which
+    /// carry no IDs, and the auth are each one field, and the service and method one pair, so a merge never calls a
+    /// method on a service that lacks it. A field added to `GRPCRequestSpec` must be listed here, or the draft wins it
+    /// unconditionally.
     private nonisolated static func merge(base: GRPCRequestSpec, draft: GRPCRequestSpec, stored: GRPCRequestSpec) -> GRPCRequestSpec {
         var merged = draft
         func takeStored<Value: Equatable>(_ field: WritableKeyPath<GRPCRequestSpec, Value>) {
@@ -307,7 +308,7 @@ final class GRPCEditorViewModel {
             merged.service = stored.service
             merged.method = stored.method
         }
-        takeStored(\.metadata)
+        merged.metadata = ListMerge.merge(base: base.metadata, draft: draft.metadata, stored: stored.metadata)
         takeStored(\.messages)
         takeStored(\.schema)
         takeStored(\.deadlineSeconds)

@@ -176,6 +176,23 @@ final class ProtocToolingModel {
         installTask?.cancel()
     }
 
+    /// Installs as `install()` does and waits for the outcome, for an agent's `install_protoc`; an install already
+    /// running is awaited rather than started again, so its progress shows in Settings either way.
+    func installAndWait() async throws -> ProtocInstallation {
+        install()
+        while let task = installTask {
+            await task.value
+        }
+        if case .failed(let message) = installState {
+            throw MCPToolError(message)
+        }
+        await refresh()
+        guard case .found(let installation) = detection else {
+            throw MCPToolError("The install didn't finish, so no protoc is available.")
+        }
+        return installation
+    }
+
     private func show(_ phase: ProtocInstallPhase, generation: Int) {
         guard generation == installGeneration, isInstalling else {
             return

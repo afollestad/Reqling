@@ -4,6 +4,9 @@ import ReqlingKit
 
 /// Edits a project's environments as a draft that commits on Done, so a half-typed secret is not written to the
 /// Keychain on every keystroke. Default stays first and can be neither renamed nor removed.
+///
+/// Done merges the draft into what is stored now (see `save()`), so an agent's or a `git pull`'s change made while the
+/// sheet was open survives unless the sheet changed the same environment name or variable.
 @MainActor
 @Observable
 final class EnvironmentEditorModel {
@@ -13,14 +16,20 @@ final class EnvironmentEditorModel {
     var selectedID: EnvironmentID
 
     @ObservationIgnored private unowned let app: AppModel
+    /// The environments as loaded or last saved: the base of Done's merge.
+    @ObservationIgnored private var baseDefaultEnvironment: RequestEnvironment
+    @ObservationIgnored private var baseEnvironments: [RequestEnvironment]
 
     init(projectID: ProjectID, app: AppModel) {
         self.projectID = projectID
         self.app = app
         let document = app.library.document(projectID)
         let defaultEnvironment = document?.defaultEnvironment ?? RequestEnvironment(name: RequestEnvironment.defaultName)
+        let environments = document?.environments ?? []
         self.defaultEnvironment = defaultEnvironment
-        environments = document?.environments ?? []
+        self.environments = environments
+        baseDefaultEnvironment = defaultEnvironment
+        baseEnvironments = environments
         selectedID = app.activeEnvironmentID(for: projectID) ?? defaultEnvironment.id
     }
 
@@ -80,24 +89,65 @@ final class EnvironmentEditorModel {
         selectedID = copy.id
     }
 
+    /// Merges the draft into the stored environments, three-way against what the sheet loaded: environments per ID
+    /// (Default included), each one's name as a field and its variables per ID (`ListMerge`). Whatever the sheet left
+    /// alone takes the stored version, deletions included. Secret values need no bookkeeping here: they travel with
+    /// their variables, and `ProjectLibrary.mutate` stores and deletes them by comparing what the merge produced with
+    /// what was stored.
     @discardableResult
     func save() -> Bool {
-        let defaultEnvironment = defaultEnvironment
-        let environments = environments.map { environment in
+        let draftDefault = defaultEnvironment
+        let draftEnvironments = environments.map { environment in
             var trimmed = environment
             trimmed.name = environment.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : environment.name
             return trimmed
         }
-        let saved: Void? = app.perform("Couldn't Save the Environments") {
+        let baseDefault = baseDefaultEnvironment
+        let base = baseEnvironments
+        let saved = app.perform("Couldn't Save the Environments") {
             try app.library.mutate(projectID) { document in
-                document.defaultEnvironment = defaultEnvironment
-                document.environments = environments
+                document.defaultEnvironment = Self.merge(base: baseDefault, draft: draftDefault, stored: document.defaultEnvironment)
+                document.environments = ListMerge.merge(
+                    base: base,
+                    draft: draftEnvironments,
+                    stored: document.environments,
+                    mergeEdited: Self.merge(base:draft:stored:)
+                )
+                return (document.defaultEnvironment, document.environments)
             }
         }
-        if saved != nil, environments.contains(where: { $0.id == selectedID }) || selectedID == defaultEnvironment.id {
+        guard let (mergedDefault, mergedEnvironments) = saved else {
+            return false
+        }
+        defaultEnvironment = mergedDefault
+        environments = mergedEnvironments
+        baseDefaultEnvironment = mergedDefault
+        baseEnvironments = mergedEnvironments
+        if mergedEnvironments.contains(where: { $0.id == selectedID }) || selectedID == mergedDefault.id {
             app.setActiveEnvironment(selectedID, for: projectID)
         }
-        return saved != nil
+        return true
+    }
+
+    /// One environment both sides may have changed: the name as one field, the variables per ID.
+    private nonisolated static func merge(base: RequestEnvironment, draft: RequestEnvironment, stored: RequestEnvironment) -> RequestEnvironment {
+        var merged = stored
+        if draft.name != base.name {
+            merged.name = draft.name
+        }
+        merged.variables = ListMerge.merge(base: base.variables, draft: draft.variables, stored: stored.variables, mergeEdited: mergeVariable)
+        return merged
+    }
+
+    /// The sheet's version of a variable both sides changed, kept secret when either side has it secret unless the sheet
+    /// itself turned that off: otherwise a value typed in one place as a secret could land in a file because the
+    /// other place changed the flag meanwhile.
+    private nonisolated static func mergeVariable(base: Variable, draft: Variable, stored: Variable) -> Variable {
+        var merged = draft
+        if draft.isSecret == base.isSecret {
+            merged.isSecret = draft.isSecret || stored.isSecret
+        }
+        return merged
     }
 
     private func uniqueName(_ base: String) -> String {

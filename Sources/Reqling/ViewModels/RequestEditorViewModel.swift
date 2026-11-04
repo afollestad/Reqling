@@ -15,8 +15,8 @@ enum RequestEditorTab: String, CaseIterable, Identifiable {
 }
 
 /// Edits one saved HTTP request. The draft autosaves after a short pause through `RequestDraft`, which also adopts
-/// an edit made elsewhere (MCP, a `git pull`) while the draft is clean and merges it in per field (see `merge`) while
-/// it is dirty.
+/// an edit made elsewhere (MCP, a `git pull`) while the draft is clean and merges it in per field and row (see `merge`)
+/// while it is dirty.
 @MainActor
 @Observable
 final class RequestEditorViewModel {
@@ -202,10 +202,10 @@ final class RequestEditorViewModel {
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. The body and
-    /// options merge per subfield (switching body mode keeps a raw text edited elsewhere), but each list (query rows,
-    /// headers, form fields) and the auth is one field: if both sides edited the same list, the draft's whole list wins.
-    /// A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions` must be listed here, or the draft wins it
-    /// unconditionally.
+    /// options merge per subfield (switching body mode keeps a raw text edited elsewhere), and each list (query rows,
+    /// headers, form fields) row by row by ID (`ListMerge`), so a header removed elsewhere stays removed unless the
+    /// draft edited it. The auth is one field. A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions`
+    /// must be listed here, or the draft wins it unconditionally.
     private nonisolated static func merge(base: HTTPRequestSpec, draft: HTTPRequestSpec, stored: HTTPRequestSpec) -> HTTPRequestSpec {
         var merged = draft
         func takeStored<Value: Equatable>(_ field: WritableKeyPath<HTTPRequestSpec, Value>) {
@@ -213,15 +213,18 @@ final class RequestEditorViewModel {
                 merged[keyPath: field] = stored[keyPath: field]
             }
         }
+        func mergeRows<Row: ListRow>(_ field: WritableKeyPath<HTTPRequestSpec, [Row]>) {
+            merged[keyPath: field] = ListMerge.merge(base: base[keyPath: field], draft: draft[keyPath: field], stored: stored[keyPath: field])
+        }
         takeStored(\.method)
         takeStored(\.url)
-        takeStored(\.queryParameters)
-        takeStored(\.headers)
+        mergeRows(\.queryParameters)
+        mergeRows(\.headers)
         takeStored(\.disabledAutoHeaders)
         takeStored(\.body.mode)
         takeStored(\.body.raw)
-        takeStored(\.body.formData)
-        takeStored(\.body.urlEncoded)
+        mergeRows(\.body.formData)
+        mergeRows(\.body.urlEncoded)
         takeStored(\.body.binary)
         takeStored(\.body.graphQL)
         takeStored(\.auth)

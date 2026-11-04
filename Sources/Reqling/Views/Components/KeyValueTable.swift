@@ -4,8 +4,8 @@ import SwiftUI
 /// Editable key/value rows for parameters, headers, and URL-encoded forms.
 ///
 /// A trailing draft row is always shown; typing into it appends a real row in place, so the field keeps focus.
-/// `KeyValuePair` has no identity, so rows are keyed by view-local `RowIdentities` and write through
-/// `IndexedRowWriter`.
+/// Rows are keyed by their own IDs, which `KeyValuePair`'s list decoding keeps unique, and write through
+/// `IdentifiedRowWriter`.
 struct KeyValueTable: View {
     @Binding var rows: [KeyValuePair]
     var keyPlaceholder = "Key"
@@ -14,20 +14,19 @@ struct KeyValueTable: View {
     var rowName: String
     var tokenContext: TemplateTokenContext
 
-    @State private var identities = RowIdentities()
+    /// The ID the draft row's first edit appends its row under; renewed once it has.
+    @State private var draftID = KeyValuePairID()
 
     var body: some View {
-        let slots = IdentifiedRow.rows(identities.ids(count: rows.count), draftID: identities.draftID)
+        let draftID = draftID
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(slots) { slot in
-                let isDraft = slot.index == rows.count
+            ForEach(rows + [KeyValuePair(id: draftID, key: "", value: "")]) { row in
                 KeyValueTableRow(
-                    writer: IndexedRowWriter(
+                    writer: IdentifiedRowWriter(
                         rows: $rows,
-                        index: slot.index,
-                        shown: isDraft ? KeyValuePair(key: "", value: "") : rows[slot.index],
-                        isDraft: isDraft,
-                        identities: identities
+                        shown: row,
+                        isDraft: row.id == draftID,
+                        onDraftAppended: { self.draftID = KeyValuePairID() }
                     ),
                     keyPlaceholder: keyPlaceholder,
                     valuePlaceholder: valuePlaceholder,
@@ -40,7 +39,7 @@ struct KeyValueTable: View {
 }
 
 private struct KeyValueTableRow: View {
-    let writer: IndexedRowWriter<KeyValuePair>
+    let writer: IdentifiedRowWriter<KeyValuePair>
     let keyPlaceholder: String
     let valuePlaceholder: String
     let rowName: String

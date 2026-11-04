@@ -67,7 +67,7 @@ final class RequestEditorViewModelTests: XCTestCase {
         XCTAssertEqual(savedSpec?.url, "")
         await releaseAutosave()
         await waitUntil("the autosave") { savedSpec?.url == "{{base}}/users" }
-        XCTAssertEqual(savedSpec?.queryParameters, [KeyValuePair(key: "page", value: "2")])
+        XCTAssertEqual(savedSpec?.queryParameters.unidentified, [KeyValuePair(key: "page", value: "2")].unidentified)
     }
 
     func testFlushSavesAPendingEditImmediately() {
@@ -85,7 +85,7 @@ final class RequestEditorViewModelTests: XCTestCase {
 
         editor.urlText = "https://x/a?a=1&b=2"
         editor.urlText = "https://x/a?a=&b=2"
-        XCTAssertEqual(editor.spec.queryParameters, [KeyValuePair(key: "a", value: ""), KeyValuePair(key: "b", value: "2")])
+        XCTAssertEqual(editor.spec.queryParameters.unidentified, [KeyValuePair(key: "a", value: ""), KeyValuePair(key: "b", value: "2")].unidentified)
         await releaseAutosave()
         await waitUntil("the autosave") { savedSpec?.queryParameters.count == 2 }
         XCTAssertEqual(editor.urlText, "https://x/a?a=&b=2", "saving must not rewrite what was typed")
@@ -112,8 +112,45 @@ final class RequestEditorViewModelTests: XCTestCase {
         await releaseAutosave()
         await waitUntil("the merged save") { savedSpec?.url == "https://local" }
 
-        XCTAssertEqual(savedSpec?.headers, [KeyValuePair(key: "X-Agent", value: "1")])
+        XCTAssertEqual(savedSpec?.headers.unidentified, [KeyValuePair(key: "X-Agent", value: "1")].unidentified)
         XCTAssertEqual(editor.spec, savedSpec)
+    }
+
+    func testAHeaderRemovedElsewhereDuringThePauseStaysRemovedWhileTheUsersEditWins() async throws {
+        let kept = KeyValuePair(key: "X-Kept", value: "1")
+        try changeExternally(HTTPRequestSpec(headers: [kept, KeyValuePair(key: "X-Removed", value: "1")]))
+        editor.spec.headers[0].value = "mine"
+        try changeExternally(HTTPRequestSpec(headers: [
+            KeyValuePair(id: kept.id, key: "X-Kept", value: "theirs"),
+            KeyValuePair(key: "X-Added", value: "1")
+        ]))
+
+        await releaseAutosave()
+        await waitUntil("the merged save") { savedSpec?.headers.first?.value == "mine" }
+
+        XCTAssertEqual(savedSpec?.headers.map(\.key), ["X-Kept", "X-Added"])
+        XCTAssertEqual(savedSpec?.headers.first?.id, kept.id)
+        XCTAssertEqual(editor.spec, savedSpec)
+    }
+
+    /// The bar's text becomes rows on every keystroke; rows that survive keep their IDs, so a merge with an edit made
+    /// elsewhere to another row keeps that edit instead of reading the keystroke as replacing every row.
+    func testTypingInTheURLBarKeepsQueryRowIDsSoAMergeKeepsAnotherRowsEditElsewhere() async throws {
+        editor.urlText = "https://x/a?page=1&size=10"
+        editor.flush()
+        let ids = editor.spec.queryParameters.map(\.id)
+
+        editor.urlText = "https://x/a?page=12&size=10"
+        XCTAssertEqual(editor.spec.queryParameters.map(\.id), ids)
+        var external = try XCTUnwrap(savedSpec)
+        external.queryParameters[1].value = "50"
+        try changeExternally(external)
+        await releaseAutosave()
+        await waitUntil("the merged save") { savedSpec?.queryParameters.first?.value == "12" }
+
+        XCTAssertEqual(savedSpec?.queryParameters.map(\.value), ["12", "50"])
+        XCTAssertEqual(savedSpec?.queryParameters.map(\.id), ids)
+        XCTAssertEqual(editor.urlText, "https://x/a?page=12&size=50")
     }
 
     func testAnUndoneEditStillAdoptsAnExternalChangeThatArrivedMeanwhile() async throws {

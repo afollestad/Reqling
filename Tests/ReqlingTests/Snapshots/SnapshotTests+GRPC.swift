@@ -67,7 +67,7 @@ extension SnapshotTests {
     /// A saved configuration with a shared and a this-Mac root, an entry file, and a descriptor set.
     private func protoDefinitionsSettings() throws -> ProjectSettingsModel {
         let project = try SnapshotProject.make(in: fixture)
-        let local = fixture.component.workspaceState.addLocalPath("/Users/shared/acme-protos")
+        let local = fixture.component.workspaceState.addLocalPath("/Users/shared/acme-protos", in: project.id)
         try fixture.library.mutate(project.id) { document in
             document.grpc = ProjectGRPCConfiguration(
                 protoRoots: [.relative("protos"), local],

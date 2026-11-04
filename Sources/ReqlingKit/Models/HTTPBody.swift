@@ -41,8 +41,8 @@ public struct HTTPBody: Hashable, Sendable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mode = (try? container.decodeIfPresent(HTTPBodyMode.self, forKey: .mode)) ?? .none
         raw = try container.decodeIfPresent(RawBody.self, forKey: .raw) ?? RawBody()
-        formData = try container.decodeIfPresent([MultipartField].self, forKey: .formData) ?? []
-        urlEncoded = try container.decodeIfPresent([KeyValuePair].self, forKey: .urlEncoded) ?? []
+        formData = try container.decodeRowsIfPresent([MultipartField].self, forKey: .formData) ?? []
+        urlEncoded = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .urlEncoded) ?? []
         binary = try container.decodeIfPresent(BinaryBody.self, forKey: .binary) ?? BinaryBody()
         graphQL = try container.decodeIfPresent(GraphQLBody.self, forKey: .graphQL) ?? GraphQLBody()
     }
@@ -109,13 +109,14 @@ public struct RawBody: Hashable, Sendable, Codable {
     }
 }
 
-/// One part of a `multipart/form-data` body.
-public struct MultipartField: Hashable, Sendable, Codable {
+/// One part of a `multipart/form-data` body. The `id` is stored with the row; `ListRow` explains why.
+public struct MultipartField: ListRow, Codable {
     public enum Kind: String, Hashable, Sendable, Codable, CaseIterable {
         case text
         case file
     }
 
+    public var id: MultipartFieldID
     public var key: String
     public var kind: Kind
     /// The text part's value; unused for file parts.
@@ -127,6 +128,7 @@ public struct MultipartField: Hashable, Sendable, Codable {
     public var isEnabled: Bool
 
     public init(
+        id: MultipartFieldID = MultipartFieldID(),
         key: String,
         kind: Kind = .text,
         value: String = "",
@@ -134,6 +136,7 @@ public struct MultipartField: Hashable, Sendable, Codable {
         contentType: String? = nil,
         isEnabled: Bool = true
     ) {
+        self.id = id
         self.key = key
         self.kind = kind
         self.value = value
@@ -143,6 +146,7 @@ public struct MultipartField: Hashable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case id
         case key
         case kind
         case value
@@ -153,6 +157,7 @@ public struct MultipartField: Hashable, Sendable, Codable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? container.decodeIfPresent(MultipartFieldID.self, forKey: .id)) ?? Self.derivedID(at: decoder.codingPath)
         key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
         kind = (try? container.decodeIfPresent(Kind.self, forKey: .kind)) ?? .text
         value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""

@@ -83,9 +83,11 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertEqual(body(onStaging), "GET /staging -")
         XCTAssertEqual(onStaging.environmentName, "Staging")
 
+        var patched = try XCTUnwrap(fixture.library.document(project)?.request(request)?.kind.httpSpec)
+        patched.headers.append(KeyValuePair(key: "X-Extra", value: "patched"))
         let overridden = await runner.run(request, in: project, options: RunOptions(
             variableOverrides: ["path": "override"],
-            specOverride: { $0.headers.append(KeyValuePair(key: "X-Extra", value: "patched")) }
+            spec: .http(patched)
         ))
         XCTAssertEqual(body(overridden), "GET /override patched")
         // One-run overrides never touch the saved template.

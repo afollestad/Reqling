@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 import ReqlingKit
+import Synchronization
 import XCTest
 
 /// Loads that must surface, recover, or keep stable what other tools and interrupted saves leave behind.
@@ -71,6 +73,38 @@ extension ProjectLibraryTests {
         let saving = fixture.relaunched()
         try saving.mutate(id) { $0.name = "Saved" }
         XCTAssertEqual(fixture.relaunched().document(id)?.items.map(\.id), first.items.map(\.id))
+    }
+
+    /// Files written before rows carried IDs, or by hand, still load the same document every time, so the change
+    /// monitor's reload of an untouched file publishes nothing and saving other changes leaves the file alone.
+    func testRowsStoredWithoutIDsKeepStableIDsAcrossReloadsAndRelaunches() throws {
+        let id = try fixture.library.createProject(named: "Legacy rows")
+        let request = RequestNodeID()
+        let json = #"""
+        {"id": "\#(request)", "name": "Legacy", "kind": "http", "http": {"method": "GET", "url": "https://x",
+         "queryParameters": [{"key": "q", "value": "1"}], "headers": [{"key": "A", "value": "1"}, {"key": "B", "value": "2"}]}}
+        """#
+        try fixture.write(json, to: "requests/legacy.json", in: id)
+        fixture.library.reload(id)
+        let loaded = try XCTUnwrap(fixture.library.document(id))
+        let headers = try XCTUnwrap(loaded.request(request)?.kind.httpSpec?.headers)
+        XCTAssertEqual(Set(headers.map(\.id)).count, 2)
+
+        let before = fixture.library.projects
+        let published = Mutex(false)
+        withObservationTracking {
+            _ = fixture.library.projects
+        } onChange: {
+            published.withLock { $0 = true }
+        }
+        fixture.library.reload(id)
+
+        XCTAssertFalse(published.withLock { $0 })
+        XCTAssertEqual(fixture.library.projects, before)
+        XCTAssertEqual(fixture.relaunched().document(id), loaded)
+        XCTAssertEqual(fixture.relaunched().document(id), fixture.relaunched().document(id))
+        try fixture.library.mutate(id) { $0.name = "Renamed" }
+        XCTAssertEqual(try fixture.contents("requests/legacy.json", in: id), json)
     }
 
     func testAFinderCopyNeverDerivesAnIDAnEarlierCopyAlreadySaved() throws {

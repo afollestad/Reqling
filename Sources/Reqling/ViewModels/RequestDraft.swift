@@ -4,7 +4,7 @@ import ReqlingKit
 /// The saved-request lifecycle both request editors share: the dirtiness baseline, the autosave pause, the three-way
 /// merge on save, adopting a change stored elsewhere (MCP, a `git pull`) while the draft is clean, and a draft kept
 /// unsaved while its project is unavailable. A dirty draft is never replaced by a stored change: its save merges the
-/// change in instead, so it survives unless the draft changed the same field.
+/// change in instead, so it survives unless the draft changed the same field or, in a list, the same row.
 ///
 /// Each editor owns its observable `spec` and passes it in. A method that returns a spec hands back what the editor
 /// should now show; `nil` means keep showing the draft. Nothing here is observable: the baseline and timers are

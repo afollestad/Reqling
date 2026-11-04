@@ -44,7 +44,9 @@ run_filtered() {
 
   local statuses
   set +e
-  "$@" 2>&1 | tee "$raw_log" | xcsift -f toon -w | tee "$filtered_log"
+  # The compiler colors diagnostics (and links them with OSC 8) even into a pipe, and xcsift misses colored lines, so
+  # its warning count, which the test gate reads, stayed 0. Strip escapes for xcsift; the raw log keeps them.
+  "$@" 2>&1 | tee "$raw_log" | perl -pe 's/\e\[[0-9;]*[A-Za-z]//g; s/\e\]8;;.*?\e\\//g' | xcsift -f toon -w | tee "$filtered_log"
   statuses=("${PIPESTATUS[@]}")
   set -e
 

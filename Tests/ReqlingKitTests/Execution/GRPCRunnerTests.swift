@@ -52,11 +52,11 @@ final class GRPCRunnerTests: XCTestCase {
         XCTAssertEqual(try texts(call, .sent), ["hi Ada"])
         XCTAssertEqual(try texts(call, .received), ["hi Ada"])
         XCTAssertEqual(try json(call.events.last).value(forKey: "index") as? Int, 7)
-        XCTAssertTrue(call.sentMetadata.contains(KeyValuePair(key: "authorization", value: "Bearer \(TemplateResolver.mask)")))
-        XCTAssertTrue(call.sentMetadata.contains(KeyValuePair(key: "x-secret", value: TemplateResolver.mask)))
+        XCTAssertTrue(call.sentMetadata.contains(key: "authorization", value: "Bearer \(TemplateResolver.mask)"))
+        XCTAssertTrue(call.sentMetadata.contains(key: "x-secret", value: TemplateResolver.mask))
         XCTAssertFalse(call.sentMetadata.contains { $0.key == "x-off" })
-        XCTAssertTrue(call.initialMetadata.contains(KeyValuePair(key: "x-initial", value: "hello")))
-        XCTAssertTrue(call.trailers.contains(KeyValuePair(key: "x-trailer", value: "bye")))
+        XCTAssertTrue(call.initialMetadata.contains(key: "x-initial", value: "hello"))
+        XCTAssertTrue(call.trailers.contains(key: "x-trailer", value: "bye"))
         XCTAssertEqual(log.received.last?["authorization"], "Bearer s3cr3t-token")
         XCTAssertEqual(log.received.last?["x-secret"], "s3cr3t-token")
         let cached = try Data(contentsOf: fixture.directory.file("Support/Responses/\(project)/\(request).json"))
@@ -153,7 +153,7 @@ final class GRPCRunnerTests: XCTestCase {
         let basic = try XCTUnwrap(exchange.grpc, "\(exchange.outcome)")
         XCTAssertEqual(log.received.last?["authorization"], "Basic \(Data("ada:pw".utf8).base64EncodedString())")
         let maskedBasic = "Basic \(Data("ada:\(TemplateResolver.mask)".utf8).base64EncodedString())"
-        XCTAssertTrue(basic.sentMetadata.contains(KeyValuePair(key: "authorization", value: maskedBasic)))
+        XCTAssertTrue(basic.sentMetadata.contains(key: "authorization", value: maskedBasic))
 
         try fixture.library.mutate(project) { document in
             try document.updateRequest(request) { item in

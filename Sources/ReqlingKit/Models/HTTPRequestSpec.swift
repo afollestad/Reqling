@@ -36,17 +36,17 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable {
     /// Splits a query string out of `url` and appends its items to `queryParameters` as enabled rows. Item text is
     /// kept as written, percent-escapes included, so encoding happens once, when the request is built; only `+` is
     /// read as a space, as form-encoded queries mean it (`?q=a+b` searches for "a b").
+    ///
+    /// The new rows' IDs derive from their positions and text, so normalizing the same spec twice yields equal specs:
+    /// editors normalize every stored spec they read, and a random ID would make each read look like a change elsewhere.
     public func normalized() -> HTTPRequestSpec {
-        guard let questionMark = url.firstIndex(of: "?") else {
+        guard let (path, query) = Self.splitQuery(url) else {
             return self
         }
         var copy = self
-        copy.url = String(url[..<questionMark])
-        var query = url[url.index(after: questionMark)...]
-        if let fragment = query.firstIndex(of: "#") {
-            query = query[..<fragment]
-        }
-        copy.queryParameters += Self.parseQuery(String(query))
+        copy.url = path
+        copy.queryParameters += Self.parseQuery(query)
+        copy.queryParameters.deriveIDs(at: queryParameters.count..<copy.queryParameters.count, name: Self.queryRowName)
         return copy
     }
 
@@ -78,12 +78,33 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable {
     }
 
     /// Applies URL-bar text: the query becomes the enabled rows, and disabled rows the bar cannot show are kept.
+    ///
+    /// Rows the text still describes keep their IDs (`carryingIDs(into:reserving:name:)`), so typing in the bar edits
+    /// rows rather than replacing them, and a merge with a change made elsewhere meanwhile keeps that change.
     public mutating func applyDisplayURL(_ text: String) {
+        let enabled = queryParameters.filter(\.isEnabled)
         let disabled = queryParameters.filter { !$0.isEnabled }
-        url = text
-        queryParameters = []
-        self = normalized()
-        queryParameters += disabled
+        let (path, query) = Self.splitQuery(text) ?? (text, "")
+        url = path
+        let parsed = enabled.carryingIDs(into: Self.parseQuery(query), reserving: Set(disabled.map(\.id)), name: Self.queryRowName)
+        queryParameters = parsed + disabled
+    }
+
+    /// `url` before its `?`, and the query after it up to any `#fragment`; `nil` when there is no `?`.
+    private static func splitQuery(_ url: String) -> (path: String, query: String)? {
+        guard let questionMark = url.firstIndex(of: "?") else {
+            return nil
+        }
+        var query = url[url.index(after: questionMark)...]
+        if let fragment = query.firstIndex(of: "#") {
+            query = query[..<fragment]
+        }
+        return (String(url[..<questionMark]), String(query))
+    }
+
+    /// What a query row parsed from text derives its ID from (`deriveIDs`).
+    private static func queryRowName(_ index: Int, _ row: KeyValuePair) -> String {
+        "query/\(index)/\(row.key)=\(row.value)"
     }
 
     static func parseQuery(_ query: String) -> [KeyValuePair] {
@@ -113,8 +134,8 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         method = try container.decodeIfPresent(HTTPMethod.self, forKey: .method) ?? .get
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
-        queryParameters = try container.decodeIfPresent([KeyValuePair].self, forKey: .queryParameters) ?? []
-        headers = try container.decodeIfPresent([KeyValuePair].self, forKey: .headers) ?? []
+        queryParameters = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .queryParameters) ?? []
+        headers = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .headers) ?? []
         disabledAutoHeaders = try container.decodeIfPresent([String].self, forKey: .disabledAutoHeaders) ?? []
         body = try container.decodeIfPresent(HTTPBody.self, forKey: .body) ?? HTTPBody()
         auth = try container.decodeIfPresent(HTTPAuth.self, forKey: .auth) ?? .inherit

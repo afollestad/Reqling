@@ -245,11 +245,11 @@ final class HTTPRequestBuilderTests: XCTestCase {
         spec.applyDisplayURL("https://x/b?q=1&flag#frag")
 
         XCTAssertEqual(spec.url, "https://x/b")
-        XCTAssertEqual(spec.queryParameters, [
+        XCTAssertEqual(spec.queryParameters.unidentified, [
             KeyValuePair(key: "q", value: "1"),
             KeyValuePair(key: "flag", value: ""),
             KeyValuePair(key: "off", value: "1", isEnabled: false)
-        ])
+        ].unidentified)
         XCTAssertEqual(spec.displayURL, "https://x/b?q=1&flag")
     }
 
@@ -328,7 +328,7 @@ final class HTTPRequestBuilderTests: XCTestCase {
         var spec = HTTPRequestSpec()
         spec.applyDisplayURL("https://x/search?q=a+b&lit=%2B")
 
-        XCTAssertEqual(spec.queryParameters, [KeyValuePair(key: "q", value: "a b"), KeyValuePair(key: "lit", value: "%2B")])
+        XCTAssertEqual(spec.queryParameters.unidentified, [KeyValuePair(key: "q", value: "a b"), KeyValuePair(key: "lit", value: "%2B")].unidentified)
         let prepared = try HTTPRequestBuilder.prepare(spec, context: context())
         XCTAssertEqual(prepared.urlRequest.url?.absoluteString, "https://x/search?q=a%20b&lit=%2B")
 

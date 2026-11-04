@@ -44,8 +44,10 @@ public struct TypedID<Tag>: Hashable, Comparable, Codable, Sendable, CustomStrin
     /// A name-based (RFC 4122 version 5) ID: the same `name` always yields the same ID.
     ///
     /// The project reader uses it for items whose file carries no usable ID (missing, or a duplicate of another
-    /// file's), keyed by the project and the file's path. A random fallback would change on every reload, so an open
-    /// editor would lose its item and selection, expansion, and secrets keyed by the ID would be orphaned.
+    /// file's), keyed by the project and the file's path, and list rows (`ListRow`) for rows stored without one, keyed
+    /// by where they sit in their file. A random fallback would change on every reload, so an open editor would lose
+    /// its item and selection, expansion, and secrets keyed by the ID would be orphaned, and every reload would look
+    /// like a change.
     static func derived(from name: String) -> Self {
         var hasher = Insecure.SHA1()
         hasher.update(data: typedIDDerivationNamespace)
@@ -73,6 +75,8 @@ public enum RequestNodeTag {}
 public enum VariableTag {}
 public enum CertificateEntryTag {}
 public enum LocalPathTag {}
+public enum KeyValuePairTag {}
+public enum MultipartFieldTag {}
 
 public typealias ProjectID = TypedID<ProjectTag>
 public typealias EnvironmentID = TypedID<EnvironmentTag>
@@ -81,3 +85,7 @@ public typealias RequestNodeID = TypedID<RequestNodeTag>
 public typealias VariableID = TypedID<VariableTag>
 public typealias CertificateEntryID = TypedID<CertificateEntryTag>
 public typealias LocalPathID = TypedID<LocalPathTag>
+/// Unique only within one list, such as one request's headers: a duplicated request keeps its rows' IDs.
+public typealias KeyValuePairID = TypedID<KeyValuePairTag>
+/// Unique only within one request's form-data fields.
+public typealias MultipartFieldID = TypedID<MultipartFieldTag>

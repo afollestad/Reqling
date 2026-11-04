@@ -32,7 +32,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.5"),
         .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.21.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.0.3"),
-        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3")
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3"),
+        // The built-in MCP server: protocol types, the server, and a stateless Streamable HTTP transport.
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1")
     ],
     targets: [
         .target(
@@ -44,9 +46,10 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 // The gRPC executor's TLS hooks (trust callback, `SecKey`-backed private key) are NIOSSL types.
                 .product(name: "NIOCore", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl")
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "MCP", package: "swift-sdk")
             ],
-            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC")
+            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP")
         ),
         .executableTarget(
             name: "Reqling",
@@ -72,7 +75,8 @@ let package = Package(
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
-                .product(name: "SwiftProtobuf", package: "swift-protobuf")
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "MCP", package: "swift-sdk")
             ],
             resources: [.copy("GRPC/Fixtures")]
         ),

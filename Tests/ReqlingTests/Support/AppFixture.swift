@@ -34,6 +34,7 @@ final class AppFixture {
             system: system,
             protoWorkspaces: component.protoWorkspaces,
             protocTooling: protoc.model,
+            mcpServer: component.mcpServer,
             sleep: sleep
         )
     }
@@ -60,6 +61,7 @@ final class StubSystemIntegration: SystemIntegration {
     private(set) var quitConfirmations = 0
     private(set) var pasteboard: String?
     private(set) var revealed: [URL] = []
+    private(set) var broughtToFront = 0
 
     func chooseDirectory(prompt: String) -> URL? {
         directoryToChoose
@@ -75,6 +77,10 @@ final class StubSystemIntegration: SystemIntegration {
 
     func reveal(_ url: URL) {
         revealed.append(url)
+    }
+
+    func bringToFront() {
+        broughtToFront += 1
     }
 
     func copyToPasteboard(_ string: String) {

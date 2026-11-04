@@ -16,7 +16,7 @@ extension AppModel {
         guard let url = system.chooseDirectory(prompt: "Add Project") else {
             return
         }
-        guard let id = perform("Couldn't Add the Project", { try library.addProjectFolder(url) }) else {
+        guard let id = perform("Couldn't Add the Project", { try lifecycle.addProjectFolder(url) }) else {
             return
         }
         selection = .project(id)
@@ -26,20 +26,14 @@ extension AppModel {
         if selection?.projectID == id {
             selection = nil
         }
-        library.removeProject(id)
-        runner.forget(id)
-        workspace.forgetProject(id)
+        lifecycle.removeProject(id)
     }
 
     func deleteProject(_ id: ProjectID) {
         if selection?.projectID == id {
             selection = nil
         }
-        guard perform("Couldn't Delete the Project", { try library.deleteProject(id) }) != nil else {
-            return
-        }
-        runner.forget(id)
-        workspace.forgetProject(id)
+        perform("Couldn't Delete the Project") { try lifecycle.deleteProject(id) }
     }
 
     func renameProject(_ id: ProjectID, to name: String) {
@@ -132,7 +126,7 @@ extension AppModel {
         guard let document = library.document(project), let original = document.node(node) else {
             return
         }
-        let copy = Self.copy(original, named: "\(original.name) Copy")
+        let copy = original.copy(named: "\(original.name) Copy")
         let parent = document.parentID(of: node)
         let index = (document.children(of: parent) ?? []).firstIndex { $0.id == node }.map { $0 + 1 }
         guard perform("Couldn't Duplicate the Item", {
@@ -225,7 +219,7 @@ extension AppModel {
         }
     }
 
-    private func expandAncestors(of node: RequestNodeID, in project: ProjectID) {
+    func expandAncestors(of node: RequestNodeID, in project: ProjectID) {
         let ancestors = library.document(project)?.ancestors(of: node).map(\.id) ?? []
         workspace.updateProject(project) { state in
             state.isCollapsed = false
@@ -253,27 +247,11 @@ extension AppModel {
         case .shared:
             return .relative(ProjectPathResolver.relativePath(from: root, to: url))
         case .thisMacOnly:
-            return workspace.addLocalPath(url.path)
+            return workspace.addLocalPath(url.path, in: project)
         }
     }
 
     func pathResolver(for project: ProjectID) -> ProjectPathResolver? {
-        guard let root = library.project(project)?.url else {
-            return nil
-        }
-        let localPaths = Dictionary(uniqueKeysWithValues: workspace.state.localPaths.compactMap { key, value in
-            LocalPathID(string: key).map { ($0, value) }
-        })
-        return ProjectPathResolver(projectRoot: root, localPaths: localPaths)
-    }
-
-    /// A deep copy with fresh IDs throughout, so the copy and the original never share files or selection.
-    private static func copy(_ node: RequestNode, named name: String? = nil) -> RequestNode {
-        switch node {
-        case .request(let request):
-            return .request(RequestItem(name: name ?? request.name, kind: request.kind))
-        case .folder(let folder):
-            return .folder(RequestFolder(name: name ?? folder.name, auth: folder.auth, children: folder.children.map { copy($0) }))
-        }
+        lifecycle.pathResolver(for: project)
     }
 }

@@ -7,7 +7,7 @@
 
 <h1 align="center">Reqling</h1>
 
-<p align="center">A minimal, fully native macOS client for HTTP and gRPC APIs.</p>
+<p align="center">A minimal, fully native macOS client for HTTP and gRPC APIs, with a built-in MCP server for AI agents.</p>
 
 Reqling is a SwiftUI app for creating, storing, organizing, and sending web requests, in the spirit of Postman but smaller and native to the Mac. It is in early development.
 
@@ -54,6 +54,16 @@ The schema comes from one of three places:
 
 **Example** fills a message with every field of its type. Calls use the project's client certificates and CA certificates, the same as HTTP requests.
 
+## MCP server
+
+Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agents on your Mac can work with your projects: create and edit projects, environments, variables, and saved requests, compile protos, and send requests and read their responses. Changes appear in the window as they happen. Turn it on in **Settings ▸ MCP**, which also shows the setup command for Claude Code and the config for Codex:
+
+```sh
+claude mcp add --transport http reqling http://127.0.0.1:39717/mcp --header "Authorization: Bearer <token>"
+```
+
+The server listens on `127.0.0.1` only and requires its bearer token, which is kept in your Keychain and can be regenerated. Secret values are write-only to agents: no tool returns one, and resolved requests and responses show them masked, even where a server echoes one back. Deletions go to the Trash.
+
 ## TLS and client certificates
 
 A project's **Project Settings** take client certificates for mutual TLS — a PKCS#12 file (`.p12`/`.pfx`) or an identity already in your Keychain — matched by host (`api.example.com`, `*.internal`, `host:8443`), plus extra CA certificates trusted in addition to the system's. Passphrases are stored in your Keychain. For a `.crt` and `.key` pair, convert it first: `openssl pkcs12 -export -in client.crt -inkey client.key -out client.p12`.
@@ -82,7 +92,7 @@ Debug builds use the `com.afollestad.reqling.debug` identity and appear as **Req
 
 Dependency injection uses [Needle](https://github.com/uber/needle). The build and test scripts regenerate its providers before compiling, which is why `setup.sh` installs the matching `needle` CLI.
 
-`ReqlingKit` holds everything that is not UI — the project format, templating, HTTP, TLS, and the request runner — and is tested without the app. The tests are written to run unattended: servers bind loopback on ephemeral ports, and nothing touches your Keychain, Trash, or real Application Support. TLS certificates and keys are minted per run, never committed.
+`ReqlingKit` holds everything that is not UI — the project format, templating, HTTP, gRPC, TLS, the request runner, and the MCP server — and is tested without the app. The tests are written to run unattended: servers bind loopback on ephemeral ports, and nothing touches your Keychain, Trash, or real Application Support. TLS certificates and keys are minted per run, never committed.
 
 ## Building a release
 

@@ -59,9 +59,12 @@ extension RequestRunner {
         } else {
             live.outbox.finish()
         }
-        latest[key] = live.exchange
+        let publishes = options.unsaved == nil
+        if publishes {
+            latest[key] = live.exchange
+        }
         let outcome = await GRPCExecutor().execute(call) { event in
-            await self.receive(event, on: live, key: key)
+            await self.receive(event, on: live, key: key, publishes: publishes)
         }
         if liveCalls[key] === live {
             liveCalls[key] = nil
@@ -74,12 +77,16 @@ extension RequestRunner {
     /// make a fast stream's cost grow with every message; between publishes, events only accumulate.
     static let livePublishInterval: Duration = .milliseconds(100)
 
-    private func receive(_ event: GRPCCallEvent, on live: GRPCLiveCall, key: RunKey) {
+    /// `publishes` is false for an unsaved run, which records its events without showing them.
+    private func receive(_ event: GRPCCallEvent, on live: GRPCLiveCall, key: RunKey, publishes: Bool) {
         // A replaced or forgotten run keeps streaming until its cancellation lands; it must not publish.
         guard liveCalls[key] === live else {
             return
         }
         live.apply(event)
+        guard publishes else {
+            return
+        }
         let now = ContinuousClock.now
         guard let last = live.lastPublished, now - last < Self.livePublishInterval else {
             publish(live, key: key, at: now)
@@ -273,5 +280,59 @@ extension RequestRunner {
         }
         let issue = schema.issue.map { " \($0)" } ?? ""
         return RunFailure(kind: .invalidRequest, message: "“\(path)” is not in \(source).\(issue)")
+    }
+}
+
+/// What a gRPC request would send, resolved and masked, without asking for its schema or connecting.
+public struct GRPCRequestPreview: Sendable {
+    public let target: String
+    public let methodPath: String
+    public let metadata: [KeyValuePair]
+    /// Every message in the spec, in order, whatever the method's kind; the call sends only those its kind takes.
+    public let messages: [String]
+    public let unresolvedVariables: [String]
+}
+
+extension RequestRunner {
+    /// Resolves a gRPC request's target, metadata (auth included), and messages as a run would, with secrets masked;
+    /// unresolved names are listed rather than refused.
+    public func previewGRPC(
+        _ request: RequestNodeID,
+        in project: ProjectID,
+        options: RunOptions = RunOptions()
+    ) throws(RunFailure) -> GRPCRequestPreview {
+        var options = options
+        options.allowUnresolved = true
+        let context = try runContext(request, in: project, options: options)
+        guard let spec = context.item.kind.grpcSpec else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
+        }
+        var templates = GRPCTemplates(resolver: context.resolver)
+        let endpoint = try GRPCRequestResolution.endpoint(spec, templates: &templates, authChain: context.authChain, defaults: settings.settings)
+        var messages: [String] = []
+        for message in spec.messages {
+            messages.append(try templates.resolve(message).shown)
+        }
+        return GRPCRequestPreview(
+            target: endpoint.shownTarget,
+            methodPath: spec.methodPath,
+            metadata: endpoint.shownMetadata,
+            messages: messages,
+            unresolvedVariables: templates.unresolved
+        )
+    }
+
+    /// Masks every secret value the project holds, in any environment, wherever it appears in `text`, such as a
+    /// response that echoes a token back. Every environment, not just the run's: a last response may have come from any
+    /// of them. Take it before a run starts, so a request deleted meanwhile cannot leave the output unmasked.
+    func maskingSecrets(in project: ProjectID, variableOverrides: [String: String] = [:]) -> @Sendable (String) -> String {
+        guard let document = library.document(project) else {
+            return { $0 }
+        }
+        let redactions = document.allEnvironments.map { environment in
+            let scope = VariableScope(document: document, activeEnvironmentID: environment.id, overrides: variableOverrides)
+            return SecretRedaction(resolver: TemplateResolver(scope: scope, dynamic: dynamic))
+        }
+        return { text in redactions.reduce(text) { $1.apply($0) } }
     }
 }

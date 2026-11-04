@@ -114,24 +114,18 @@ private struct RawBodyEditor: View {
     }
 }
 
-/// `MultipartField` has no identity, so rows are keyed by view-local `RowIdentities` and write through
-/// `IndexedRowWriter`.
+/// Rows are keyed by their own IDs, which `MultipartField`'s list decoding keeps unique, and write through
+/// `IdentifiedRowWriter`.
 private struct FormDataEditor: View {
     @Binding var fields: [MultipartField]
     let editor: RequestEditorViewModel
 
-    @State private var identities = RowIdentities()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(IdentifiedRow.rows(identities.ids(count: fields.count))) { slot in
-                FormDataRow(
-                    writer: IndexedRowWriter(rows: $fields, index: slot.index, shown: fields[slot.index], identities: identities),
-                    editor: editor
-                )
+            ForEach(fields) { field in
+                FormDataRow(writer: IdentifiedRowWriter(rows: $fields, shown: field), editor: editor)
             }
             Button {
-                identities.rowWasAppended()
                 fields.append(MultipartField(key: ""))
             } label: {
                 Label("Add Field", systemImage: "plus")
@@ -142,7 +136,7 @@ private struct FormDataEditor: View {
 }
 
 private struct FormDataRow: View {
-    let writer: IndexedRowWriter<MultipartField>
+    let writer: IdentifiedRowWriter<MultipartField>
     let editor: RequestEditorViewModel
 
     var body: some View {

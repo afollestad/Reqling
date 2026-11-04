@@ -101,6 +101,24 @@ final class GRPCEditorViewModelTests: XCTestCase {
         XCTAssertEqual(editor.spec, savedSpec)
     }
 
+    func testMetadataRemovedElsewhereDuringThePauseStaysRemovedWhileTheUsersEditWins() async throws {
+        try changeExternally { $0.metadata = [KeyValuePair(key: "x-kept", value: "1"), KeyValuePair(key: "x-removed", value: "1")] }
+        let kept = try XCTUnwrap(editor.spec.metadata.first)
+        editor.spec.metadata[0].value = "mine"
+        try changeExternally { spec in
+            spec.metadata.removeLast()
+            spec.metadata[0].value = "theirs"
+            spec.metadata.append(KeyValuePair(key: "x-added", value: "1"))
+        }
+
+        await releaseAutosave()
+        await waitUntil("the merged save") { savedSpec?.metadata.first?.value == "mine" }
+
+        XCTAssertEqual(savedSpec?.metadata.map(\.key), ["x-kept", "x-added"])
+        XCTAssertEqual(savedSpec?.metadata.first?.id, kept.id)
+        XCTAssertEqual(editor.spec, savedSpec)
+    }
+
     func testQuittingAsksBeforeLosingADraftStrandedByAnUnavailableProject() throws {
         editor.spec.target = "draft:50051"
         let projectFile = try XCTUnwrap(fixture.library.project(project)?.url.appendingPathComponent("project.json"))

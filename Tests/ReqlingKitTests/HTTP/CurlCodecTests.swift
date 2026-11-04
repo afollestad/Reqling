@@ -17,8 +17,14 @@ final class CurlCodecTests: XCTestCase {
 
         XCTAssertEqual(imported.spec.method, .post)
         XCTAssertEqual(imported.spec.url, "https://api.example.com/users")
-        XCTAssertEqual(imported.spec.queryParameters, [KeyValuePair(key: "page", value: "2"), KeyValuePair(key: "q", value: "a%20b")])
-        XCTAssertEqual(imported.spec.headers, [KeyValuePair(key: "accept", value: "application/json"), KeyValuePair(key: "x-note", value: "it's")])
+        XCTAssertEqual(
+            imported.spec.queryParameters.unidentified,
+            [KeyValuePair(key: "page", value: "2"), KeyValuePair(key: "q", value: "a%20b")].unidentified
+        )
+        XCTAssertEqual(
+            imported.spec.headers.unidentified,
+            [KeyValuePair(key: "accept", value: "application/json"), KeyValuePair(key: "x-note", value: "it's")].unidentified
+        )
         XCTAssertEqual(imported.spec.body.mode, .raw)
         XCTAssertEqual(imported.spec.body.raw, RawBody(text: #"{"name":"Ada"}"#, contentType: "application/json"))
         XCTAssertTrue(imported.warnings.isEmpty)
@@ -39,9 +45,15 @@ final class CurlCodecTests: XCTestCase {
         let form = try CurlCodec.importCommand("curl https://x/upload -F name=Ada -F avatar=@photo.png")
 
         XCTAssertEqual(get.spec.method, .get)
-        XCTAssertEqual(get.spec.queryParameters, [KeyValuePair(key: "q", value: "swift"), KeyValuePair(key: "lang", value: "en us")])
+        XCTAssertEqual(
+            get.spec.queryParameters.unidentified,
+            [KeyValuePair(key: "q", value: "swift"), KeyValuePair(key: "lang", value: "en us")].unidentified
+        )
         XCTAssertEqual(form.spec.method, .post)
-        XCTAssertEqual(form.spec.body.formData, [MultipartField(key: "name", value: "Ada"), MultipartField(key: "avatar", kind: .file)])
+        XCTAssertEqual(
+            form.spec.body.formData.unidentified,
+            [MultipartField(key: "name", value: "Ada"), MultipartField(key: "avatar", kind: .file)].unidentified
+        )
         XCTAssertEqual(form.warnings, ["Choose the file for the “avatar” form field."])
     }
 
@@ -73,7 +85,7 @@ final class CurlCodecTests: XCTestCase {
         XCTAssertTrue(command.hasPrefix("curl -X PATCH 'https://x/it'\\''s'"))
         XCTAssertEqual(reimported.spec.method, .patch)
         XCTAssertEqual(reimported.spec.body.raw.text, #"{"a":"it's"}"#)
-        XCTAssertTrue(reimported.spec.headers.contains(KeyValuePair(key: "X-A", value: "1")))
+        XCTAssertTrue(reimported.spec.headers.contains(key: "X-A", value: "1"))
         XCTAssertEqual(reimported.spec.options.followRedirects, true)
     }
 
@@ -110,7 +122,7 @@ final class CurlCodecTests: XCTestCase {
         XCTAssertEqual(mixed.spec.method, .post)
 
         let files = try CurlCodec.importCommand("curl https://x --data-urlencode name@name.txt --data-urlencode @all.txt")
-        XCTAssertEqual(files.spec.body.urlEncoded, [KeyValuePair(key: "name", value: "")])
+        XCTAssertEqual(files.spec.body.urlEncoded.unidentified, [KeyValuePair(key: "name", value: "")].unidentified)
         XCTAssertEqual(files.warnings.count, 2)
     }
 
@@ -149,24 +161,25 @@ final class CurlCodecTests: XCTestCase {
         let json = try CurlCodec.importCommand(#"curl --json '{"a":1}' https://x"#)
         XCTAssertEqual(json.spec.method, .post)
         XCTAssertEqual(json.spec.body.raw, RawBody(text: #"{"a":1}"#, contentType: "application/json"))
-        XCTAssertEqual(json.spec.headers, [KeyValuePair(key: "Accept", value: "application/json")])
+        XCTAssertEqual(json.spec.headers.unidentified, [KeyValuePair(key: "Accept", value: "application/json")].unidentified)
 
         let bundled = try CurlCodec.importCommand("curl -sXPOST -sH 'X-A: 1' --oauth2-bearer t0k https://x")
         XCTAssertEqual(bundled.spec.method, .post)
-        XCTAssertEqual(bundled.spec.headers, [KeyValuePair(key: "X-A", value: "1")])
+        XCTAssertEqual(bundled.spec.headers.unidentified, [KeyValuePair(key: "X-A", value: "1")].unidentified)
         XCTAssertEqual(bundled.spec.auth, .bearer(token: "t0k"))
         XCTAssertTrue(bundled.warnings.isEmpty)
 
         let get = try CurlCodec.importCommand("curl -G https://x -d 'q=a+b'")
-        XCTAssertEqual(get.spec.queryParameters, [KeyValuePair(key: "q", value: "a b")])
+        XCTAssertEqual(get.spec.queryParameters.unidentified, [KeyValuePair(key: "q", value: "a b")].unidentified)
         XCTAssertEqual(try CurlCodec.importCommand("curl -I https://x").spec.method, .head)
-        XCTAssertEqual(try CurlCodec.importCommand("curl https://x --form-string 'a=@b'").spec.body.formData, [MultipartField(key: "a", value: "@b")])
+        let literal = try CurlCodec.importCommand("curl https://x --form-string 'a=@b'")
+        XCTAssertEqual(literal.spec.body.formData.unidentified, [MultipartField(key: "a", value: "@b")].unidentified)
     }
 
     func testWindowsLineContinuations() throws {
         let imported = try CurlCodec.importCommand("curl https://x \\\r\n  -H 'A: b' \\\r\n  -d \"one \\\r\ntwo\"")
 
-        XCTAssertEqual(imported.spec.headers, [KeyValuePair(key: "A", value: "b")])
+        XCTAssertEqual(imported.spec.headers.unidentified, [KeyValuePair(key: "A", value: "b")].unidentified)
         XCTAssertEqual(imported.spec.body.raw.text, "one two")
         XCTAssertTrue(imported.warnings.isEmpty)
     }

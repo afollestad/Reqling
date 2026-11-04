@@ -95,6 +95,9 @@ final class AppModel {
     /// One workspace per project with proto definitions, kept in step by `syncProtoWorkspaces()`.
     @ObservationIgnored let protoWorkspaces: ProtoWorkspaceStore
     @ObservationIgnored let protocTooling: ProtocToolingModel
+    @ObservationIgnored let lifecycle: ProjectLifecycle
+    @ObservationIgnored let mcpServer: MCPServerController
+    @ObservationIgnored private(set) lazy var mcpSettings = MCPSettingsModel(server: mcpServer, settings: settings, system: system)
     /// Injected so editor autosave debounces deterministically in tests.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
 
@@ -108,6 +111,7 @@ final class AppModel {
         system: any SystemIntegration,
         protoWorkspaces: ProtoWorkspaceStore,
         protocTooling: ProtocToolingModel,
+        mcpServer: MCPServerController,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.library = library
@@ -119,8 +123,14 @@ final class AppModel {
         self.system = system
         self.protoWorkspaces = protoWorkspaces
         self.protocTooling = protocTooling
+        self.mcpServer = mcpServer
         self.sleep = sleep
+        lifecycle = ProjectLifecycle(library: library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
+        for project in library.projects {
+            lifecycle.reconcileLocalPaths(in: project.id)
+        }
         syncProtoWorkspaces()
+        mcpServer.host = self
         if let restored = workspace.state.selection, let project = library.project(restored.projectID) {
             selection = Self.restoredSelection(restored, in: project)
             selectionDidChange(from: nil)
@@ -215,11 +225,7 @@ final class AppModel {
     // MARK: - Environments
 
     func activeEnvironmentID(for project: ProjectID) -> EnvironmentID? {
-        guard let document = library.document(project) else {
-            return nil
-        }
-        let stored = workspace.projectState(project).activeEnvironmentID
-        return stored.flatMap { document.environment($0)?.id } ?? document.defaultEnvironment.id
+        library.document(project).map { workspace.activeEnvironment(in: $0).id }
     }
 
     func setActiveEnvironment(_ environment: EnvironmentID, for project: ProjectID) {
@@ -342,6 +348,7 @@ final class AppModel {
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case grpc
     case interface
+    case mcp
     case requests
 
     var id: Self {
@@ -352,6 +359,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grpc: "gRPC"
         case .interface: "Interface"
+        case .mcp: "MCP"
         case .requests: "Requests"
         }
     }
@@ -360,6 +368,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grpc: "point.3.connected.trianglepath.dotted"
         case .interface: "paintbrush"
+        case .mcp: "sparkles"
         case .requests: "arrow.up.arrow.down"
         }
     }
@@ -368,6 +377,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .grpc: "The protoc that compiles project protos, and defaults for gRPC calls."
         case .interface: "How Reqling looks."
+        case .mcp: "A local server that lets AI agents on this Mac use your projects and send requests."
         case .requests: "Defaults for every request; a request's own options override them."
         }
     }

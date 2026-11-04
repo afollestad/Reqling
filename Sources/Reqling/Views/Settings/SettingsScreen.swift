@@ -60,6 +60,8 @@ private struct SettingsDetail: View {
                     GRPCSettingsPage(settings: model.settings, tooling: model.protocTooling)
                 case .interface:
                     InterfaceSettingsPage(settings: model.settings)
+                case .mcp:
+                    MCPSettingsPage(model: model.mcpSettings)
                 case .requests:
                     RequestsSettingsPage(settings: model.settings)
                 }

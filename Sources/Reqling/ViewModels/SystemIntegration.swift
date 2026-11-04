@@ -15,6 +15,8 @@ protocol SystemIntegration {
     func choosePathSharing(for url: URL) -> PathSharing?
     /// Asks whether to quit even though unsaved edits would be lost; true means quit.
     func confirmQuitDiscardingUnsavedChanges() -> Bool
+    /// Activates Reqling and brings its window forward, for an agent showing the user something.
+    func bringToFront()
 }
 
 enum PathSharing {
@@ -25,6 +27,11 @@ enum PathSharing {
 }
 
 struct AppKitSystemIntegration: SystemIntegration {
+    func bringToFront() {
+        NSApp.activate()
+        NSApp.windows.first { $0.canBecomeMain && !$0.isMiniaturized }?.makeKeyAndOrderFront(nil)
+    }
+
     func chooseDirectory(prompt: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true

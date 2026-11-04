@@ -28,11 +28,11 @@ final class GRPCExecutorTests: XCTestCase {
             return XCTFail("The stream opens before anything else: \(events)")
         }
         let initial = try XCTUnwrap(events.initialMetadata)
-        XCTAssertTrue(initial.contains(KeyValuePair(key: "x-initial", value: "hello")))
-        XCTAssertTrue(initial.contains(KeyValuePair(key: "x-token-bin", value: token)))
+        XCTAssertTrue(initial.contains(key: "x-initial", value: "hello"))
+        XCTAssertTrue(initial.contains(key: "x-token-bin", value: token))
         XCTAssertFalse(initial.contains { $0.key.hasPrefix(":") })
-        XCTAssertTrue(outcome.trailers.contains(KeyValuePair(key: "x-trailer", value: "bye")))
-        XCTAssertTrue(outcome.trailers.contains(KeyValuePair(key: "x-token-bin", value: token)))
+        XCTAssertTrue(outcome.trailers.contains(key: "x-trailer", value: "bye"))
+        XCTAssertTrue(outcome.trailers.contains(key: "x-token-bin", value: token))
     }
 
     func testServerStreamingReceivesEveryMessageInOrder() async throws {
@@ -44,7 +44,7 @@ final class GRPCExecutorTests: XCTestCase {
         let messages = try events.received.map { try Message(serializedBytes: $0) }
         XCTAssertEqual(messages.map(\.index), [0, 1, 2])
         XCTAssertEqual(Set(messages.map(\.text)), ["tick"])
-        XCTAssertTrue(outcome.trailers.contains(KeyValuePair(key: "x-trailer", value: "bye")))
+        XCTAssertTrue(outcome.trailers.contains(key: "x-trailer", value: "bye"))
     }
 
     func testClientStreamingSendsEveryQueuedMessage() async throws {
@@ -110,7 +110,7 @@ final class GRPCExecutorTests: XCTestCase {
 
         for outcome in [rejected, midStream] {
             XCTAssertEqual(outcome.status, GRPCStatusRecord(code: 5, name: "NOT_FOUND", message: "nothing here"))
-            XCTAssertTrue(outcome.trailers.contains(KeyValuePair(key: "x-reason", value: "missing")))
+            XCTAssertTrue(outcome.trailers.contains(key: "x-reason", value: "missing"))
         }
         XCTAssertNil(rejectedEvents.initialMetadata, "A trailers-only rejection has no initial metadata")
     }

@@ -77,7 +77,8 @@ extension AppComponent {
                 keychain: keychainIdentities,
                 system: systemIntegration,
                 protoWorkspaces: protoWorkspaces,
-                protocTooling: protocTooling
+                protocTooling: protocTooling,
+                mcpServer: mcpServer
             )
         }
     }

@@ -1,0 +1,101 @@
+import Foundation
+import MCP
+
+/// How tools describe Reqling's data to agents. Specs, auth, and certificate entries use their on-disk JSON, so what an
+/// agent reads is exactly what it can send back to the create and update tools.
+@MainActor
+enum MCPDescriptions {
+    static func project(_ project: LibraryProject, workspace: WorkspaceStateStore) -> [String: Value] {
+        var summary: [String: Value] = [
+            "id": .string(project.id.description),
+            "name": .string(project.name),
+            "path": .string(project.url.path),
+            "readOnly": .bool(project.isReadOnly)
+        ]
+        if let document = project.document {
+            let active = workspace.activeEnvironment(in: document)
+            summary["status"] = "loaded"
+            summary["environmentCount"] = .int(document.allEnvironments.count)
+            summary["requestCount"] = .int(document.allRequests.count)
+            summary["activeEnvironment"] = environmentReference(active)
+        } else {
+            summary["status"] = "unavailable"
+            summary["reason"] = .string(project.unavailableReason ?? "")
+        }
+        return summary
+    }
+
+    static func environmentReference(_ environment: RequestEnvironment) -> Value {
+        ["id": .string(environment.id.description), "name": .string(environment.name)]
+    }
+
+    static func environment(_ environment: RequestEnvironment, in document: ProjectDocument, active: EnvironmentID) -> [String: Value] {
+        [
+            "id": .string(environment.id.description),
+            "name": .string(environment.name),
+            "isDefault": .bool(document.isDefaultEnvironment(environment.id)),
+            "isActive": .bool(environment.id == active),
+            "variableCount": .int(environment.variables.count)
+        ]
+    }
+
+    /// A secret's value is never included; `secret: true` says one is stored.
+    static func variable(_ variable: Variable) -> Value {
+        var description: [String: Value] = [
+            "key": .string(variable.key),
+            "enabled": .bool(variable.isEnabled),
+            "secret": .bool(variable.isSecret)
+        ]
+        if !variable.isSecret {
+            description["value"] = .string(variable.value)
+        }
+        return .object(description)
+    }
+
+    /// One line per request: enough to pick it, without its whole spec.
+    static func requestSummary(_ request: RequestItem, folderPath: [String]) -> Value {
+        var summary: [String: Value] = [
+            "id": .string(request.id.description),
+            "name": .string(request.name),
+            "kind": .string(request.kind.name.rawValue),
+            "folderPath": .array(folderPath.map(Value.string))
+        ]
+        switch request.kind {
+        case .http(let spec):
+            summary["method"] = .string(spec.method.rawValue)
+            summary["url"] = .string(spec.displayURL)
+        case .grpc(let spec):
+            summary["target"] = .string(spec.target)
+            summary["rpc"] = .string(spec.methodPath)
+        }
+        return .object(summary)
+    }
+
+    /// The request with its full spec, as stored.
+    static func request(_ request: RequestItem, in document: ProjectDocument) throws -> [String: Value] {
+        guard case .object(var description) = try MCPJSON.encode(request) else {
+            return [:]
+        }
+        description["folderPath"] = .array(document.ancestors(of: request.id).map { Value.string($0.name) })
+        description["parentFolder"] = document.parentID(of: request.id).map { .string($0.description) } ?? .null
+        return description
+    }
+
+    /// The folder and request tree, requests summarized.
+    static func tree(_ nodes: [RequestNode], path: [String] = []) -> Value {
+        .array(nodes.map { node in
+            switch node {
+            case .request(let request):
+                return requestSummary(request, folderPath: path)
+            case .folder(let folder):
+                return [
+                    "id": .string(folder.id.description),
+                    "name": .string(folder.name),
+                    "kind": "folder",
+                    "auth": (try? MCPJSON.encode(folder.auth)) ?? .null,
+                    "children": tree(folder.children, path: path + [folder.name])
+                ]
+            }
+        })
+    }
+}

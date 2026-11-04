@@ -40,6 +40,56 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(document.environment(editor.selectedID)?.variables.first?.value, "s3cr3t")
     }
 
+    func testEnvironmentsDoneMergesWithChangesMadeElsewhereWhileTheSheetWasOpen() throws {
+        let both = Variable(key: "both", value: "1")
+        let elsewhere = Variable(key: "elsewhere", value: "1")
+        let removed = Variable(key: "removed", value: "1")
+        let secret = Variable(key: "token", value: "s3cr3t", isSecret: true)
+        let staging = RequestEnvironment(name: "Staging", variables: [Variable(key: "host", value: "a")])
+        let gone = RequestEnvironment(name: "Gone")
+        try fixture.library.mutate(project) { document in
+            document.defaultEnvironment.variables = [both, elsewhere, removed, secret]
+            document.environments = [staging, gone]
+        }
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.defaultEnvironment.variables[0].value = "sheet"
+        editor.addEnvironment()
+
+        try fixture.library.mutate(project) { document in
+            document.defaultEnvironment.variables[0].value = "agent"
+            document.defaultEnvironment.variables[1].value = "agent"
+            document.defaultEnvironment.variables.removeAll { $0.id == removed.id }
+            document.environments[0].name = "Staging (renamed)"
+            document.environments.removeAll { $0.id == gone.id }
+            document.environments.append(RequestEnvironment(name: "Added elsewhere"))
+        }
+        XCTAssertTrue(editor.save())
+
+        let document = try XCTUnwrap(fixture.library.document(project))
+        XCTAssertEqual(document.defaultEnvironment.variables.map(\.key), ["both", "elsewhere", "token"], "a removal elsewhere stays")
+        XCTAssertEqual(document.defaultEnvironment.variables.map(\.value), ["sheet", "agent", "s3cr3t"])
+        XCTAssertEqual(document.environments.map(\.name), ["Staging (renamed)", "New Environment", "Added elsewhere"])
+        XCTAssertEqual(try fixture.component.secretStore.secrets(for: project).values.sorted(), ["s3cr3t"])
+        XCTAssertEqual(editor.environments.map(\.name), document.environments.map(\.name), "the sheet shows what Done stored")
+    }
+
+    /// A value the sheet typed in the clear stays out of the file when the variable was made secret elsewhere meanwhile.
+    func testAVariableMadeSecretElsewhereStaysSecretWhenTheSheetEditsIt() throws {
+        let variable = Variable(key: "token", value: "old")
+        try fixture.library.mutate(project) { $0.defaultEnvironment.variables = [variable] }
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.defaultEnvironment.variables[0].value = "typed"
+        try fixture.library.mutate(project) { $0.defaultEnvironment.variables[0].isSecret = true }
+
+        XCTAssertTrue(editor.save())
+
+        let saved = try XCTUnwrap(fixture.library.document(project)?.defaultEnvironment.variables.first)
+        XCTAssertTrue(saved.isSecret)
+        XCTAssertEqual(saved.value, "typed")
+        let file = try XCTUnwrap(fixture.library.project(project)?.url.appendingPathComponent("environments/default.json"))
+        XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("typed"))
+    }
+
     func testDuplicateKeysAreReported() {
         let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
         editor.selected.variables = [Variable(key: "a", value: "1"), Variable(key: "a", value: "2"), Variable(key: "b", value: "3")]
@@ -83,6 +133,39 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: kept.id, in: project), "rotated")
         XCTAssertNil(try fixture.library.loadCertificatePassphrase(for: removed.id, in: project))
         XCTAssertNil(fixture.component.workspaceState.keychainIdentity(for: removed.id))
+    }
+
+    func testProjectSettingsDoneMergesWithChangesMadeElsewhereWhileTheSheetWasOpen() throws {
+        let typed = ClientCertificateEntry(hostPattern: "a.test", source: .pkcs12(.relative("a.p12")))
+        let untouched = ClientCertificateEntry(hostPattern: "b.test", source: .pkcs12(.relative("b.p12")))
+        try fixture.library.mutate(project) { document in
+            document.tls.clientCertificates = [typed, untouched]
+            document.tls.caCertificates = [.relative("ca.pem")]
+        }
+        try fixture.library.setCertificatePassphrase("untouched", for: untouched.id, in: project)
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+        settings.name = "Renamed here"
+        settings.passphrases[typed.id] = "typed"
+
+        let added = ClientCertificateEntry(hostPattern: "c.test", source: .pkcs12(.relative("c.p12")))
+        try fixture.library.mutate(project) { document in
+            // The sheet changed `typed`'s passphrase, so its edit beats this removal; it never touched `untouched`.
+            document.tls.clientCertificates = [added]
+            document.tls.caCertificates.append(.relative("other.pem"))
+            document.auth = .bearer(token: "{{agent}}")
+        }
+        try fixture.library.setCertificatePassphrase("added", for: added.id, in: project)
+        XCTAssertTrue(settings.save())
+
+        let document = try XCTUnwrap(fixture.library.document(project))
+        XCTAssertEqual(document.name, "Renamed here")
+        XCTAssertEqual(document.auth, .bearer(token: "{{agent}}"))
+        XCTAssertEqual(document.tls.clientCertificates, [typed, added])
+        XCTAssertEqual(document.tls.caCertificates, [.relative("ca.pem"), .relative("other.pem")])
+        XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: typed.id, in: project), "typed")
+        XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: added.id, in: project), "added")
+        XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: untouched.id, in: project), "untouched", "not the sheet's removal")
+        XCTAssertEqual(settings.passphrases[added.id], "added", "the sheet shows what Done stored")
     }
 
     func testAPassphraseTheKeychainCannotReadIsFlaggedAndNeverSavedOver() throws {
@@ -185,7 +268,7 @@ final class SheetModelTests: XCTestCase {
 
         XCTAssertEqual(reopened.protoRoots.count, 1)
         XCTAssertEqual(reopened.descriptorSets.count, 1)
-        XCTAssertEqual(fixture.component.workspaceState.state.localPaths.count, 2, "a repeat pick records no second local path")
+        XCTAssertEqual(fixture.component.workspaceState.localPaths(in: project).count, 2, "a repeat pick records no second local path")
     }
 
     func testProjectSettingsEntryFileEditsLandOnlyOnTheirOwnRow() {

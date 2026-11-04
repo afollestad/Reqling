@@ -7,8 +7,9 @@ public struct RunOptions: Sendable {
     public var environmentID: EnvironmentID?
     /// One-run values that beat every environment.
     public var variableOverrides: [String: String]
-    /// One-run edits to the spec, such as an extra header; the saved template is untouched.
-    public var specOverride: (@Sendable (inout HTTPRequestSpec) -> Void)?
+    /// Replaces the saved spec for this run only, such as with an extra header or other messages; the saved template is
+    /// untouched. Its protocol must match the request's.
+    public var spec: RequestKind?
     /// Send even when some `{{variables}}` cannot be resolved; they go out verbatim.
     public var allowUnresolved: Bool
     /// For client-streaming and bidirectional gRPC calls: leave the request stream open after the request's own
@@ -19,16 +20,20 @@ public struct RunOptions: Sendable {
     public init(
         environmentID: EnvironmentID? = nil,
         variableOverrides: [String: String] = [:],
-        specOverride: (@Sendable (inout HTTPRequestSpec) -> Void)? = nil,
+        spec: RequestKind? = nil,
         allowUnresolved: Bool = false,
         keepsStreamOpen: Bool = false
     ) {
         self.environmentID = environmentID
         self.variableOverrides = variableOverrides
-        self.specOverride = specOverride
+        self.spec = spec
         self.allowUnresolved = allowUnresolved
         self.keepsStreamOpen = keepsStreamOpen
     }
+
+    /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
+    /// neither shows in the window nor lands in the response cache.
+    var unsaved: RequestItem?
 }
 
 /// One request in one project. Runs are tracked by this, never by request ID alone: a request file copied between
@@ -62,7 +67,7 @@ public final class RequestRunner {
     @ObservationIgnored private let keychain: any KeychainIdentityStore
     @ObservationIgnored private let cache: ResponseCache
     @ObservationIgnored private let userAgent: String
-    @ObservationIgnored private let dynamic: DynamicVariables
+    @ObservationIgnored let dynamic: DynamicVariables
     @ObservationIgnored private let makeExecutor: @MainActor () -> HTTPExecutor
     /// `nil` only where gRPC is never run; its requests then fail with an explanation. Public so the editor's Refresh
     /// drops the same reflection cache runs use.
@@ -141,7 +146,7 @@ public final class RequestRunner {
         openStreams.remove(key)
         let startedAt = Date()
         let task: Task<RequestExchange, Never>
-        if library.document(project)?.request(request)?.kind.grpcSpec != nil {
+        if item(request, in: project, options: options)?.kind.grpcSpec != nil {
             // Inside the task, unlike HTTP's preparation: finding the schema can compile protos or ask the server, so
             // it must count as in flight and be cancellable.
             task = Task { await self.runGRPC(request, in: project, options: options, startedAt: startedAt) }
@@ -168,7 +173,27 @@ public final class RequestRunner {
         }
         tasks[key] = nil
         inFlight.remove(key)
-        return record(exchange)
+        return options.unsaved == nil ? record(exchange) : exchange
+    }
+
+    /// Runs `item` as though it were saved at the top of `project`, resolving against the project's environments and
+    /// auth, without recording it: the window never shows the run and nothing is cached. `item.id` must not be a saved
+    /// request's, or the two would share run tracking.
+    public func runUnsaved(_ item: RequestItem, in project: ProjectID, options: RunOptions = RunOptions()) async -> RequestExchange {
+        var options = options
+        options.unsaved = item
+        return await run(item.id, in: project, options: options)
+    }
+
+    /// The request a run sends: the unsaved one, or the saved one with any one-run spec in place of its own.
+    func item(_ request: RequestNodeID, in project: ProjectID, options: RunOptions) -> RequestItem? {
+        guard var item = options.unsaved ?? library.document(project)?.request(request) else {
+            return nil
+        }
+        if let spec = options.spec {
+            item.kind = spec
+        }
+        return item
     }
 
     func failedExchange(_ request: RequestNodeID, in project: ProjectID, startedAt: Date, _ failure: RunFailure) -> RequestExchange {
@@ -261,8 +286,11 @@ public final class RequestRunner {
         guard let project = library.project(projectID), let document = project.document else {
             throw RunFailure(kind: .invalidRequest, message: "The project is not available.")
         }
-        guard let item = document.request(request) else {
+        guard let item = item(request, in: projectID, options: options) else {
             throw RunFailure(kind: .invalidRequest, message: "The request no longer exists.")
+        }
+        if let saved = document.request(request), options.unsaved == nil, saved.kind.name != item.kind.name {
+            throw RunFailure(kind: .invalidRequest, message: "A one-run spec must be \(saved.kind.name.rawValue), as the request is.")
         }
         // An environment an agent names must exist; a stored selection whose environment was deleted (perhaps on
         // another Mac) falls back to Default, as the window shows it.
@@ -277,15 +305,12 @@ public final class RequestRunner {
         }
         let scope = VariableScope(document: document, activeEnvironmentID: environmentID, overrides: options.variableOverrides)
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
-        let localPaths = Dictionary(uniqueKeysWithValues: workspace.state.localPaths.compactMap { key, value in
-            LocalPathID(string: key).map { ($0, value) }
-        })
         return RunContext(
             item: item,
             document: document,
             resolver: resolver,
             redaction: SecretRedaction(resolver: resolver),
-            paths: ProjectPathResolver(projectRoot: project.url, localPaths: localPaths),
+            paths: ProjectPathResolver(projectRoot: project.url, localPaths: workspace.localPaths(in: projectID)),
             environmentName: environmentID.flatMap { document.environment($0)?.name } ?? RequestEnvironment.defaultName
         )
     }
@@ -296,7 +321,6 @@ public final class RequestRunner {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a gRPC request; this works only with HTTP requests.")
         }
         spec = spec.normalized()
-        options.specOverride?(&spec)
         let buildContext = HTTPBuildContext(
             resolver: context.resolver,
             authChain: context.authChain,

@@ -6,7 +6,9 @@ import Observation
 /// references. Keeping these out of the project means switching environments never shows up in `git status`.
 public struct WorkspaceState: Codable, Equatable, Sendable {
     public var projects: [String: ProjectWorkspaceState] = [:]
-    public var localPaths: [String: String] = [:]
+    /// Local paths recorded before they were kept per project. `WorkspaceStateStore.reconcileLocalPaths(in:keeping:)`
+    /// moves each into the project that references it as that project loads.
+    public var unclaimedLocalPaths: [String: String] = [:]
     public var keychainIdentities: [String: Data] = [:]
     public var selection: WorkspaceSelection?
 
@@ -15,14 +17,14 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         projects = try container.decodeIfPresent([String: ProjectWorkspaceState].self, forKey: .projects) ?? [:]
-        localPaths = try container.decodeIfPresent([String: String].self, forKey: .localPaths) ?? [:]
+        unclaimedLocalPaths = try container.decodeIfPresent([String: String].self, forKey: .unclaimedLocalPaths) ?? [:]
         keychainIdentities = try container.decodeIfPresent([String: Data].self, forKey: .keychainIdentities) ?? [:]
         selection = try container.decodeIfPresent(WorkspaceSelection.self, forKey: .selection)
     }
 
     private enum CodingKeys: String, CodingKey {
         case projects
-        case localPaths
+        case unclaimedLocalPaths = "localPaths"
         case keychainIdentities
         case selection
     }
@@ -32,8 +34,26 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
     public var activeEnvironmentID: EnvironmentID?
     public var expandedFolderIDs: Set<RequestNodeID> = []
     public var isCollapsed = false
+    /// The absolute paths behind this project's `ProjectPathReference.local` references, by `LocalPathID`. Scoped to
+    /// the project so forgetting it forgets them, and so pruning one project's paths never sees another's.
+    public var localPaths: [String: String] = [:]
 
     public init() {}
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeEnvironmentID = try container.decodeIfPresent(EnvironmentID.self, forKey: .activeEnvironmentID)
+        expandedFolderIDs = try container.decodeIfPresent(Set<RequestNodeID>.self, forKey: .expandedFolderIDs) ?? []
+        isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
+        localPaths = try container.decodeIfPresent([String: String].self, forKey: .localPaths) ?? [:]
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case activeEnvironmentID
+        case expandedFolderIDs
+        case isCollapsed
+        case localPaths
+    }
 }
 
 public struct WorkspaceSelection: Codable, Equatable, Hashable, Sendable {
@@ -93,28 +113,60 @@ public final class WorkspaceStateStore {
         }
     }
 
-    public func forgetProject(_ id: ProjectID) {
+    /// Drops what this Mac remembers about a project. Removing it from Reqling keeps its local paths, so adding the
+    /// folder back still finds the files chosen for it; deleting it passes `keepingLocalPaths: false`.
+    public func forgetProject(_ id: ProjectID, keepingLocalPaths: Bool = true) {
         update { state in
-            state.projects[id.description] = nil
+            var kept = ProjectWorkspaceState()
+            if keepingLocalPaths {
+                kept.localPaths = state.projects[id.description]?.localPaths ?? [:]
+            }
+            state.projects[id.description] = kept.localPaths.isEmpty ? nil : kept
             if state.selection?.projectID == id {
                 state.selection = nil
             }
         }
     }
 
-    public func localPath(_ id: LocalPathID) -> String? {
-        state.localPaths[id.description]
+    // MARK: - Local paths
+
+    public func localPath(_ id: LocalPathID, in project: ProjectID) -> String? {
+        projectState(project).localPaths[id.description]
     }
 
-    /// Records an absolute path for a new this-Mac-only reference and returns it.
-    public func addLocalPath(_ path: String) -> ProjectPathReference {
+    /// The absolute paths behind `project`'s local references, for its `ProjectPathResolver`.
+    public func localPaths(in project: ProjectID) -> [LocalPathID: String] {
+        Dictionary(uniqueKeysWithValues: projectState(project).localPaths.compactMap { key, value in
+            LocalPathID(string: key).map { ($0, value) }
+        })
+    }
+
+    /// Records an absolute path for a new this-Mac-only reference in `project` and returns it.
+    public func addLocalPath(_ path: String, in project: ProjectID) -> ProjectPathReference {
         let id = LocalPathID()
-        update { $0.localPaths[id.description] = path }
+        updateProject(project) { $0.localPaths[id.description] = path }
         return .local(id)
     }
 
-    public func setLocalPath(_ path: String?, for id: LocalPathID) {
-        update { $0.localPaths[id.description] = path }
+    /// Keeps exactly the paths `project` references (`ProjectDocument.localPathIDs`): claims any recorded before paths
+    /// were kept per project, and deletes the rest, whose references are gone.
+    ///
+    /// Call it when a project loads (launch, or adding its folder), never after an edit: undo can restore a reference
+    /// removed earlier in the session, and its path must still be here when it does.
+    public func reconcileLocalPaths(in project: ProjectID, keeping referenced: Set<LocalPathID>) {
+        let keys = Set(referenced.map(\.description))
+        update { state in
+            var projectState = state.projects[project.description] ?? ProjectWorkspaceState()
+            for key in keys where projectState.localPaths[key] == nil {
+                if let path = state.unclaimedLocalPaths.removeValue(forKey: key) {
+                    projectState.localPaths[key] = path
+                }
+            }
+            projectState.localPaths = projectState.localPaths.filter { keys.contains($0.key) }
+            if projectState != (state.projects[project.description] ?? ProjectWorkspaceState()) {
+                state.projects[project.description] = projectState
+            }
+        }
     }
 
     public func keychainIdentity(for entry: CertificateEntryID) -> Data? {

@@ -60,7 +60,7 @@ public struct GRPCRequestSpec: Hashable, Sendable, Codable {
         security = (try? container.decodeIfPresent(GRPCSecurity.self, forKey: .security)) ?? .plaintext
         service = try container.decodeIfPresent(String.self, forKey: .service) ?? ""
         method = try container.decodeIfPresent(String.self, forKey: .method) ?? ""
-        metadata = try container.decodeIfPresent([KeyValuePair].self, forKey: .metadata) ?? []
+        metadata = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .metadata) ?? []
         messages = try container.decodeIfPresent([String].self, forKey: .messages) ?? ["{}"]
         schema = (try? container.decodeIfPresent(GRPCSchemaSource.self, forKey: .schema)) ?? .automatic
         deadlineSeconds = try container.decodeIfPresent(Double.self, forKey: .deadlineSeconds)

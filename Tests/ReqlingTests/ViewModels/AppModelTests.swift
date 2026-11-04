@@ -41,8 +41,49 @@ final class AppModelTests: XCTestCase {
             keychain: fixture.component.keychainIdentities,
             system: fixture.system,
             protoWorkspaces: fixture.component.protoWorkspaces,
-            protocTooling: fixture.protoc.model
+            protocTooling: fixture.protoc.model,
+            mcpServer: fixture.component.mcpServer
         )
+    }
+
+    /// Only a load prunes: an edit removing a reference keeps its path for undo, and a duplicate sharing a path keeps it.
+    func testALaunchDropsOnlyTheLocalPathsAProjectNoLongerUses() throws {
+        let project = try makeProject()
+        let workspace = fixture.component.workspaceState
+        let root = workspace.addLocalPath("/protos/root", in: project)
+        let removed = workspace.addLocalPath("/protos/removed", in: project)
+        var spec = HTTPRequestSpec()
+        spec.body.binary.file = workspace.addLocalPath("/files/body.bin", in: project)
+        let request = RequestItem(name: "Upload", kind: .http(spec))
+        try fixture.library.mutate(project) { document in
+            document.grpc.protoRoots = [root, removed]
+            try document.insert(.request(request), into: nil)
+        }
+        model.duplicate(request.id, in: project)
+        model.delete(request.id, in: project)
+        try fixture.library.mutate(project) { $0.grpc.protoRoots = [root] }
+
+        XCTAssertEqual(workspace.localPaths(in: project).count, 3)
+
+        _ = relaunch()
+
+        XCTAssertEqual(Set(workspace.localPaths(in: project).values), ["/protos/root", "/files/body.bin"])
+    }
+
+    func testDeletingAProjectForgetsItsLocalPathsButRemovingKeepsThem() throws {
+        let project = try makeProject()
+        let workspace = fixture.component.workspaceState
+        _ = workspace.addLocalPath("/protos", in: project)
+
+        model.removeProject(project)
+
+        XCTAssertEqual(workspace.localPaths(in: project).count, 1)
+
+        let other = try makeProject()
+        _ = workspace.addLocalPath("/protos", in: other)
+        model.deleteProject(other)
+
+        XCTAssertTrue(workspace.localPaths(in: other).isEmpty)
     }
 
     func testCreatingAProjectSelectsIt() throws {
@@ -149,7 +190,7 @@ final class AppModelTests: XCTestCase {
         guard case .local(let id) = model.reference(for: outside, in: project) else {
             return XCTFail("Expected a this-Mac-only reference")
         }
-        XCTAssertEqual(fixture.component.workspaceState.localPath(id), outside.path)
+        XCTAssertEqual(fixture.component.workspaceState.localPath(id, in: project), outside.path)
 
         fixture.system.pathSharing = nil
         XCTAssertNil(model.reference(for: outside, in: project))
