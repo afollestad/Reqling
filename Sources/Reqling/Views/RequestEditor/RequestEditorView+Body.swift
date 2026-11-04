@@ -9,7 +9,13 @@ struct RequestBodyEditor: View {
     var body: some View {
         if editor.spec.method.bodyPolicy.allowsBody {
             VStack(alignment: .leading, spacing: 10) {
-                SectionPicker("Body type", selection: $editor.spec.body.mode, options: HTTPBodyMode.allCases, label: Self.title(for:))
+                SectionPicker(
+                    "Body type",
+                    selection: $editor.spec.body.mode,
+                    options: HTTPBodyMode.allCases,
+                    collapsesToMenu: true,
+                    label: Self.title(for:)
+                )
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }

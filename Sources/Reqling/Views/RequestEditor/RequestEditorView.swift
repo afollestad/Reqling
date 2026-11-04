@@ -32,7 +32,7 @@ struct RequestEditorPane: View {
             }
             VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 // Left enabled, so a read-only request's sections stay browsable.
-                SectionPicker("Section", selection: $editor.tab, options: RequestEditorTab.allCases, label: \.rawValue)
+                SectionPicker("Section", selection: $editor.tab, options: RequestEditorTab.allCases, collapsesToMenu: true, label: \.rawValue)
                 RequestEditorTabContent(editor: editor, model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .disabled(editor.isReadOnly)

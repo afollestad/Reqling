@@ -100,6 +100,8 @@ final class AppModel {
     /// autosave pause, or sooner through `flushPendingEdits()`.
     private(set) var folderAuthDraft: FolderAuthDraft?
     @ObservationIgnored private var folderAuthSaveTask: Task<Void, Never>?
+    /// `tokenContext(for:)`'s memo, per project.
+    @ObservationIgnored private var tokenContexts: [ProjectID: (key: TokenContextKey, value: TemplateTokenContext)] = [:]
     @ObservationIgnored private(set) lazy var sidebar = SidebarViewModel(app: self)
 
     @ObservationIgnored let library: ProjectLibrary
@@ -277,6 +279,25 @@ final class AppModel {
         return VariableScope(document: document, activeEnvironmentID: activeEnvironmentID(for: project))
     }
 
+    /// What the editors know about the variables in `project`, rebuilt only when its environments or the active one
+    /// change. Every `TemplateField` and `CodeEditor` compares this in `updateNSView`, and a request screen re-renders
+    /// once per frame of a resize, so building a fresh scope per read multiplied across every field.
+    func tokenContext(for project: ProjectID) -> TemplateTokenContext {
+        // Read every observable input before consulting the cache, so observation keeps tracking them.
+        let document = library.document(project)
+        let key = TokenContextKey(
+            defaultEnvironment: document?.defaultEnvironment,
+            environments: document?.environments ?? [],
+            activeEnvironmentID: activeEnvironmentID(for: project)
+        )
+        if let cached = tokenContexts[project], cached.key == key {
+            return cached.value
+        }
+        let value = TemplateTokenContext(scope: scope(for: project))
+        tokenContexts[project] = (key, value)
+        return value
+    }
+
     // MARK: - Settings
 
     /// Shows Settings in place of the selection, which it clears so nothing in the sidebar reads as shown. Choosing a
@@ -438,4 +459,12 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .requests: "Defaults for every request; a request's own options override them."
         }
     }
+}
+
+/// Everything `AppModel.tokenContext(for:)` builds from: the project's environments, Default included (the document
+/// stores it apart from the others), and which one is active.
+private struct TokenContextKey: Equatable {
+    let defaultEnvironment: RequestEnvironment?
+    let environments: [RequestEnvironment]
+    let activeEnvironmentID: EnvironmentID?
 }

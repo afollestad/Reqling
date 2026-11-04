@@ -10,12 +10,13 @@ struct ResponseSectionBar: View {
     var body: some View {
         if response.tab == .body {
             let modes = response.body.availableModes
-            ViewThatFits(in: .horizontal) {
+            WidthAdaptive {
                 HStack(spacing: 12) {
                     tabs
                     Spacer(minLength: 0)
                     ResponseBodyControls(response: response, modes: modes, spreads: false, model: model)
                 }
+            } fallback: {
                 VStack(alignment: .leading, spacing: 8) {
                     tabs
                     ResponseBodyControls(response: response, modes: modes, spreads: true, model: model)

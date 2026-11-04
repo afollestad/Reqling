@@ -44,6 +44,8 @@ final class RequestEditorViewModel {
 
     @ObservationIgnored private unowned let app: AppModel
     @ObservationIgnored private let draft: RequestDraft<HTTPRequestSpec>
+    /// `autoHeaders`' memo, keyed on the only parts of the spec it reads; the user agent is fixed for the app's life.
+    @ObservationIgnored private var autoHeadersCache: (key: AutoHeadersKey, value: [AutoHeader])?
 
     init(projectID: ProjectID, requestID: RequestNodeID, app: AppModel) {
         self.projectID = projectID
@@ -69,11 +71,24 @@ final class RequestEditorViewModel {
     }
 
     var tokenContext: TemplateTokenContext {
-        TemplateTokenContext(scope: app.scope(for: projectID))
+        app.tokenContext(for: projectID)
     }
 
     var autoHeaders: [AutoHeader] {
-        HTTPRequestBuilder.autoHeaders(for: spec, userAgent: app.appInfo.userAgent)
+        // Read every observable input before consulting the cache, so observation keeps tracking them.
+        let body = spec.body
+        let key = AutoHeadersKey(
+            allowsBody: spec.method.bodyPolicy.allowsBody,
+            mode: body.mode,
+            rawContentType: body.raw.contentType,
+            binaryContentType: body.binary.contentType
+        )
+        if let autoHeadersCache, autoHeadersCache.key == key {
+            return autoHeadersCache.value
+        }
+        let value = HTTPRequestBuilder.autoHeaders(for: spec, userAgent: app.appInfo.userAgent)
+        autoHeadersCache = (key, value)
+        return value
     }
 
     var isSending: Bool {
@@ -240,4 +255,12 @@ final class RequestEditorViewModel {
         applied.applyDisplayURL(text)
         return applied == spec
     }
+}
+
+/// The parts of a spec `HTTPRequestBuilder.autoHeaders(for:userAgent:)` reads.
+private struct AutoHeadersKey: Equatable {
+    let allowsBody: Bool
+    let mode: HTTPBodyMode
+    let rawContentType: String
+    let binaryContentType: String?
 }

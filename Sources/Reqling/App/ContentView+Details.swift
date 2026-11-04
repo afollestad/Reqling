@@ -100,7 +100,7 @@ struct FolderDetailView: View {
                             get: { model.folderAuth(folder, in: projectID) },
                             set: { model.setAuth($0, forFolder: folder.id, in: projectID) }
                         ),
-                        tokenContext: TemplateTokenContext(scope: model.scope(for: projectID))
+                        tokenContext: model.tokenContext(for: projectID)
                     )
                     // A read-only project refuses every save; editing it would only raise an alert per keystroke.
                     .disabled(isReadOnly)

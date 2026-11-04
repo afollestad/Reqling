@@ -114,7 +114,7 @@ private struct AppSheetView: View {
         case .projectSettings(let project):
             ProjectSettingsSheet(
                 settings: ProjectSettingsModel(projectID: project, app: model),
-                tokenContext: TemplateTokenContext(scope: model.scope(for: project))
+                tokenContext: model.tokenContext(for: project)
             )
         }
     }

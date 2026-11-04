@@ -32,7 +32,7 @@ struct GRPCEditorPane: View {
             }
             VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 // Left enabled, so a read-only request's sections stay browsable.
-                SectionPicker("Section", selection: $editor.tab, options: GRPCEditorTab.allCases) { tab in
+                SectionPicker("Section", selection: $editor.tab, options: GRPCEditorTab.allCases, collapsesToMenu: true) { tab in
                     Self.title(for: tab, listsMessages: listsMessages)
                 }
                 // Disables its own editing parts: an open call's composer must work in a read-only project.

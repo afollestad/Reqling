@@ -275,8 +275,18 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         }
     }
 
+    /// Waits out a live resize (a window or split-divider drag), which re-wraps every frame: rebuilding the tooltips lays
+    /// out every token's range each time. `viewDidEndLiveResize` catches up once.
     override func layout() {
         super.layout()
+        if needsToolTipRefresh, !inLiveResize {
+            needsToolTipRefresh = false
+            refreshToolTips()
+        }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
         if needsToolTipRefresh {
             needsToolTipRefresh = false
             refreshToolTips()

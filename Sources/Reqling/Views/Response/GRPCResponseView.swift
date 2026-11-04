@@ -21,7 +21,13 @@ struct GRPCResponseView: View {
             ResponseFailureView(failure: failure)
         } else if let call = exchange?.grpc {
             VStack(alignment: .leading, spacing: 8) {
-                SectionPicker("Response section", selection: $response.tab, options: GRPCResponseTab.allCases, label: \.rawValue)
+                SectionPicker(
+                    "Response section",
+                    selection: $response.tab,
+                    options: GRPCResponseTab.allCases,
+                    collapsesToMenu: true,
+                    label: \.rawValue
+                )
                 GRPCResponseTabContent(response: response, call: call)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }

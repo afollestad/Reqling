@@ -288,4 +288,14 @@ final class RequestEditorViewModelTests: XCTestCase {
         XCTAssertEqual(context.completions(matching: "b"), ["base"])
         XCTAssertEqual(Array(context.completions(matching: "").prefix(2)), ["base", "token"])
     }
+
+    /// The context is memoized per project; an edit to the Default environment, which the document keeps apart from
+    /// the others, must still reach the fields.
+    func testTheTokenContextFollowsEditsToTheDefaultEnvironment() throws {
+        XCTAssertEqual(editor.tokenContext.entries["base"]?.displayValue, "https://api.test")
+
+        try fixture.library.mutate(project) { $0.defaultEnvironment.variables[0].value = "https://changed.test" }
+
+        XCTAssertEqual(editor.tokenContext.entries["base"]?.displayValue, "https://changed.test")
+    }
 }

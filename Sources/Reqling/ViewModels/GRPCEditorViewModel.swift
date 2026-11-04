@@ -89,7 +89,7 @@ final class GRPCEditorViewModel {
     }
 
     var tokenContext: TemplateTokenContext {
-        TemplateTokenContext(scope: app.scope(for: projectID))
+        app.tokenContext(for: projectID)
     }
 
     var isSending: Bool {

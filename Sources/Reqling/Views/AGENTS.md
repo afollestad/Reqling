@@ -24,6 +24,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 
 ## Render Cost
 
+- **Never use `ViewThatFits` in the main window; use `WidthAdaptive`.** The root hosting view recomputes the window's minimum size on every frame of a resize or divider drag, and `ViewThatFits` re-measures every candidate each time.
 - **Hoist every view-model read above a `GeometryReader`.** Its closure re-runs on each geometry change — every frame of a window or split-view resize — so a read left inside it repeats whatever shaping it triggers per frame. Pair the hoist with memoizing that shaping in the view model (`Sources/Reqling/ViewModels/AGENTS.md`).
 - **Reset a search-driven scroll with `ScrollPosition`, never `.id(searchQuery)` on the scroll view.** Keying by the query rebuilds the whole subtree and discards lazy-stack state on every keystroke. Keying by a *discrete* selection, which changes once per click, is fine.
 - **Give list rows and pane children an `Equatable` conformance that excludes their closures.** A parent that re-runs per frame otherwise rebuilds every row. Exclude a closure when its captures are reference types, `@State`/`@FocusState` storage, or values already compared — and say which in the `==` doc comment.

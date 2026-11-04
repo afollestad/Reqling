@@ -31,31 +31,51 @@ struct SheetFooter: View {
 }
 
 /// Switches between sections of one surface (tabs, body modes, response formats). It hugs its options: given a wider
-/// frame, macOS centers a segmented control and pulls it off the pane's leading edge. macOS also sizes every segment
-/// to the widest label, so where that does not fit (the six body modes in a default-width window) it becomes a menu
-/// rather than clipping or truncating segments.
+/// frame, macOS centers a segmented control and pulls it off the pane's leading edge.
+///
+/// macOS sizes every segment to the widest label, so a picker that can outgrow its row (the six body modes in a
+/// default-width window) sets `collapsesToMenu`. It then fills its row, with the segments at the leading edge, and
+/// becomes a menu rather than clipping or truncating segments when the row is too narrow; see `WidthAdaptive` for why
+/// that is not `ViewThatFits`.
 struct SectionPicker<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let options: [Value]
+    let collapsesToMenu: Bool
     let label: (Value) -> String
 
-    init(_ title: String, selection: Binding<Value>, options: [Value], label: @escaping (Value) -> String) {
+    init(
+        _ title: String,
+        selection: Binding<Value>,
+        options: [Value],
+        collapsesToMenu: Bool = false,
+        label: @escaping (Value) -> String
+    ) {
         self.title = title
         _selection = selection
         self.options = options
+        self.collapsesToMenu = collapsesToMenu
         self.label = label
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            picker
-                .pickerStyle(.segmented)
-                .fixedSize()
-            picker
-                .pickerStyle(.menu)
-                .fixedSize()
+        if collapsesToMenu {
+            WidthAdaptive {
+                segmented
+            } fallback: {
+                picker
+                    .pickerStyle(.menu)
+                    .fixedSize()
+            }
+        } else {
+            segmented
         }
+    }
+
+    private var segmented: some View {
+        picker
+            .pickerStyle(.segmented)
+            .fixedSize()
     }
 
     private var picker: some View {
@@ -132,10 +152,11 @@ struct CompactEmptyState<Actions: View>: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             // Side by side when the column allows, stacked near the sidebar's minimum width.
-            ViewThatFits(in: .horizontal) {
+            WidthAdaptive(alignment: .center) {
                 HStack(spacing: 6) {
                     actions
                 }
+            } fallback: {
                 VStack(spacing: 6) {
                     actions
                 }
