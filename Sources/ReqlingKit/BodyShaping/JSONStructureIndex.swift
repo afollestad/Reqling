@@ -7,6 +7,7 @@ import Foundation
 /// where a parsed tree (`JSONSerialization`, or `ProtoJSONValue`) costs many times the body and reorders or recurses.
 /// The pass is iterative, so nesting depth is limited by memory, not the stack.
 public struct JSONStructureIndex: Sendable {
+    public let id = UUID()
     public let data: Data
     /// Every top-level value's byte range: one for a document, one per value for newline-delimited JSON.
     public let roots: [Range<Int>]

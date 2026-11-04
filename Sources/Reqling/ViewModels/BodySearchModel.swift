@@ -3,16 +3,43 @@ import Foundation
 import Observation
 import ReqlingKit
 
-/// Searching one body in place: the query, its matches in the document shown, and which one is current.
+/// What a body search runs over: the text Pretty and Raw show, or the tree Tree mode shows.
+enum BodySearchTarget: Sendable {
+    case text(TextDocument)
+    case tree(BodyStructure)
+
+    var id: UUID {
+        switch self {
+        case .text(let document): document.id
+        case .tree(let structure): structure.id
+        }
+    }
+}
+
+/// A search's matches: byte ranges in text, or node paths in a tree.
+struct BodySearchResult: Equatable {
+    var textMatches: [Range<Int>] = []
+    var treeMatches: [BodyTreeMatch] = []
+    /// The search stopped at its limit; there are more.
+    var isTruncated = false
+
+    static let empty = BodySearchResult()
+
+    var count: Int {
+        max(textMatches.count, treeMatches.count)
+    }
+}
+
+/// Searching one body in place: the query, its matches in what is shown, and which one is current.
 ///
-/// The search runs off the main actor from the view's `.task(id:)`, keyed on the query and the document, so typing
-/// or switching formats cancels a search still running and starts the next.
+/// The search runs off the main actor from the view's `.task(id:)`, keyed on the query and what is searched, so
+/// typing or switching formats cancels a search still running and starts the next.
 @MainActor
 @Observable
 final class BodySearchModel {
     var isPresented = false
     var query = ""
-    private(set) var result: TextDocument.SearchResult = .empty
+    private(set) var result: BodySearchResult = .empty
     private(set) var currentIndex: Int?
     /// Bumped to move keyboard focus into the search field.
     private(set) var focusRequest = 0
@@ -21,15 +48,19 @@ final class BodySearchModel {
     struct Key: Hashable {
         let query: String
         let isPresented: Bool
-        let documentID: UUID?
+        let targetID: UUID?
     }
 
-    func key(for document: TextDocument?) -> Key {
-        Key(query: query, isPresented: isPresented, documentID: document?.id)
+    func key(for target: BodySearchTarget?) -> Key {
+        Key(query: query, isPresented: isPresented, targetID: target?.id)
     }
 
-    var currentMatch: Range<Int>? {
-        currentIndex.map { result.matches[$0] }
+    var currentTextMatch: Range<Int>? {
+        currentIndex.flatMap { $0 < result.textMatches.count ? result.textMatches[$0] : nil }
+    }
+
+    var currentTreeMatch: BodyTreeMatch? {
+        currentIndex.flatMap { $0 < result.treeMatches.count ? result.treeMatches[$0] : nil }
     }
 
     /// "3 of 120", "10,000+" when the search stopped at its limit, or "No matches".
@@ -37,7 +68,7 @@ final class BodySearchModel {
         guard !query.isEmpty else {
             return ""
         }
-        let count = result.matches.count
+        let count = result.count
         guard count > 0 else {
             return "No matches"
         }
@@ -52,7 +83,7 @@ final class BodySearchModel {
 
     func dismiss() {
         isPresented = false
-        result = TextDocument.SearchResult.empty
+        result = .empty
         currentIndex = nil
     }
 
@@ -77,16 +108,16 @@ final class BodySearchModel {
         }
     }
 
-    /// Searches `document` for the query, replacing the matches unless a newer search cancels this one first.
-    func search(in document: TextDocument?) async {
-        guard isPresented, let document, !query.isEmpty else {
-            result = TextDocument.SearchResult.empty
+    /// Searches `target` for the query, replacing the matches unless a newer search cancels this one first.
+    func search(in target: BodySearchTarget?) async {
+        guard isPresented, let target, !query.isEmpty else {
+            result = .empty
             currentIndex = nil
             return
         }
         let query = query
         let work = Task.detached(priority: .userInitiated) {
-            try document.find(query)
+            try Self.find(query, in: target)
         }
         let found = await withTaskCancellationHandler {
             try? await work.value
@@ -97,11 +128,24 @@ final class BodySearchModel {
             return
         }
         result = found
-        currentIndex = found.matches.isEmpty ? nil : 0
+        currentIndex = found.count == 0 ? nil : 0
+    }
+
+    // A separate function rather than a typed-throws closure in `search`: the closure crashed the compiler's ownership
+    // verifier (Swift 6.4).
+    nonisolated private static func find(_ query: String, in target: BodySearchTarget) throws(CancellationError) -> BodySearchResult {
+        switch target {
+        case .text(let document):
+            let found = try document.find(query)
+            return BodySearchResult(textMatches: found.matches, isTruncated: found.isTruncated)
+        case .tree(let structure):
+            let found = try structure.find(query)
+            return BodySearchResult(treeMatches: found.matches, isTruncated: found.isTruncated)
+        }
     }
 
     private func step(by offset: Int) {
-        let count = result.matches.count
+        let count = result.count
         guard count > 0 else {
             NSSound.beep()
             return

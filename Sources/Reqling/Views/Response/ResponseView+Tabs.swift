@@ -68,6 +68,10 @@ private struct ResponseBodyView: View {
             switch presentation.content {
             case .text(let document):
                 CodeViewerPane(document: document, search: response.search, accessibilityLabel: "Response body")
+            case .tree(let structure):
+                BodyTreePane(structure: structure, search: response.search, controller: response.treeController, accessibilityLabel: "Response body")
+            case .treeFailed(let message):
+                ResponseTreeFailure(message: message) { response.bodyMode = .raw }
             case .image(let image):
                 Image(nsImage: image)
                     .resizable()
@@ -109,11 +113,17 @@ private struct ResponseBodyControls: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            if let contentType = response.contentType {
+                ResponseContentTypeLabel(contentType: contentType)
+            }
             if modes.count > 1 {
                 SectionPicker("Format", selection: $response.selectedBodyMode, options: modes, label: \.rawValue)
             }
             if spreads {
                 Spacer(minLength: 0)
+            }
+            if case .tree = response.body.content {
+                ResponseTreeControls(controller: response.treeController)
             }
             Button {
                 response.copyBody(to: model.system)
@@ -132,6 +142,63 @@ private struct ResponseBodyControls: View {
             .help("Save the body to a file")
             .accessibilityLabel("Save the body to a file")
         }
+    }
+}
+
+/// The response's media type, with the whole Content-Type (charset and all) on hover.
+private struct ResponseContentTypeLabel: View {
+    let contentType: String
+
+    var body: some View {
+        Text(contentType.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? contentType)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(contentType)
+            .accessibilityLabel("Content type, \(contentType)")
+    }
+}
+
+/// Expand All and Collapse All, for Tree mode.
+private struct ResponseTreeControls: View {
+    let controller: BodyTreeController
+
+    var body: some View {
+        Button {
+            controller.expandAll()
+        } label: {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+        }
+        .buttonStyle(.borderless)
+        .help("Expand all")
+        .accessibilityLabel("Expand all")
+        Button {
+            controller.collapseAll()
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+        }
+        .buttonStyle(.borderless)
+        .help("Collapse all")
+        .accessibilityLabel("Collapse all")
+    }
+}
+
+/// Tree mode on a body that doesn't parse as its format.
+private struct ResponseTreeFailure: View {
+    let message: String
+    let onShowRaw: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Can't Show a Tree", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+                .textSelection(.enabled)
+        } actions: {
+            Button("Show Raw", action: onShowRaw)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

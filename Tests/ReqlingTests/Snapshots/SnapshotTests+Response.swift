@@ -49,6 +49,19 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: Self.responseSize)
     }
 
+    /// XML opens as a tree too: elements, attributes by name, and text an element holds inline.
+    func testResponseXMLTree() throws {
+        let xml = #"<stations count="2"><station id="1" fuel="ELEC"><name>Café</name></station><!-- more --><station id="2"/></stations>"#
+        let response = try jsonResponse(body: xml, contentType: "application/xml")
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
+    /// A body that doesn't parse says where in Tree mode, with a way to the raw text.
+    func testResponseTreeFailure() throws {
+        let response = try jsonResponse(body: #"{"users": [1, 2,]}"#)
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
     /// The Raw format shows the body as sent, highlighted the same way.
     func testResponseRawBody() throws {
         let response = try jsonResponse()
@@ -59,12 +72,13 @@ extension SnapshotTests {
     /// Searching in place: the bar above the body, every match tinted, and the current one selected.
     func testResponseBodySearch() async throws {
         let response = try jsonResponse()
+        response.bodyMode = .pretty
         guard case .text(let document) = response.body.content else {
             return XCTFail("\(response.body.content)")
         }
         response.search.present()
         response.search.query = "name"
-        await response.search.search(in: document)
+        await response.search.search(in: .text(document))
         assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
     }
 
@@ -85,12 +99,15 @@ extension SnapshotTests {
         ResponseView(response: try jsonResponse(), model: fixture.model)
     }
 
-    private func jsonResponse(sent: ResolvedHTTPRequest? = nil) throws -> ResponseViewModel {
+    private func jsonResponse(
+        body: String = #"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":false}],"next":null}"#,
+        contentType: String = "application/json",
+        sent: ResolvedHTTPRequest? = nil
+    ) throws -> ResponseViewModel {
         let project = try SnapshotProject.make(in: fixture)
-        let body = #"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":false}],"next":null}"#
         let record = HTTPResponseRecord(
             statusCode: 200,
-            headers: [KeyValuePair(key: "Content-Type", value: "application/json")],
+            headers: [KeyValuePair(key: "Content-Type", value: contentType)],
             body: Data(body.utf8),
             url: "https://api.example.com/users",
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

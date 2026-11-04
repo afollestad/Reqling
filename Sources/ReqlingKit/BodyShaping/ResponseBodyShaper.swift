@@ -23,6 +23,8 @@ public enum BodyFormat: Hashable, Sendable {
 
 /// How the app wants a body shown.
 public enum ShapingMode: Hashable, Sendable {
+    /// JSON and XML as a collapsible tree.
+    case tree
     /// JSON re-indented; anything else as sent.
     case pretty
     case raw
@@ -32,6 +34,9 @@ public enum ShapingMode: Hashable, Sendable {
 public struct ShapedBody: Sendable {
     public enum Content: Sendable {
         case text(TextDocument)
+        case tree(BodyStructure)
+        /// The body doesn't parse as its format, so there is no tree; the message says where it stops.
+        case treeFailed(String)
         /// Not UTF-8 text, so there is nothing to show in place.
         case binary(byteCount: Int)
         case empty
@@ -80,15 +85,24 @@ public enum ResponseBodyShaper {
             return ShapedBody(content: .empty, format: .empty)
         case .image:
             (resolved, language) = (.text(.plainText), .plainText)
-        case .json(.sniffed) where !(try isJSON(body)):
-            (resolved, language) = (.text(.plainText), .plainText)
         case .json(let source):
+            let index = source == .sniffed || mode == .tree ? try jsonIndex(body, source: source) : nil
+            if source == .sniffed, index?.tree == nil {
+                (resolved, language) = (.text(.plainText), .plainText)
+                break
+            }
             (resolved, language) = (.json(source == .sniffed ? .declared : source), .json)
+            if mode == .tree, let index {
+                return ShapedBody(content: index.tree.map { .tree(.json($0)) } ?? .treeFailed(index.failure ?? ""), format: resolved)
+            }
             if mode == .pretty, let pretty = try JSONFormatter.pretty(body) {
                 return try shaped(Data(pretty), language: .json, format: resolved, byteCount: body.count)
             }
         case .xml:
             (resolved, language) = (.xml, .xml)
+            if mode == .tree {
+                return ShapedBody(content: try xmlTree(body), format: resolved)
+            }
         case .text(let textLanguage):
             (resolved, language) = (format, textLanguage)
         }
@@ -102,14 +116,35 @@ public enum ResponseBodyShaper {
         return ShapedBody(content: .text(document), format: format)
     }
 
-    private static func isJSON(_ body: Data) throws(CancellationError) -> Bool {
+    /// The body's JSON index, or where it stops being JSON.
+    private static func jsonIndex(
+        _ body: Data,
+        source: BodyFormat.JSONSource
+    ) throws(CancellationError) -> (tree: JSONStructureIndex?, failure: String?) {
         do {
-            _ = try JSONStructureIndex.build(body)
-            return true
-        } catch .cancelled {
-            throw CancellationError()
+            return (try JSONStructureIndex.build(body, allowsSequence: source == .lines), nil)
         } catch {
-            return false
+            switch error {
+            case .cancelled:
+                throw CancellationError()
+            case .syntax(let message, let line, let column):
+                return (nil, "Line \(line), column \(column): \(message)")
+            }
+        }
+    }
+
+    private static func xmlTree(_ body: Data) throws(CancellationError) -> ShapedBody.Content {
+        do {
+            return .tree(.xml(try XMLStructureIndex.build(body)))
+        } catch {
+            switch error {
+            case .cancelled:
+                throw CancellationError()
+            case .tooLarge:
+                return .treeFailed("The XML has more than \(XMLStructureIndex.nodeLimit.formatted()) nodes, too many for the tree.")
+            case .syntax(let message, let line, let column):
+                return .treeFailed("Line \(line), column \(column): \(message)")
+            }
         }
     }
 

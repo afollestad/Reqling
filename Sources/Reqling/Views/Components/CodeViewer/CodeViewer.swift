@@ -38,15 +38,15 @@ struct CodeViewerPane: View {
             }
             CodeViewer(
                 document: document,
-                matches: search.isPresented ? search.result.matches : [],
-                currentMatch: search.isPresented ? search.currentMatch : nil,
+                matches: search.isPresented ? search.result.textMatches : [],
+                currentMatch: search.isPresented ? search.currentTextMatch : nil,
                 accessibilityLabel: accessibilityLabel,
                 onFind: { search.perform($0) }
             )
             .editorChrome()
         }
-        .task(id: search.key(for: document)) {
-            await search.search(in: document)
+        .task(id: search.key(for: .text(document))) {
+            await search.search(in: .text(document))
         }
     }
 }

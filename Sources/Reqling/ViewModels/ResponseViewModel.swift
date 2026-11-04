@@ -15,6 +15,7 @@ enum ResponseTab: String, CaseIterable, Identifiable {
 }
 
 enum ResponseBodyMode: String, CaseIterable, Identifiable {
+    case tree = "Tree"
     case pretty = "Pretty"
     case raw = "Raw"
     case preview = "Preview"
@@ -28,6 +29,9 @@ enum ResponseBodyMode: String, CaseIterable, Identifiable {
 struct ResponseBodyPresentation {
     enum Content {
         case text(TextDocument)
+        case tree(BodyStructure)
+        /// Tree mode on a body that doesn't parse: where it stops, for the person to see before switching to Raw.
+        case treeFailed(String)
         case image(NSImage)
         case binary(byteCount: Int)
         case empty
@@ -55,12 +59,14 @@ struct ResponseBodyPresentation {
 final class ResponseViewModel {
     var tab: ResponseTab = .body
     /// The format the person picked; a body that doesn't offer it shows its first one instead (`body.mode`).
-    var bodyMode: ResponseBodyMode = .pretty
+    var bodyMode: ResponseBodyMode = .tree
 
     let requestID: RequestNodeID
     let projectID: ProjectID
     /// Searching the body, whichever format shows it; the query carries over between formats.
     let search = BodySearchModel()
+    /// The section bar's Expand All and Collapse All, reaching the tree on screen.
+    @ObservationIgnored let treeController = BodyTreeController()
     @ObservationIgnored let runner: RequestRunner
     /// Results of background shaping for the exchange shown; writing it re-renders the body.
     var shapedBodies = ShapedBodies()
@@ -93,6 +99,11 @@ final class ResponseViewModel {
             return .empty
         }
         return presentation(of: response, startedAt: exchange.startedAt, preference: preference, shaped: shaped)
+    }
+
+    /// The response's Content-Type, as sent.
+    var contentType: String? {
+        exchange?.response?.header("Content-Type")
     }
 
     /// The body the request sent, as text to show, highlighted by its Content-Type; `nil` when it sent none.

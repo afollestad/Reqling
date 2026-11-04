@@ -127,6 +127,10 @@ extension ResponseViewModel {
         switch shaped.content {
         case .text(let document):
             return ResponseBodyPresentation(content: .text(document), availableModes: modes, mode: mode, pendingShape: nil)
+        case .tree(let structure):
+            return ResponseBodyPresentation(content: .tree(structure), availableModes: modes, mode: mode, pendingShape: nil)
+        case .treeFailed(let message):
+            return ResponseBodyPresentation(content: .treeFailed(message), availableModes: modes, mode: mode, pendingShape: nil)
         case .binary(let byteCount):
             return ResponseBodyPresentation(content: .binary(byteCount: byteCount), availableModes: [], mode: nil, pendingShape: nil)
         case .empty:
@@ -139,8 +143,10 @@ extension ResponseViewModel {
         case .empty:
             []
         case .json:
-            [.pretty, .raw]
-        case .image, .xml, .text:
+            [.tree, .pretty, .raw]
+        case .xml:
+            [.tree, .raw]
+        case .image, .text:
             [.raw]
         }
     }
@@ -148,6 +154,10 @@ extension ResponseViewModel {
 
 extension ResponseBodyMode {
     var shapingMode: ShapingMode {
-        self == .pretty ? .pretty : .raw
+        switch self {
+        case .tree: .tree
+        case .pretty: .pretty
+        case .raw, .preview: .raw
+        }
     }
 }

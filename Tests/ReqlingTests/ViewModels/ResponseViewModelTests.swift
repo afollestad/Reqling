@@ -58,23 +58,27 @@ final class ResponseViewModelTests: XCTestCase {
         return nil
     }
 
-    func testASmallBodyShapesInline() {
+    func testASmallBodyShapesInlineAsATreeByDefault() {
         publish(Data(#"{"a":1}"#.utf8), contentType: "application/json")
 
         let body = response.body
-
-        XCTAssertEqual(text(body), "{\n  \"a\": 1\n}")
-        XCTAssertEqual(body.availableModes, [.pretty, .raw])
-        XCTAssertEqual(body.mode, .pretty)
+        guard case .tree = body.content else {
+            return XCTFail("\(body.content)")
+        }
+        XCTAssertEqual(body.availableModes, [.tree, .pretty, .raw])
+        XCTAssertEqual(body.mode, .tree)
         XCTAssertNil(body.pendingShape)
+
+        response.bodyMode = .pretty
+        XCTAssertEqual(text(response.body), "{\n  \"a\": 1\n}")
     }
 
     /// The picker shows a mode the body offers, while the person's choice waits for a body that offers it again.
     func testAModeTheBodyDoesNotOfferFallsBackWithoutForgettingThePreference() {
         response.bodyMode = .pretty
         publish(Data("<a/>".utf8), contentType: "application/xml", at: 1)
-        XCTAssertEqual(response.body.availableModes, [.raw])
-        XCTAssertEqual(response.selectedBodyMode, .raw)
+        XCTAssertEqual(response.body.availableModes, [.tree, .raw])
+        XCTAssertEqual(response.selectedBodyMode, .tree)
         XCTAssertEqual(response.bodyMode, .pretty)
 
         publish(Data("[1]".utf8), contentType: "application/json", at: 2)
@@ -99,13 +103,14 @@ final class ResponseViewModelTests: XCTestCase {
     }
 
     func testALargeBodyShapesOffTheMainActorAndReRendersWhenDone() async throws {
+        response.bodyMode = .pretty
         let items = (0..<40_000).map { #"{"index":\#($0)}"# }.joined(separator: ",")
         publish(Data("[\(items)]".utf8), contentType: "application/json")
         let pending = try XCTUnwrap(response.body.pendingShape)
         guard case .shaping = response.body.content else {
             return XCTFail("\(response.body.content)")
         }
-        XCTAssertEqual(response.body.availableModes, [.pretty, .raw], "the picker shows while the body shapes")
+        XCTAssertEqual(response.body.availableModes, [.tree, .pretty, .raw], "the picker shows while the body shapes")
 
         let reRendered = expectation(description: "the body re-renders once shaped")
         withObservationTracking {
@@ -122,6 +127,7 @@ final class ResponseViewModelTests: XCTestCase {
 
     /// Switching modes mid-shape supersedes the earlier shape; whichever finishes, only the mode shown lands.
     func testOnlyTheShapeStillWantedLands() async throws {
+        response.bodyMode = .pretty
         let items = (0..<40_000).map { #"{"index":\#($0)}"# }.joined(separator: ",")
         publish(Data("[\(items)]".utf8), contentType: "application/json")
         response.startShaping(try XCTUnwrap(response.body.pendingShape))
@@ -137,6 +143,7 @@ final class ResponseViewModelTests: XCTestCase {
     /// A newer body that needs no shaping (a small one) cancels the shape still running for the old one, which would
     /// otherwise finish and hold a large body nobody reads.
     func testABodyThatNeedsNoShapingCancelsTheShapeStillRunning() throws {
+        response.bodyMode = .pretty
         let items = (0..<40_000).map { #"{"index":\#($0)}"# }.joined(separator: ",")
         publish(Data("[\(items)]".utf8), contentType: "application/json", at: 1)
         response.startShaping(try XCTUnwrap(response.body.pendingShape))
@@ -149,5 +156,21 @@ final class ResponseViewModelTests: XCTestCase {
         XCTAssertTrue(running.isCancelled)
         XCTAssertNil(response.shapingKey)
         XCTAssertEqual(text(response.body), "[\n  1\n]")
+    }
+
+    /// A body that doesn't parse as its declared format explains itself in Tree mode rather than switching away.
+    func testTreeModeExplainsABodyThatDoesNotParse() {
+        publish(Data("{\"a\": }".utf8), contentType: "application/json")
+
+        guard case .treeFailed(let message) = response.body.content else {
+            return XCTFail("\(response.body.content)")
+        }
+        XCTAssertEqual(message, "Line 1, column 7: Expected a JSON value.")
+        XCTAssertEqual(response.body.mode, .tree)
+    }
+
+    func testTheContentTypeIsTheResponsesHeader() {
+        publish(Data("[1]".utf8), contentType: "application/json; charset=utf-8")
+        XCTAssertEqual(response.contentType, "application/json; charset=utf-8")
     }
 }
