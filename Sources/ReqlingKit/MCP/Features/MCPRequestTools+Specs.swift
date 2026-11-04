@@ -17,12 +17,13 @@ extension MCPRequestTools {
         return MCPTool(
             name,
             title: title,
-            description: "Moves a \(target.noun) into another folder or to the project's top level, or reorders it. Its file "
-                + "moves with it.",
+            description: "Moves a \(target.noun) into another folder, out to the top level, or into another project, or "
+                + "reorders it. Its file moves with it.",
             properties: [
                 "project": MCPSchema.project,
                 argument: target.schema,
-                "destinationFolder": MCPSchema.string("The folder to move into, by ID. Omit for the project's top level."),
+                "destinationProject": MCPSchema.string("The project to move into, by ID or unique name. Omit to stay in this one."),
+                "destinationFolder": MCPSchema.string("The folder to move into, by ID, in the destination project. Omit for its top level."),
                 "index": MCPSchema.integer("Position in the destination, from 0, counted without the moved item. Omit to append.", minimum: 0)
             ],
             required: ["project", argument],
@@ -30,14 +31,31 @@ extension MCPRequestTools {
         ) { arguments in
             let (project, document) = try context.document(try arguments.string("project"))
             let id = try target.resolve(try arguments.string(argument), document)
-            let parent = try arguments.optionalString("destinationFolder").map { try context.folder($0, in: document).id }
+            let destination = try arguments.optionalString("destinationProject").map { try context.document($0) }
+                ?? (project: project, document: document)
+            let parent = try arguments.optionalString("destinationFolder").map { try context.folder($0, in: destination.document).id }
             let index = try arguments.optionalInteger("index", in: 0...Int.max)
-            try context.mutate(project.id) { try $0.moveNode(id, to: parent, at: index) }
-            let moved = try context.document(project.id.description).document
-            return .object([
-                "moved": .string(id.description),
-                "folderPath": .array(moved.ancestors(of: id).map { Value.string($0.name) })
-            ])
+            let move: ProjectNodeMove = try context.describingErrors {
+                do {
+                    return try context.lifecycle.moveNode(id, from: project.id, to: destination.project.id, into: parent, at: index)
+                } catch ProjectMoveError.leftInSource(let error) {
+                    throw MCPToolError("It was added to “\(destination.project.name)” but couldn't leave “\(project.name)”, so "
+                        + "it is in both: \(error.localizedDescription)")
+                }
+            }
+            let moved = try context.document(destination.project.id.description).document
+            var result: [String: Value] = [
+                "moved": .string(move.nodeID.description),
+                "project": .string(destination.project.id.description),
+                "folderPath": .array(moved.ancestors(of: move.nodeID).map { Value.string($0.name) })
+            ]
+            if !move.localizedPaths.isEmpty {
+                result["warnings"] = .array(move.localizedPaths.map { path in
+                    .string("\(path) is outside “\(destination.project.name)”'s folder and repository, so it is now a "
+                        + "this-Mac-only path.")
+                })
+            }
+            return .object(result)
         }
     }
 

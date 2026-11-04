@@ -165,8 +165,13 @@ public final class MCPToolContext {
     /// The window's pending edits were saved before the call began (`MCPToolDispatcher.init(context:sleep:)`).
     @discardableResult
     func mutate<Result>(_ project: ProjectID, _ body: (inout ProjectDocument) throws -> Result) throws -> Result {
+        try describingErrors { try library.mutate(project, body) }
+    }
+
+    /// Runs a change made some other way than `mutate`, such as through `ProjectLifecycle`, with the same messages.
+    func describingErrors<Result>(_ change: () throws -> Result) throws -> Result {
         do {
-            return try library.mutate(project, body)
+            return try change()
         } catch let error as ProjectTreeError {
             throw MCPToolError(Self.describe(error))
         } catch let error as MCPToolError {
