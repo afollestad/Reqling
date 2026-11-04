@@ -12,21 +12,25 @@ struct SettingsScreen: View {
     var body: some View {
         // Read above the GeometryReader, whose closure re-runs on every frame of a resize.
         let page = model.settingsPage
-        GeometryReader { proxy in
-            if proxy.size.width >= Self.sidebarLayoutMinimumWidth {
-                HStack(spacing: 0) {
-                    SettingsSideList(selection: $model.settingsPage)
-                        .frame(width: Self.sidebarWidth)
-                    Divider()
-                    SettingsDetail(model: model)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsScreenCompactNavigation(selection: page) { model.settingsPage = $0 }
-                        .equatable()
-                        .padding(.top, 20)
-                        .padding(.bottom, 4)
-                    SettingsDetail(model: model)
+        VStack(spacing: 0) {
+            // Edges the hidden toolbar, so the side list's vertical divider meets a line instead of ending in mid-air.
+            Divider()
+            GeometryReader { proxy in
+                if proxy.size.width >= Self.sidebarLayoutMinimumWidth {
+                    HStack(spacing: 0) {
+                        SettingsSideList(selection: $model.settingsPage)
+                            .frame(width: Self.sidebarWidth)
+                        Divider()
+                        SettingsDetail(model: model)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SettingsScreenCompactNavigation(selection: page) { model.settingsPage = $0 }
+                            .equatable()
+                            .padding(.top, 20)
+                            .padding(.bottom, 4)
+                        SettingsDetail(model: model)
+                    }
                 }
             }
         }
@@ -45,6 +49,9 @@ private struct SettingsSideList: View {
             }
         }
         .listStyle(.sidebar)
+        // The sidebar style backs the list with behind-window vibrancy, which suits the window's sidebar column but
+        // shows the desktop through this list inside the opaque detail pane.
+        .scrollContentBackground(.hidden)
     }
 }
 
