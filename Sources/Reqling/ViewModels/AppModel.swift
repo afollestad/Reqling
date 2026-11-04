@@ -80,6 +80,9 @@ final class AppModel {
     }
     var isShowingSettings = false
     var settingsPage: SettingsPage = .interface
+    /// The selection opening Settings cleared, so closing Settings returns to it. Choosing an item while Settings is up
+    /// replaces it. Observed, since `activeProjectID` falls back to it.
+    private(set) var selectionBeforeSettings: SidebarItem?
     var sheet: AppSheet?
     var alert: AppAlert?
     /// A project awaiting confirmation before its folder moves to the Trash.
@@ -169,7 +172,8 @@ final class AppModel {
 
     /// The project the toolbar and commands act on.
     var activeProjectID: ProjectID? {
-        selection?.projectID ?? library.projects.first?.id
+        // Settings clears the selection; the toolbar and commands keep acting on the project it was in.
+        selection?.projectID ?? selectionBeforeSettings?.projectID ?? library.projects.first?.id
     }
 
     func selectedNode() -> RequestNode? {
@@ -184,9 +188,11 @@ final class AppModel {
         syncEditor()
         if selection != nil {
             isShowingSettings = false
+            selectionBeforeSettings = nil
         }
         workspace.update { state in
-            state.selection = selection.map { WorkspaceSelection(projectID: $0.projectID, nodeID: $0.nodeID) }
+            // While Settings is up, save the selection it cleared, so quitting there relaunches into that.
+            state.selection = (selection ?? selectionBeforeSettings).map { WorkspaceSelection(projectID: $0.projectID, nodeID: $0.nodeID) }
         }
     }
 
@@ -195,22 +201,35 @@ final class AppModel {
     /// selection and the editor's draft, which saves once the project loads again.
     func libraryDidChange() {
         syncProtoWorkspaces()
+        if let saved = selectionBeforeSettings {
+            // Reconciled like the selection, so `activeProjectID` never names a project that left while Settings is up.
+            selectionBeforeSettings = listedSelection(saved)
+        }
         guard let selection else {
             return
         }
-        guard let project = library.project(selection.projectID) else {
-            self.selection = nil
+        let listed = listedSelection(selection)
+        guard listed == selection else {
+            self.selection = listed
             return
         }
-        guard let document = project.document else {
+        guard library.document(selection.projectID) != nil else {
             return
         }
-        if let nodeID = selection.nodeID, document.node(nodeID) == nil {
-            self.selection = .project(selection.projectID)
-        } else {
-            syncEditor()
-            editor?.adoptExternalChange()
+        syncEditor()
+        editor?.adoptExternalChange()
+    }
+
+    /// `item` while the library still lists it, its project once only the item is gone, and nil once the project left.
+    /// A project that is listed but did not load keeps the item, so an editor's draft there saves once it loads again.
+    private func listedSelection(_ item: SidebarItem) -> SidebarItem? {
+        guard let project = library.project(item.projectID) else {
+            return nil
         }
+        if let nodeID = item.nodeID, let document = project.document, document.node(nodeID) == nil {
+            return .project(item.projectID)
+        }
+        return item
     }
 
     /// Gives the selection the editor it needs: none, or one for the selected request's kind. The current editor stays
@@ -260,16 +279,31 @@ final class AppModel {
 
     // MARK: - Settings
 
+    /// Shows Settings in place of the selection, which it clears so nothing in the sidebar reads as shown. Choosing a
+    /// page while Settings is already up only switches to it, keeping the selection to return to.
     func showSettings(_ page: SettingsPage? = nil) {
         flushPendingEdits()
         if let page {
             settingsPage = page
         }
+        guard !isShowingSettings else {
+            return
+        }
+        selectionBeforeSettings = selection
         isShowingSettings = true
+        selection = nil
     }
 
+    /// Returns to the selection Settings cleared, or as much of it as the library still lists. Rechecked here because
+    /// `libraryDidChange()` only runs while the window is up.
     func closeSettings() {
+        guard isShowingSettings else {
+            return
+        }
         isShowingSettings = false
+        let restored = selectionBeforeSettings.flatMap(listedSelection)
+        selectionBeforeSettings = nil
+        selection = restored
     }
 
     // MARK: - Pending edits

@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class AppModelTests: XCTestCase {
-    private var fixture: AppFixture!
+    var fixture: AppFixture!
     private var gate: SleepGate!
 
     override func setUp() async throws {
@@ -21,17 +21,17 @@ final class AppModelTests: XCTestCase {
         fixture = nil
     }
 
-    private var model: AppModel {
+    var model: AppModel {
         fixture.model
     }
 
-    private func makeProject() throws -> ProjectID {
+    func makeProject() throws -> ProjectID {
         model.createProject(named: "API")
         return try XCTUnwrap(model.selection?.projectID)
     }
 
     /// A second `AppModel` over the same storage, as a relaunch would build.
-    private func relaunch() -> AppModel {
+    func relaunch() -> AppModel {
         AppModel(
             library: fixture.library,
             workspace: fixture.component.workspaceState,
