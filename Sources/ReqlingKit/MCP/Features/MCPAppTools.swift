@@ -8,7 +8,7 @@ struct MCPAppTools {
     let context: MCPToolContext
 
     var tools: [MCPTool] {
-        [getAppState, revealItem, getSettings, updateSettings]
+        [getAppState, revealItem, getSettings, updateSettings, getUpdateStatus, checkForUpdates]
     }
 
     private var getAppState: MCPTool {
@@ -123,6 +123,68 @@ struct MCPAppTools {
             }
             return .object(Self.describe(context.settings.settings))
         }
+    }
+
+    // MARK: - Updates
+
+    private var getUpdateStatus: MCPTool {
+        MCPTool(
+            "get_update_status",
+            title: "Get update status",
+            description: "The running Reqling version, the last check's result, and whether an update is downloading or "
+                + "ready. Installing one is the user's choice, in Settings ▸ App Updates.",
+            annotations: .read
+        ) { _ in
+            .object(try Self.describe(updates()))
+        }
+    }
+
+    private var checkForUpdates: MCPTool {
+        MCPTool(
+            "check_for_updates",
+            title: "Check for updates",
+            description: "Asks GitHub for a newer Reqling now and returns the result, as get_update_status describes it.",
+            annotations: .networkRead,
+            timeout: .seconds(60)
+        ) { _ in
+            let updates = try updates()
+            await updates.forceCheck()
+            return .object(Self.describe(updates))
+        }
+    }
+
+    private func updates() throws -> AppUpdateManager {
+        guard let updates = context.updates else {
+            throw MCPToolError("This build of Reqling doesn't check for updates.")
+        }
+        return updates
+    }
+
+    private static func describe(_ updates: AppUpdateManager) -> [String: Value] {
+        var description: [String: Value] = [
+            "currentVersion": updates.currentVersionString.map(Value.string) ?? .null,
+            "lastCheckedAt": updates.lastCheckedAt.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null
+        ]
+        switch updates.status {
+        case .idle:
+            description["status"] = "notChecked"
+        case .upToDate:
+            description["status"] = "upToDate"
+        case .updateAvailable(let release, _):
+            description["status"] = "updateAvailable"
+            description["availableVersion"] = .string(release.version.description)
+            description["releaseURL"] = .string(release.htmlURL.absoluteString)
+        case .unavailable(let reason):
+            description["status"] = "unavailable"
+            description["reason"] = .string(reason.message)
+        }
+        if let staged = updates.stagedUpdate {
+            description["readyToInstall"] = .string(staged.release.version.description)
+        }
+        if case .downloading(_, let progress) = updates.downloadState {
+            description["downloadProgress"] = .double(progress)
+        }
+        return description
     }
 
     private static func describe(_ settings: AppSettings) -> [String: Value] {

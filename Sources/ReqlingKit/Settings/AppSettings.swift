@@ -35,6 +35,7 @@ public struct AppSettings: Hashable, Sendable, Codable {
     public var mcpPort = AppSettings.defaultMCPPort {
         didSet { mcpPort = Self.clampPort(mcpPort) }
     }
+    public var checksForUpdatesAutomatically = true
 
     public init() {}
 
@@ -56,6 +57,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
         mcpEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? defaults.mcpEnabled
         let port = try? container.decodeIfPresent(Int.self, forKey: .mcpPort)
         mcpPort = Self.clampPort(port ?? defaults.mcpPort)
+        checksForUpdatesAutomatically = (try? container.decodeIfPresent(Bool.self, forKey: .checksForUpdatesAutomatically))
+            ?? defaults.checksForUpdatesAutomatically
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -67,6 +70,7 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case grpcDeadlineSeconds
         case mcpEnabled
         case mcpPort
+        case checksForUpdatesAutomatically
     }
 
     private static func clamp(_ value: Double) -> Double {

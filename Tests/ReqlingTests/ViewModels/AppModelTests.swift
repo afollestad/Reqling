@@ -42,7 +42,8 @@ final class AppModelTests: XCTestCase {
             system: fixture.system,
             protoWorkspaces: fixture.component.protoWorkspaces,
             protocTooling: fixture.protoc.model,
-            mcpServer: fixture.component.mcpServer
+            mcpServer: fixture.component.mcpServer,
+            updates: fixture.component.appUpdates
         )
     }
 
@@ -381,4 +382,61 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(fixture.library.document(project))
         XCTAssertTrue(fixture.component.protoWorkspaces.workspace(for: project) === workspace)
     }
+
+    /// The badged gear goes straight to App Updates; the plain one keeps Settings' last page.
+    func testTheGearOpensAppUpdatesOnlyWhileItHasABadge() async {
+        let updates = AppUpdateStubs.manager(AppUpdateStubs.newer)
+        let badged = AppFixture(updates: updates)
+        defer { badged.tearDown() }
+        badged.model.settingsPage = .interface
+
+        badged.model.openSettingsFromToolbar()
+        XCTAssertEqual(badged.model.settingsPage, .interface)
+        badged.model.openSettingsFromToolbar()
+        XCTAssertFalse(badged.model.isShowingSettings, "A second click closes Settings")
+
+        await updates.forceCheck()
+        badged.model.openSettingsFromToolbar()
+        XCTAssertTrue(badged.model.isShowingSettings)
+        XCTAssertEqual(badged.model.settingsPage, .updates)
+    }
+
+    /// Once the helper starts it installs on the next quit, so a refused quit must stop the install before it starts,
+    /// and an agreed one must not ask again when the update quits Reqling.
+    func testInstallingAsksAboutUnsavedEditsBeforeTheHelperStarts() async throws {
+        let installer = StubUpdateInstaller()
+        let updates = AppUpdateStubs.manager(AppUpdateStubs.newer, installer: installer)
+        fixture.tearDown()
+        fixture = AppFixture(updates: updates)
+        await updates.downloadLatestUpdate()
+        let project = try makeProject()
+        model.newFolder()
+        let folderID = try XCTUnwrap(model.selection?.nodeID)
+        model.setAuth(.bearer(token: "a"), forFolder: folderID, in: project)
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("project.json"))
+        fixture.library.reload(project)
+
+        model.installUpdate()
+        XCTAssertEqual(fixture.system.quitConfirmations, 1)
+        XCTAssertFalse(model.isQuittingForUpdate)
+
+        fixture.system.quitsDiscardingUnsavedChanges = true
+        model.installUpdate()
+        await waitUntil("the install") { installer.installs == 1 }
+
+        XCTAssertEqual(installer.installs, 1, "Only the agreed install runs")
+        XCTAssertTrue(model.confirmTermination())
+        XCTAssertEqual(fixture.system.quitConfirmations, 2, "The update's own quit doesn't ask again")
+    }
+
+    func testTurningUpdateChecksOffPersists() {
+        fixture.model.setChecksForUpdatesAutomatically(false)
+
+        XCTAssertFalse(fixture.model.settings.settings.checksForUpdatesAutomatically)
+        fixture.model.setChecksForUpdatesAutomatically(true)
+        XCTAssertTrue(fixture.model.settings.settings.checksForUpdatesAutomatically)
+        fixture.model.updates.stopAutomaticChecks()
+    }
+
 }

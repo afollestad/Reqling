@@ -36,6 +36,8 @@ public final class MCPToolContext {
     let protoWorkspaces: ProtoWorkspaceStore
     let appInfo: AppInfo
     public weak var host: (any MCPAppHost)?
+    /// The updater, for the status and check tools; `nil` where updates aren't wired, as in tests.
+    public var updates: AppUpdateManager?
     /// The dispatcher serving these tools, for resources, which read through the matching tools.
     weak var dispatcher: MCPToolDispatcher?
 

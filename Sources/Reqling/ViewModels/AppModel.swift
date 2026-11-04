@@ -97,6 +97,9 @@ final class AppModel {
     @ObservationIgnored let protocTooling: ProtocToolingModel
     @ObservationIgnored let lifecycle: ProjectLifecycle
     @ObservationIgnored let mcpServer: MCPServerController
+    @ObservationIgnored let updates: AppUpdateManager
+    /// Set once the user has agreed to quit for an update, so the update's own quit doesn't ask again.
+    @ObservationIgnored var isQuittingForUpdate = false
     @ObservationIgnored private(set) lazy var mcpSettings = MCPSettingsModel(server: mcpServer, settings: settings, system: system)
     /// Injected so editor autosave debounces deterministically in tests.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
@@ -112,6 +115,7 @@ final class AppModel {
         protoWorkspaces: ProtoWorkspaceStore,
         protocTooling: ProtocToolingModel,
         mcpServer: MCPServerController,
+        updates: AppUpdateManager,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.library = library
@@ -124,6 +128,7 @@ final class AppModel {
         self.protoWorkspaces = protoWorkspaces
         self.protocTooling = protocTooling
         self.mcpServer = mcpServer
+        self.updates = updates
         self.sleep = sleep
         lifecycle = ProjectLifecycle(library: library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
         for project in library.projects {
@@ -262,7 +267,7 @@ final class AppModel {
             flushFolderAuth()
         }
         editor?.flush()
-        guard isFolderAuthStranded || editor?.hasStrandedChanges == true else {
+        guard !isQuittingForUpdate, isFolderAuthStranded || editor?.hasStrandedChanges == true else {
             return true
         }
         return system.confirmQuitDiscardingUnsavedChanges()
@@ -346,6 +351,7 @@ final class AppModel {
 
 /// The in-window Settings pages, alphabetical by title; `allCases` drives both the side list and the compact strip.
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
+    case updates
     case grpc
     case interface
     case mcp
@@ -357,6 +363,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
+        case .updates: "App Updates"
         case .grpc: "gRPC"
         case .interface: "Interface"
         case .mcp: "MCP"
@@ -366,6 +373,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .updates: "arrow.down.circle"
         case .grpc: "point.3.connected.trianglepath.dotted"
         case .interface: "paintbrush"
         case .mcp: "sparkles"
@@ -375,6 +383,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var description: String {
         switch self {
+        case .updates: "New versions of Reqling, downloaded and verified before they install."
         case .grpc: "The protoc that compiles project protos, and defaults for gRPC calls."
         case .interface: "How Reqling looks."
         case .mcp: "A local server that lets AI agents on this Mac use your projects and send requests."

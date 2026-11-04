@@ -78,7 +78,8 @@ extension AppComponent {
                 system: systemIntegration,
                 protoWorkspaces: protoWorkspaces,
                 protocTooling: protocTooling,
-                mcpServer: mcpServer
+                mcpServer: mcpServer,
+                updates: appUpdates
             )
         }
     }

@@ -134,6 +134,26 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
         XCTAssertTrue(serverSetting.contains("unsupported field"), serverSetting)
     }
 
+    func testUpdateToolsReportTheCheckAndNeverInstall() async throws {
+        let notWired = await fixture.failure("get_update_status")
+        let release = stubRelease("1.1.0", servedFrom: "example.test", bytes: Data())
+        fixture.context.updates = AppUpdateManager(
+            releaseClient: FixedLookup(.installable(AppUpdateReleaseFeed(latestRelease: release, releaseNotes: []))),
+            currentVersion: "1.0.0"
+        )
+
+        let before = try await fixture.success("get_update_status")
+        let checked = try await fixture.success("check_for_updates")
+
+        XCTAssertTrue(notWired.contains("doesn't check for updates"), notWired)
+        XCTAssertEqual(before["status"], "notChecked")
+        XCTAssertEqual(before["currentVersion"], "1.0.0")
+        XCTAssertEqual(checked["status"], "updateAvailable")
+        XCTAssertEqual(checked["availableVersion"], "1.1.0")
+        XCTAssertEqual(checked["releaseURL"], .string(release.htmlURL.absoluteString))
+        XCTAssertFalse(fixture.dispatcher.definitions.contains { $0.name.contains("install_update") }, "Installing stays a window action")
+    }
+
     func testRevealAndAppStateGoThroughTheWindow() async throws {
         let created = try await fixture.success("create_request", ["project": projectArgument, "name": "Ping"])
         let request = try XCTUnwrap(created["request"]?["id"]?.stringValue)
@@ -145,5 +165,17 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
         XCTAssertEqual(fixture.host.revealed.first?.1?.description, request)
         XCTAssertEqual(state["selection"]?["itemName"], "Ping")
         XCTAssertEqual(state["app"]?["version"], "1.0.0")
+    }
+}
+
+private struct FixedLookup: AppUpdateReleaseClient {
+    let lookup: AppUpdateReleaseLookupResult
+
+    init(_ lookup: AppUpdateReleaseLookupResult) {
+        self.lookup = lookup
+    }
+
+    func latestRelease() async -> AppUpdateReleaseLookupResult {
+        lookup
     }
 }

@@ -15,15 +15,17 @@ extension AppComponent {
 
     var mcpServer: MCPServerController {
         shared {
-            MCPServerController(
-                context: MCPToolContext(
-                    library: projectLibrary,
-                    workspace: workspaceState,
-                    runner: requestRunner,
-                    settings: settingsStore,
-                    protoWorkspaces: protoWorkspaces,
-                    appInfo: appInfo
-                ),
+            let context = MCPToolContext(
+                library: projectLibrary,
+                workspace: workspaceState,
+                runner: requestRunner,
+                settings: settingsStore,
+                protoWorkspaces: protoWorkspaces,
+                appInfo: appInfo
+            )
+            context.updates = appUpdates
+            return MCPServerController(
+                context: context,
                 settings: settingsStore,
                 tokenStore: mcpTokenStore,
                 bindPort: storageProfile.isEphemeral ? { _ in 0 } : { $0 }

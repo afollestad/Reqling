@@ -14,6 +14,17 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8)), AppSettings())
     }
 
+    /// Settings saved before updates existed check automatically; a value of the wrong type falls back the same way.
+    func testUpdateChecksDefaultOnAndDecodeLeniently() throws {
+        let missing = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        let invalid = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"checksForUpdatesAutomatically": "nope"}"#.utf8))
+        let off = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"checksForUpdatesAutomatically": false}"#.utf8))
+
+        XCTAssertTrue(missing.checksForUpdatesAutomatically)
+        XCTAssertTrue(invalid.checksForUpdatesAutomatically)
+        XCTAssertFalse(off.checksForUpdatesAutomatically)
+    }
+
     func testAssignmentsClampToo() {
         var settings = AppSettings()
         settings.requestTimeoutSeconds = 0

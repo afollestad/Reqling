@@ -68,6 +68,10 @@ The server listens on `127.0.0.1` only and requires its bearer token, which is k
 
 A project's **Project Settings** take client certificates for mutual TLS — a PKCS#12 file (`.p12`/`.pfx`) or an identity already in your Keychain — matched by host (`api.example.com`, `*.internal`, `host:8443`), plus extra CA certificates trusted in addition to the system's. Passphrases are stored in your Keychain. For a `.crt` and `.key` pair, convert it first: `openssl pkcs12 -export -in client.crt -inkey client.key -out client.p12`.
 
+## Updates
+
+Reqling checks this repository's GitHub Releases when it opens and every 6 hours (turn that off in **Settings ▸ App Updates**). The gear in the toolbar shows a dot when an update is available, and a green one once it's downloaded. Downloads are verified against GitHub's SHA-256 digest, then checked for the same bundle identifier, a newer version, a valid signature from the same developer, and Gatekeeper approval before **Install & Relaunch** replaces the app. A failed install restores the previous version. Builds run from `.build/` can check for updates but not install them.
+
 ## Requirements
 
 - macOS 26 or later

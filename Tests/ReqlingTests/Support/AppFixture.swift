@@ -20,6 +20,7 @@ final class AppFixture {
     init(
         protocLocator: StubProtocLocator = StubProtocLocator(),
         protocInstaller: StubProtocInstaller = StubProtocInstaller(),
+        updates: AppUpdateManager? = nil,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
     ) {
         component = AppDI.makeTestComponent(storageProfile: profile)
@@ -35,6 +36,7 @@ final class AppFixture {
             protoWorkspaces: component.protoWorkspaces,
             protocTooling: protoc.model,
             mcpServer: component.mcpServer,
+            updates: updates ?? component.appUpdates,
             sleep: sleep
         )
     }

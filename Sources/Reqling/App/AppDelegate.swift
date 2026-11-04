@@ -2,9 +2,10 @@ import AppKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Starts the MCP server when Settings has it on. The root model exists by now, so tools can reach the window.
+    /// Starts update checks and the MCP server as Settings has them. The root model exists by now, so tools can reach
+    /// the window.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        _ = AppDI.component.appModel
+        AppDI.component.appModel.startUpdates()
         AppDI.component.mcpServer.sync()
     }
 

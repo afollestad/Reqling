@@ -56,6 +56,8 @@ private struct SettingsDetail: View {
             VStack(alignment: .leading, spacing: SettingsScreenLayout.settingsSectionSpacing) {
                 SettingsScreenHeader(page: model.settingsPage) { model.closeSettings() }
                 switch model.settingsPage {
+                case .updates:
+                    AppUpdatesSettingsPage(model: model)
                 case .grpc:
                     GRPCSettingsPage(settings: model.settings, tooling: model.protocTooling)
                 case .interface:

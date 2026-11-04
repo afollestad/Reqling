@@ -82,6 +82,12 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("ProtocCache", isDirectory: true)
     }
 
+    /// Staged updates, their metadata, and the install helper's scripts and logs. The dev build's Application Support
+    /// folder is its own, so its updates never mix with the release build's.
+    var updatesDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Updates", isDirectory: true)
+    }
+
     /// Ephemeral profiles "trash" into their own directory; the real Trash belongs to the user.
     var trashDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("Trash", isDirectory: true)

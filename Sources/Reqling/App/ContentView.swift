@@ -35,6 +35,17 @@ struct ContentView: View {
                 Button("Rename") { model.commitRename() }
                 Button("Cancel", role: .cancel) { model.cancelRename() }
             }
+            .alert(
+                "Restart to Update?",
+                isPresented: Binding(get: { model.updates.restartPrompt != nil }, set: { if !$0 { model.dismissUpdateRestartPrompt() } }),
+                presenting: model.updates.restartPrompt
+            ) { _ in
+                Button("Install & Relaunch") { model.installUpdate() }
+                Button("Later", role: .cancel) { model.dismissUpdateRestartPrompt() }
+            } message: { staged in
+                Text("Reqling \(staged.release.version.description) is downloaded and verified. Reqling quits, installs it, and opens again. "
+                    + "You can also install it later from Settings ▸ App Updates.")
+            }
             .confirmationDialog(
                 "Move this project to the Trash?",
                 isPresented: Binding(get: { model.projectPendingDeletion != nil }, set: { if !$0 { model.projectPendingDeletion = nil } }),
@@ -144,17 +155,7 @@ private struct MainToolbar: ToolbarContent {
             }
         }
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                if model.isShowingSettings {
-                    model.closeSettings()
-                } else {
-                    model.showSettings()
-                }
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .help("Settings")
-            .accessibilityLabel("Settings")
+            SettingsToolbarButton(badge: model.updates.badgeState) { model.openSettingsFromToolbar() }
         }
     }
 }
@@ -190,5 +191,48 @@ private struct EnvironmentPicker: View {
 
     private var activeName: String {
         document.environment(active ?? document.defaultEnvironment.id)?.name ?? RequestEnvironment.defaultName
+    }
+}
+
+/// The gear, with a dot when an update is available (accent) or ready to install (green); either opens App Updates.
+struct SettingsToolbarButton: View {
+    let badge: AppUpdateBadgeState
+    let action: () -> Void
+    @Environment(\.appAccent) private var accent
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "gearshape")
+                .overlay(alignment: .topTrailing) {
+                    if let color = badgeColor {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 7, height: 7)
+                            // A fixed dark ring cuts the dot out of the glyph in both appearances; `.background`
+                            // resolves white in light mode and reads as a halo instead.
+                            .overlay(Circle().strokeBorder(Color(white: 0.12), lineWidth: 1))
+                            .offset(x: 3, y: -2)
+                    }
+                }
+        }
+        .help(helpText)
+        .accessibilityLabel("Settings")
+        .accessibilityValue(badge.accessibilityValue)
+    }
+
+    private var badgeColor: Color? {
+        switch badge {
+        case .none: nil
+        case .updateAvailable: Color(nsColor: accent)
+        case .readyToInstall: .green
+        }
+    }
+
+    private var helpText: String {
+        switch badge {
+        case .none: "Settings"
+        case .updateAvailable: "An update is available"
+        case .readyToInstall: "An update is ready to install"
+        }
     }
 }
