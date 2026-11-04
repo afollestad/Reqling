@@ -12,6 +12,9 @@ struct BodyTreeView: NSViewRepresentable {
     /// The Find menu reaching the tree while it has focus.
     var onFind: ((NSTextFinder.Action) -> Void)?
 
+    /// How far a row's text starts inside its cell.
+    static let cellTextInset: CGFloat = 2
+
     /// Expand All stops opening rows past this many, so a huge body never builds millions of rows; Option-clicking a
     /// disclosure triangle, which expands a whole subtree, stops at it too.
     static let expandBudget = 5_000
@@ -482,6 +485,7 @@ private final class BodyTreeCell: NSTableCellView {
             return
         }
         let height = field.intrinsicContentSize.height
-        field.frame = NSRect(x: 2, y: ((bounds.height - height) / 2).rounded(), width: max(bounds.width - 6, 0), height: height)
+        let inset = BodyTreeView.cellTextInset
+        field.frame = NSRect(x: inset, y: ((bounds.height - height) / 2).rounded(), width: max(bounds.width - inset - 4, 0), height: height)
     }
 }

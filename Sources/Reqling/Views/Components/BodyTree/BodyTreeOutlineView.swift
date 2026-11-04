@@ -15,6 +15,25 @@ final class BodyTreeOutlineView: NSOutlineView, InPlaceFindTarget {
         coordinator.expand(from: item as? BodyTreeItem, budget: numberOfRows + BodyTreeView.expandBudget)
     }
 
+    /// Moves each disclosure triangle right by half the gap between it and its row's text, so the top level's isn't
+    /// pressed against the pane's edge; the text stays put, so leaves still line up with their siblings. The glyph is
+    /// centered in a frame much wider than it, so the gap is measured from the frame's middle less half a glyph.
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        var frame = super.frameOfOutlineCell(atRow: row)
+        guard !frame.isEmpty else {
+            return frame
+        }
+        let textStart = super.frameOfCell(atColumn: 0, row: row).minX + BodyTreeView.cellTextInset
+        let gap = textStart - frame.midX - Self.disclosureGlyphHalfWidth
+        if gap > 0 {
+            frame.origin.x += (gap / 2).rounded()
+        }
+        return frame
+    }
+
+    /// About half the width of the system's disclosure chevron, which is 5 to 8 points wide depending on direction.
+    private static let disclosureGlyphHalfWidth: CGFloat = 3
+
     /// Expands one item, without the budgeted walk.
     func expandOne(_ item: BodyTreeItem) {
         super.expandItem(item, expandChildren: false)
