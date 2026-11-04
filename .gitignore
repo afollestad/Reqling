@@ -8,3 +8,15 @@
 !.claude/checks
 *.profraw
 .DS_Store
+xcuserdata/
+DerivedData/
+
+# Signing material and local secrets
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
