@@ -18,7 +18,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 - **Use `AppHoverInfoIcon` for an `info.circle` help affordance, never plain `.help(...)`.** The system tooltip waits out a long delay, ignores clicks, and inside a toggle row's button the click flips the setting.
 - **Use `SectionPicker` for segmented switchers**; macOS centers a segmented control inside a wider frame, pulling it off the pane's leading edge.
 - **Use `TemplateField` or `CodeEditor` for any text that accepts `{{variables}}`**; a plain `TextField` silently loses the pills, tooltips, and completion.
-- **Show read-only code and bodies in `CodeViewerPane`, never a read-only `CodeEditor` or `NSTextView`.** TextKit holds and lays out whole paragraphs, which stalled scrolling and resizing on multi-megabyte responses.
+- **Show read-only code and bodies in `CodeViewerPane`, and JSON or XML trees in `BodyTreePane`; never a read-only `CodeEditor`, `NSTextView`, or SwiftUI `OutlineGroup`.** Those hold and lay out everything at once, which stalled scrolling and resizing on multi-megabyte responses.
 - **Give `ForEach` rows in a grouped `Form` IDs unique across all its sections.** Sections keyed by bare indices share IDs, and the form draws each card around the wrong rows.
 - End a sheet with `SheetFooter` and head a Settings page with `ScreenHeader`. In a column too narrow for `ContentUnavailableView`, which clips there, use `CompactEmptyState`.
 - **Never give a detail screen an in-page title.** The window's `DetailTitleBar` names and renames whatever the detail shows (`Sources/Reqling/App/AGENTS.md`).

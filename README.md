@@ -45,12 +45,12 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Auth: Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
 - Automatic headers are listed alongside your own, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`). Add a header with the same name to replace one; switching off `User-Agent`, `Accept`, or `Content-Type` stops Reqling setting it, and macOS then sends its own default.
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
-- Responses show status, timing per phase, headers, and the body: JSON is pretty-printed without reordering keys and highlighted, and images preview.
-- ⌘F finds within the focused body or response.
+- Responses show status, timing per phase, headers, and the body. JSON and XML open as collapsible trees, with any value, key, or path a right-click away; Pretty re-indents JSON without reordering keys, and Raw shows the body as sent. Bodies of any size stay highlighted and scroll smoothly, and images preview.
+- ⌘F finds within the focused body editor, and searches a response's text or tree in place.
 
 ## gRPC
 
-Switch any request between HTTP and gRPC from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
+Switch any request between HTTP and gRPC from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline, as a collapsible tree or as text, with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
 
 The schema comes from one of three places:
 
