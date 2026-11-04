@@ -8,7 +8,8 @@ usage() {
   echo "usage: $0 [--release] [--no-xcsift]" >&2
 }
 
-# Signs ad hoc by default; set CODESIGN_IDENTITY (e.g. "Developer ID Application") to sign for distribution.
+# Set CODESIGN_IDENTITY (e.g. "Developer ID Application") to sign either configuration for distribution. Otherwise releases
+# sign ad hoc, and debug builds sign with DEBUG_CODESIGN_IDENTITY (`-` for ad hoc), else an Apple Development identity, else ad hoc.
 configuration=debug
 build_flags=()
 for arg in "$@"; do
@@ -93,9 +94,23 @@ if [ "$identity" != - ]; then
   # Notarization requires the hardened runtime and a secure timestamp.
   codesign --force --options runtime --timestamp --sign "$identity" "$app"
 elif [ "$configuration" = debug ]; then
-  # An ad hoc signature's default designated requirement pins the binary's hash, which every rebuild changes, so the
-  # Local Network grant and Keychain access would be lost each time. An identifier-based requirement survives rebuilds.
-  codesign --force --sign - --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"
+  # macOS ties Keychain items to the code that may read them twice: the ACL checks the designated requirement, and the
+  # partition list checks the signer. Ad hoc code's partition is its cdhash, which every rebuild changes, so each build
+  # would prompt for every item; an Apple Development signature's partition is its team ID, which rebuilds keep. The
+  # identifier-only requirement keeps the ACL and the Local Network grant matching any signer, ad hoc fallback included.
+  # The hash, not the name, picks the identity: codesign refuses a name that several certificates share.
+  debug_identity=${DEBUG_CODESIGN_IDENTITY:-}
+  if [ -z "$debug_identity" ]; then
+    debug_identity=$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2}' | head -n 1 || true)
+  fi
+  if ! codesign --force --timestamp=none --sign "${debug_identity:--}" \
+    --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"; then
+    # Over SSH the login keychain is usually locked, so codesign can't reach the identity's private key.
+    if [ "${debug_identity:--}" != - ]; then
+      echo "error: signing with $debug_identity failed; set DEBUG_CODESIGN_IDENTITY=- to sign ad hoc" >&2
+    fi
+    exit 1
+  fi
 else
   codesign --force --sign - "$app"
 fi

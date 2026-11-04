@@ -98,7 +98,7 @@ Reqling checks this repository's GitHub Releases when it opens and every 6 hours
 
 Reqling is a SwiftPM package; `scripts/build.sh` assembles the `.app` bundle and compiles its assets with `actool`. Launch it through `scripts/run.sh` rather than `swift run` or Xcode, since only the assembled bundle has its Info.plist, icon, and signature.
 
-Debug builds use the `com.afollestad.reqling.debug` identity and appear as **Reqling Dev**. They keep their own preferences and Application Support folder, so they never touch a release build's data.
+Debug builds use the `com.afollestad.reqling.debug` identity and appear as **Reqling Dev**. They keep their own preferences and Application Support folder, so they never touch a release build's data. They are signed with your Apple Development certificate when one is installed, so Keychain access survives rebuilds; without one they are signed ad hoc, and macOS asks again after each build. Set `DEBUG_CODESIGN_IDENTITY` to pick an identity, or `-` to force ad hoc.
 
 Dependency injection uses [Needle](https://github.com/uber/needle). The build and test scripts regenerate its providers before compiling, which is why `setup.sh` installs the matching `needle` CLI.
 
