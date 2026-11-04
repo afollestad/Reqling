@@ -111,6 +111,8 @@ final class MCPExecutionToolsTests: XCTestCase {
 
         XCTAssertEqual(result["response"]?["body"]?.stringValue?.hasPrefix("/adhoc "), true)
         XCTAssertTrue(fixture.runner.latest.isEmpty)
+        // Saves are written in the background; without the flush, a recorded run could still be on its way to disk.
+        fixture.runner.flushResponseCache()
         let cached = (try? FileManager.default.contentsOfDirectory(atPath: fixture.storage.directory.file("Support/Responses").path)) ?? []
         XCTAssertTrue(cached.isEmpty, "\(cached)")
     }

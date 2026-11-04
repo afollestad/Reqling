@@ -42,7 +42,8 @@ final class GRPCRunnerTests: XCTestCase {
             Variable(key: "token", value: "s3cr3t-token", isSecret: true)
         ])
 
-        let exchange = await makeRunner().run(request, in: project)
+        let runner = makeRunner()
+        let exchange = await runner.run(request, in: project)
 
         let call = try XCTUnwrap(exchange.grpc, "\(exchange.outcome)")
         XCTAssertEqual(call.status?.name, "OK")
@@ -59,6 +60,7 @@ final class GRPCRunnerTests: XCTestCase {
         XCTAssertTrue(call.trailers.contains(key: "x-trailer", value: "bye"))
         XCTAssertEqual(log.received.last?["authorization"], "Bearer s3cr3t-token")
         XCTAssertEqual(log.received.last?["x-secret"], "s3cr3t-token")
+        runner.flushResponseCache()
         let cached = try Data(contentsOf: fixture.directory.file("Support/Responses/\(project)/\(request).json"))
         XCTAssertNil(cached.utf8Text?.range(of: "s3cr3t"))
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc, call, "The record survives a relaunch")
@@ -134,11 +136,13 @@ final class GRPCRunnerTests: XCTestCase {
         let server = try await start()
         let (project, request) = try makeProject(echoSpec("Unary", messages: [#"{"text": "newer"}"#]), server: server)
 
-        let exchange = await makeRunner().run(request, in: project)
+        let runner = makeRunner()
+        let exchange = await runner.run(request, in: project)
 
         let call = try XCTUnwrap(exchange.grpc, "\(exchange.outcome)")
         XCTAssertEqual(call.events.map(\.unknownFieldCount), [0, 2])
         XCTAssertEqual(try texts(call, .received), ["newer"])
+        runner.flushResponseCache()
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc?.events.last?.unknownFieldCount, 2, "The count survives a relaunch")
     }
 

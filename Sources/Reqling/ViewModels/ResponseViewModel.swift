@@ -24,36 +24,48 @@ enum ResponseBodyMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// How a response body renders: as highlighted text, an image, or a binary placeholder.
+/// How a response body renders: as highlighted text, an image, or a placeholder, plus the formats it offers.
 struct ResponseBodyPresentation {
     enum Content {
         case text(String, SyntaxLanguage)
         case image(NSImage)
         case binary(byteCount: Int)
         case empty
+        /// Still being shaped off the main actor; `pendingShape` names the work.
+        case shaping
     }
 
     let content: Content
     let availableModes: [ResponseBodyMode]
+    /// The mode shown: the preferred one when this body offers it, else its first.
+    let mode: ResponseBodyMode?
+    /// The work to start for `content` to arrive, while it is `.shaping`.
+    let pendingShape: ResponseShapeKey?
+
+    static let empty = ResponseBodyPresentation(content: .empty, availableModes: [], mode: nil, pendingShape: nil)
 }
 
-/// The latest exchange for one request, shaped for display. Body shaping (pretty-printing a large JSON payload) is
-/// memoized per exchange and mode, so a re-render never repeats it.
+/// The latest exchange for one request, shaped for display.
+///
+/// Shaping a body (decoding it, pretty-printing a large JSON payload) runs once per exchange and mode: small bodies
+/// inline, larger ones off the main actor through `ResponseViewModel+Shaping`, which the view starts from its
+/// `.task(id: pendingShape)`, never from a getter.
 @MainActor
 @Observable
 final class ResponseViewModel {
     var tab: ResponseTab = .body
+    /// The format the person picked; a body that doesn't offer it shows its first one instead (`body.mode`).
     var bodyMode: ResponseBodyMode = .pretty
 
     let requestID: RequestNodeID
     let projectID: ProjectID
-    @ObservationIgnored private let runner: RequestRunner
-    @ObservationIgnored private var cache: (key: CacheKey, value: ResponseBodyPresentation)?
-
-    private struct CacheKey: Equatable {
-        let startedAt: Date
-        let mode: ResponseBodyMode
-    }
+    @ObservationIgnored let runner: RequestRunner
+    /// Results of background shaping for the exchange shown; writing it re-renders the body.
+    var shapedBodies = ShapedBodies()
+    @ObservationIgnored var inlineShapes = ShapedBodies()
+    @ObservationIgnored var classification: BodyClassification?
+    @ObservationIgnored var shapingKey: ResponseShapeKey?
+    @ObservationIgnored var shapingTask: Task<ShapedBody, any Error>?
 
     init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner) {
         self.requestID = requestID
@@ -71,18 +83,19 @@ final class ResponseViewModel {
     }
 
     var body: ResponseBodyPresentation {
-        // Read every observable input before consulting the cache, so observation keeps tracking them.
-        let mode = bodyMode
+        // Read every observable input before consulting a cache, so observation keeps tracking them.
+        let preference = bodyMode
+        let shaped = shapedBodies
         guard let exchange, let response = exchange.response else {
-            return ResponseBodyPresentation(content: .empty, availableModes: [])
+            return .empty
         }
-        let key = CacheKey(startedAt: exchange.startedAt, mode: mode)
-        if let cache, cache.key == key {
-            return cache.value
-        }
-        let value = Self.present(response, mode: mode)
-        cache = (key, value)
-        return value
+        return presentation(of: response, startedAt: exchange.startedAt, preference: preference, shaped: shaped)
+    }
+
+    /// The format picker's selection: what `body` shows, writing the person's preference.
+    var selectedBodyMode: ResponseBodyMode {
+        get { body.mode ?? bodyMode }
+        set { bodyMode = newValue }
     }
 
     func copyBody(to system: any SystemIntegration) {
@@ -98,38 +111,6 @@ final class ResponseViewModel {
             return
         }
         try? response.body.write(to: url, options: .atomic)
-    }
-
-    private static func present(_ response: HTTPResponseRecord, mode: ResponseBodyMode) -> ResponseBodyPresentation {
-        let contentType = response.header("Content-Type")
-        guard !response.body.isEmpty else {
-            return ResponseBodyPresentation(content: .empty, availableModes: [])
-        }
-        if contentType?.lowercased().hasPrefix("image/") == true, let image = NSImage(data: response.body) {
-            let modes: [ResponseBodyMode] = [.preview]
-            return ResponseBodyPresentation(content: .image(image), availableModes: modes)
-        }
-        guard let text = String(bytes: response.body, encoding: .utf8) else {
-            return ResponseBodyPresentation(content: .binary(byteCount: response.body.count), availableModes: [])
-        }
-        var language = ContentTypeLanguage.language(forContentType: contentType)
-        if language == .plainText, looksLikeJSON(text), response.body.count < 5_000_000,
-           (try? JSONSerialization.jsonObject(with: response.body)) != nil {
-            // Many APIs label JSON as text/plain; trust the content when it parses as such.
-            language = .json
-        }
-        let modes: [ResponseBodyMode] = language == .json ? [.pretty, .raw] : [.raw]
-        if mode == .pretty, language == .json, let pretty = JSONFormatter.pretty(text) {
-            return ResponseBodyPresentation(content: .text(pretty, .json), availableModes: modes)
-        }
-        return ResponseBodyPresentation(content: .text(text, language), availableModes: modes)
-    }
-
-    private static func looksLikeJSON(_ text: String) -> Bool {
-        guard let first = text.first(where: { !$0.isWhitespace }) else {
-            return false
-        }
-        return first == "{" || first == "["
     }
 
     private static func suggestedFileName(for response: HTTPResponseRecord) -> String {

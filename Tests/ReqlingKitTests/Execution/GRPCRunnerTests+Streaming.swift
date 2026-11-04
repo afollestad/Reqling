@@ -71,6 +71,7 @@ extension GRPCRunnerTests {
         XCTAssertEqual(try texts(call, .received), ["first"])
         XCTAssertTrue(call.initialMetadata.contains(key: "x-initial", value: "hello"))
         XCTAssertFalse(runner.openStreams.contains(key))
+        runner.flushResponseCache()
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc, call, "Cached like any finished call")
         XCTAssertEqual(runner.outcome(for: request, in: project), .failed)
     }

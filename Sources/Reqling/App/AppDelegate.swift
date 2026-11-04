@@ -18,5 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         AppDI.component.appModel.flushPendingEdits()
         AppDI.component.mcpServer.stopListening()
+        // Last, after anything above that might still record a run.
+        AppDI.component.requestRunner.flushResponseCache()
     }
 }

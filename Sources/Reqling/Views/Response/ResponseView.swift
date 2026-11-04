@@ -21,12 +21,17 @@ struct ResponseView: View {
             if let failure = exchange.failure {
                 ResponseFailureView(failure: failure)
             } else if let record = exchange.response {
+                let pendingShape = response.body.pendingShape
                 VStack(alignment: .leading, spacing: 8) {
                     ResponseSectionBar(response: response, model: model)
                     ResponseTabContent(response: response, exchange: exchange, record: record, model: model)
                 }
                 .padding(.horizontal, AppMetrics.detailPaneInset)
                 .padding(.vertical, AppMetrics.paneInset)
+                // Here rather than on the body tab, so a large body keeps shaping while another tab is shown.
+                .task(id: pendingShape) {
+                    response.startShaping(pendingShape)
+                }
             }
         } else if response.isSending {
             ProgressView("Sending…")

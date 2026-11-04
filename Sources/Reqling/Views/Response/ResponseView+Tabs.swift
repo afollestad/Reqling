@@ -92,6 +92,9 @@ private struct ResponseBodyView: View {
             case .empty:
                 ContentUnavailableView("Empty Body", systemImage: "tray", description: Text("The response had no body."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .shaping:
+                ProgressView("Formatting…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -114,7 +117,7 @@ private struct ResponseBodyControls: View {
     var body: some View {
         HStack(spacing: 8) {
             if modes.count > 1 {
-                SectionPicker("Format", selection: $response.bodyMode, options: modes, label: \.rawValue)
+                SectionPicker("Format", selection: $response.selectedBodyMode, options: modes, label: \.rawValue)
             }
             if spreads {
                 Spacer(minLength: 0)

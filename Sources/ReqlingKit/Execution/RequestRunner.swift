@@ -65,7 +65,7 @@ public final class RequestRunner {
     @ObservationIgnored let workspace: WorkspaceStateStore
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored private let keychain: any KeychainIdentityStore
-    @ObservationIgnored private let cache: ResponseCache
+    @ObservationIgnored private let cache: ResponseCacheWriter
     @ObservationIgnored private let userAgent: String
     @ObservationIgnored let dynamic: DynamicVariables
     @ObservationIgnored private let makeExecutor: @MainActor () -> HTTPExecutor
@@ -95,7 +95,7 @@ public final class RequestRunner {
         self.workspace = workspace
         self.settings = settings
         self.keychain = keychain
-        self.cache = cache
+        self.cache = ResponseCacheWriter(cache: cache)
         self.userAgent = userAgent
         self.dynamic = dynamic
         self.grpcSchemas = grpcSchemas
@@ -113,6 +113,12 @@ public final class RequestRunner {
         }
         latest[key] = cached
         return cached
+    }
+
+    /// Waits for every response still being written to the cache. Call it before quitting, and in tests that read a
+    /// run's cache file.
+    public func flushResponseCache() {
+        cache.flush()
     }
 
     /// How the request's latest run went; `.notSent` when it has never run on this Mac.
@@ -407,10 +413,11 @@ public final class RequestRunner {
             return exchange
         }
         latest[RunKey(exchange.requestID, in: exchange.projectID)] = exchange
-        cache.save(exchange)
+        // Loaded before the save is queued, which the load would otherwise wait out.
         if outcomes[exchange.projectID] == nil {
             outcomes[exchange.projectID] = cache.outcomes(in: exchange.projectID)
         }
+        cache.save(exchange)
         outcomes[exchange.projectID]?[exchange.requestID] = exchange.outcomeKind
         outcomeRevision += 1
         return exchange

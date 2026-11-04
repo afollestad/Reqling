@@ -119,7 +119,9 @@ final class RequestRunnerTests: XCTestCase {
         let fixtureProject = try makeProject(base: server.baseURL)
         let project = fixtureProject.id
         let request = fixtureProject.request
-        _ = await makeRunner().run(request, in: project)
+        let runner = makeRunner()
+        _ = await runner.run(request, in: project)
+        runner.flushResponseCache()
 
         let restored = makeRunner().exchange(for: request, in: project)
 
@@ -138,6 +140,7 @@ final class RequestRunnerTests: XCTestCase {
         _ = await runner.run(request, in: project)
 
         XCTAssertEqual(runner.outcome(for: request, in: project), .succeeded)
+        runner.flushResponseCache()
         XCTAssertEqual(makeRunner().outcome(for: request, in: project), .succeeded)
     }
 
@@ -264,10 +267,12 @@ final class RequestRunnerTests: XCTestCase {
             }
         }
 
-        let exchange = await makeRunner().run(request, in: project)
+        let runner = makeRunner()
+        let exchange = await runner.run(request, in: project)
 
         XCTAssertEqual(server.requests.last?.uri, "/end/s3cr3t?key=s3cr3t")
         XCTAssertEqual(exchange.response?.url, "\(server.baseURL)/end/\(TemplateResolver.mask)?key=\(TemplateResolver.mask)")
+        runner.flushResponseCache()
         let cached = try Data(contentsOf: fixture.directory.file("Support/Responses/\(project)/\(request).json"))
         XCTAssertNil(cached.utf8Text?.range(of: "s3cr3t"))
     }
