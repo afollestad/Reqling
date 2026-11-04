@@ -9,6 +9,12 @@
 
 <p align="center">A minimal, fully native macOS client for HTTP and gRPC APIs, with a built-in MCP server for AI agents.</p>
 
+<p align="center">
+  <a href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
+    <img src=".github/download-macos.svg?v=240x42" alt="Download Reqling for macOS (latest release)" width="240" height="42">
+  </a>
+</p>
+
 Reqling is a SwiftUI app for creating, storing, organizing, and sending web requests, in the spirit of Postman but smaller and native to the Mac. It is in early development.
 
 ## Projects
