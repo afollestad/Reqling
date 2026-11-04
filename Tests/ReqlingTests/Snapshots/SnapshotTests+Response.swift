@@ -95,6 +95,20 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
     }
 
+    /// The waterfall stays at the pane's leading edge though it caps its own width.
+    func testResponseTiming() throws {
+        let response = try jsonResponse(timing: HTTPTiming(
+            dnsLookup: 0.002,
+            connect: 0.012,
+            tlsHandshake: 0.031,
+            requestSent: 0.000_1,
+            waiting: 0.068,
+            download: 0.028
+        ))
+        response.tab = .timing
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
     private func jsonResponseView() throws -> ResponseView {
         ResponseView(response: try jsonResponse(), model: fixture.model)
     }
@@ -102,7 +116,8 @@ extension SnapshotTests {
     private func jsonResponse(
         body: String = #"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":false}],"next":null}"#,
         contentType: String = "application/json",
-        sent: ResolvedHTTPRequest? = nil
+        sent: ResolvedHTTPRequest? = nil,
+        timing: HTTPTiming? = nil
     ) throws -> ResponseViewModel {
         let project = try SnapshotProject.make(in: fixture)
         let record = HTTPResponseRecord(
@@ -112,6 +127,7 @@ extension SnapshotTests {
             url: "https://api.example.com/users",
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             duration: 0.142,
+            timing: timing,
             protocolName: "h2",
             tlsVersion: "TLS 1.3"
         )

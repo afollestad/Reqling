@@ -25,6 +25,8 @@ struct ResponseView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ResponseSectionBar(response: response, model: model)
                     ResponseTabContent(response: response, exchange: exchange, record: record, model: model)
+                        // A tab narrower or shorter than the pane (Timing caps its width) would otherwise center the whole stack.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .padding(.horizontal, AppMetrics.detailPaneInset)
                 .padding(.vertical, AppMetrics.paneInset)
