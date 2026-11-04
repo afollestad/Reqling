@@ -38,10 +38,12 @@ struct RequestBodyEditor: View {
             ScrollView {
                 FormDataEditor(fields: $editor.spec.body.formData, editor: editor)
             }
+            .detailPaneScrollMargins()
         case .urlEncoded:
             ScrollView {
                 KeyValueTable(rows: $editor.spec.body.urlEncoded, rowName: "field", tokenContext: editor.tokenContext)
             }
+            .detailPaneScrollMargins()
         case .binary:
             BinaryBodyEditor(binary: $editor.spec.body.binary, editor: editor)
         case .graphQL:

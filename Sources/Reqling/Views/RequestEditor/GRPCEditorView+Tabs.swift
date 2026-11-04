@@ -29,8 +29,8 @@ private struct GRPCEditorSettingsTab: View {
         case .metadata:
             ScrollView {
                 KeyValueTable(rows: $editor.spec.metadata, rowName: "metadata", tokenContext: editor.tokenContext)
-                    .padding(.trailing, 4)
             }
+            .detailPaneScrollMargins()
         case .auth:
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -132,8 +132,8 @@ private struct GRPCMessageList: View {
                 .buttonStyle(.borderless)
                 .help("Add a message to send after the others")
             }
-            .padding(.trailing, 4)
         }
+        .detailPaneScrollMargins()
     }
 }
 

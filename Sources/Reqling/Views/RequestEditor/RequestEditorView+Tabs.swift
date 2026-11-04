@@ -10,16 +10,16 @@ struct RequestEditorTabContent: View {
         case .params:
             ScrollView {
                 KeyValueTable(rows: $editor.spec.queryParameters, rowName: "parameter", tokenContext: editor.tokenContext)
-                    .padding(.trailing, 4)
             }
+            .detailPaneScrollMargins()
         case .headers:
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     KeyValueTable(rows: $editor.spec.headers, keyPlaceholder: "Header", rowName: "header", tokenContext: editor.tokenContext)
                     AutoHeadersList(editor: editor)
                 }
-                .padding(.trailing, 4)
             }
+            .detailPaneScrollMargins()
         case .body:
             RequestBodyEditor(editor: editor)
         case .auth:

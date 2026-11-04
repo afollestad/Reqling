@@ -72,7 +72,8 @@ private struct KeyValueTableRow: View {
             .buttonStyle(.borderless)
             .help("Remove this \(rowName)")
             .accessibilityLabel("Remove this \(rowName)")
-            .opacity(isDraft ? 0 : 1)
+            // Dimmed rather than hidden, like the checkbox, so the draft row spans the table's full width.
+            .opacity(isDraft ? 0.35 : 1)
             .disabled(isDraft)
         }
         .opacity(writer.shown.isEnabled || isDraft ? 1 : 0.55)

@@ -23,8 +23,6 @@ struct GRPCEditorPane: View {
     var body: some View {
         let listsMessages = editor.listsMessages
         VStack(alignment: .leading, spacing: 12) {
-            RequestEditorHeader(editor: editor, model: model)
-                .disabled(editor.isReadOnly)
             // Disables its own editing parts: an open call's Cancel must work in a read-only project.
             GRPCTargetBar(editor: editor)
             GRPCMethodRows(editor: editor)

@@ -31,6 +31,15 @@ extension RequestEditing {
     }
 }
 
+extension RequestKind.Name {
+    var title: String {
+        switch self {
+        case .http: "HTTP"
+        case .grpc: "gRPC"
+        }
+    }
+}
+
 extension RequestEditorViewModel: RequestEditing {
     var kind: RequestKind.Name {
         .http

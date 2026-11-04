@@ -68,33 +68,25 @@ struct SectionPicker<Value: Hashable>: View {
     }
 }
 
-/// The title block of a full detail screen.
+/// The title block of a Settings page; other detail screens are named by the window's `DetailTitleBar`.
 struct ScreenHeader<Trailing: View>: View {
     let title: String
     var subtitle: String?
-    var systemImage: String?
     private let trailing: Trailing
 
-    init(_ title: String, subtitle: String? = nil, systemImage: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+    init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
-        self.systemImage = systemImage
         self.trailing = trailing()
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Group {
-                    if let systemImage {
-                        Label(title, systemImage: systemImage)
-                    } else {
-                        Text(title)
-                    }
-                }
-                .font(.largeTitle.weight(.semibold))
-                .lineLimit(1)
-                .accessibilityAddTraits(.isHeader)
+                Text(title)
+                    .font(.largeTitle.weight(.semibold))
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
                 if let subtitle {
                     Text(subtitle)
                         .foregroundStyle(.secondary)
@@ -108,8 +100,8 @@ struct ScreenHeader<Trailing: View>: View {
 }
 
 extension ScreenHeader where Trailing == EmptyView {
-    init(_ title: String, subtitle: String? = nil, systemImage: String? = nil) {
-        self.init(title, subtitle: subtitle, systemImage: systemImage) { EmptyView() }
+    init(_ title: String, subtitle: String? = nil) {
+        self.init(title, subtitle: subtitle) { EmptyView() }
     }
 }
 
@@ -153,5 +145,14 @@ struct CompactEmptyState<Actions: View>: View {
         .padding(AppMetrics.paneInset)
         // Wide enough that a one-sentence message wraps to two lines in the sidebar's default width.
         .frame(maxWidth: 300)
+    }
+}
+
+extension View {
+    /// For a scroll view in a detail pane: its content ends at the pane's inset, flush with the controls above it, and
+    /// the scroller runs in the pane's margin beyond that instead of over the rows' trailing buttons.
+    func detailPaneScrollMargins() -> some View {
+        contentMargins(.trailing, AppMetrics.detailPaneInset, for: .scrollContent)
+            .padding(.trailing, -AppMetrics.detailPaneInset)
     }
 }

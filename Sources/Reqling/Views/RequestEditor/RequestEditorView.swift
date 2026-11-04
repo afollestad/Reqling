@@ -22,8 +22,6 @@ struct RequestEditorPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            RequestEditorHeader(editor: editor, model: model)
-                .disabled(editor.isReadOnly)
             RequestEditorURLBar(editor: editor)
                 .disabled(editor.isReadOnly)
             if let note = editor.unavailableNote {
@@ -42,62 +40,6 @@ struct RequestEditorPane: View {
         }
         .padding(.horizontal, AppMetrics.detailPaneInset)
         .padding(.vertical, AppMetrics.paneInset)
-    }
-}
-
-/// The request's name and protocol, for either kind of request. The name is a label rather than a field, so opening a
-/// request never puts a stray keystroke into its name; double-click or Rename… edits it.
-struct RequestEditorHeader: View {
-    let editor: any RequestEditing
-    let model: AppModel
-
-    var body: some View {
-        HStack {
-            Text(editor.name)
-                .font(.title2.weight(.semibold))
-                .lineLimit(1)
-                .onTapGesture(count: 2) { model.beginRename(editor.requestID, in: editor.projectID) }
-                .accessibilityAddTraits(.isHeader)
-            Button {
-                model.beginRename(editor.requestID, in: editor.projectID)
-            } label: {
-                Image(systemName: "pencil")
-            }
-            .buttonStyle(.borderless)
-            .help("Rename this request")
-            .accessibilityLabel("Rename this request")
-            Spacer()
-            Picker("Protocol", selection: Binding(
-                get: { editor.kind },
-                set: { model.changeKind(of: editor.requestID, in: editor.projectID, to: $0) }
-            )) {
-                ForEach(RequestKind.Name.allCases, id: \.self) { kind in
-                    Text(Self.title(for: kind))
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .disabled(editor.isSending)
-            .help(editor.isSending ? "Wait for the request to finish, or cancel it, to change its protocol" : "The protocol this request speaks")
-            if editor.isReadOnly {
-                Label("Read-only", systemImage: "lock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .help(readOnlyHelp)
-            }
-        }
-    }
-
-    static func title(for kind: RequestKind.Name) -> String {
-        switch kind {
-        case .http: "HTTP"
-        case .grpc: "gRPC"
-        }
-    }
-
-    private var readOnlyHelp: String {
-        editor.unavailableNote == nil ? "This project was saved by a newer version of Reqling." : "This project isn't available right now."
     }
 }
 

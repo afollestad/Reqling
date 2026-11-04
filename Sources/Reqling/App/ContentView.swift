@@ -16,6 +16,12 @@ struct ContentView: View {
             }
             .toolbar { MainToolbar(model: model) }
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+            // `DetailTitleBar` draws the visible title; the scene's own title stays for the Window menu and VoiceOver.
+            .toolbar(removing: .title)
+            .background {
+                WindowToolbarConfigurator()
+                    .frame(width: 0, height: 0)
+            }
         )
         .preferredColorScheme(Self.colorScheme(for: model.settings.settings.theme))
         .onChange(of: model.library.projects) { _, _ in
@@ -48,12 +54,12 @@ struct ContentView: View {
                     + "You can also install it later from Settings ▸ App Updates.")
             }
             .confirmationDialog(
-                "Change “\(model.kindChangePending?.name ?? "")” to \(RequestEditorHeader.title(for: model.kindChangePending?.kind ?? .http))?",
+                "Change “\(model.kindChangePending?.name ?? "")” to \((model.kindChangePending?.kind ?? .http).title)?",
                 isPresented: Binding(get: { model.kindChangePending != nil }, set: { if !$0 { model.kindChangePending = nil } }),
                 titleVisibility: .visible,
                 presenting: model.kindChangePending
             ) { change in
-                Button("Change to \(RequestEditorHeader.title(for: change.kind))", role: .destructive) { model.applyKindChange(change) }
+                Button("Change to \(change.kind.title)", role: .destructive) { model.applyKindChange(change) }
             } message: { change in
                 Text(change.kind == .grpc
                     ? "Its auth, headers, host, and timeout carry over. Its method, query, and body are discarded."
@@ -163,12 +169,16 @@ private struct MainToolbar: ToolbarContent {
     let model: AppModel
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(id: MainToolbarItemID.title, placement: .navigation) {
+            DetailTitleBar(model: model)
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id: MainToolbarItemID.trailing, placement: .primaryAction) {
             if let project = model.activeProjectID, let document = model.library.document(project) {
                 EnvironmentPicker(document: document, active: model.activeEnvironmentID(for: project), model: model)
             }
         }
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(id: MainToolbarItemID.settings, placement: .primaryAction) {
             SettingsToolbarButton(badge: model.updates.badgeState) { model.openSettingsFromToolbar() }
         }
     }

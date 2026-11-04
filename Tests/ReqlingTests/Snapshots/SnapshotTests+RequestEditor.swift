@@ -20,6 +20,13 @@ extension SnapshotTests {
         assertBothAppearances(RequestEditorPane(editor: editor, model: fixture.model), size: Self.editorSize, testName: testName, line: line)
     }
 
+    /// The window title for a request: its name, the rename pencil, and the protocol menu.
+    func testDetailTitleBarForARequest() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        _ = try project.editor(project.listUsers, in: fixture)
+        assertBothAppearances(DetailTitleBar(model: fixture.model), size: CGSize(width: 420, height: 52))
+    }
+
     /// The URL bar's pills: resolved (`baseUrl`, `page`), unresolved (`userId`), and dynamic (`$uuid`).
     func testEditorURLAndParams() throws {
         try assertEditor(\.listUsers, tab: .params)

@@ -1,7 +1,7 @@
 import ReqlingKit
 import SwiftUI
 
-/// A selected project: what it contains and where it lives.
+/// A selected project: what it contains and where it lives. `DetailTitleBar` names it.
 struct ProjectDetailView: View {
     let project: LibraryProject
     let model: AppModel
@@ -10,7 +10,9 @@ struct ProjectDetailView: View {
         if let document = project.document {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    ScreenHeader(document.name, subtitle: project.url.path(percentEncoded: false))
+                    Text(project.url.path(percentEncoded: false))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     HStack(spacing: 24) {
                         ProjectStat(value: document.allRequests.count, label: "Requests")
                         ProjectStat(value: document.allEnvironments.count, label: "Environments")
@@ -76,7 +78,7 @@ private struct ProjectIssues: View {
     }
 }
 
-/// A selected folder: its name and the auth its requests inherit.
+/// A selected folder: the auth its requests inherit. `DetailTitleBar` names it and renames it.
 struct FolderDetailView: View {
     let folder: RequestFolder
     let projectID: ProjectID
@@ -85,9 +87,8 @@ struct FolderDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                ScreenHeader(folder.name, subtitle: itemCount, systemImage: "folder") {
-                    Button("Rename…") { model.beginRename(folder.id, in: projectID) }
-                }
+                Text(itemCount)
+                    .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Auth")
                         .font(.headline)
