@@ -17,7 +17,7 @@ struct SidebarView: View {
                     SidebarProjectGroup(section: section, isFiltering: sidebar.isFiltering, model: model)
                 }
             } header: {
-                SidebarProjectsHeader(model: model)
+                Text("Projects")
             }
         }
         .listStyle(.sidebar)
@@ -34,6 +34,11 @@ struct SidebarView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(model: model)
+        }
+        .toolbar {
+            ToolbarItem(id: MainToolbarItemID.addProject, placement: .automatic) {
+                SidebarAddProjectMenu(model: model)
+            }
         }
     }
 
@@ -61,58 +66,19 @@ struct SidebarDragItem: Codable, Transferable {
     }
 }
 
-private struct SidebarProjectsHeader: View {
+/// The toolbar's add menu, beside the sidebar toggle. It stays while the library is empty: the empty state offers the
+/// same actions, but the toolbar is the one place they are always found.
+private struct SidebarAddProjectMenu: View {
     let model: AppModel
-
-    var body: some View {
-        let isEmpty = model.library.projects.isEmpty
-        // Baseline alignment centers the glyph on the letters; centering would use the line box, which reserves
-        // descender space below them and leaves the glyph sitting low.
-        HStack(alignment: .firstTextBaseline) {
-            Text("Projects")
-            Spacer()
-            // The empty state offers the same actions. Hidden rather than removed, so the header keeps its height
-            // when the first project arrives.
-            SidebarHeaderAddMenu(model: model)
-                .opacity(isEmpty ? 0 : 1)
-                .disabled(isEmpty)
-                .accessibilityHidden(isEmpty)
-        }
-    }
-}
-
-/// The header's add menu, drawn as Alveary's sidebar header actions are: a glyph whose circle fills while hovered. A
-/// section header's content runs closer to the edge than a row's selection, so the trailing padding pulls the circle in
-/// until its edge meets the selection's, which also centers it over the rows' count column.
-private struct SidebarHeaderAddMenu: View {
-    static let size: CGFloat = 20
-    static let trailingAlignment: CGFloat = 8
-
-    let model: AppModel
-    @State private var isHovering = false
 
     var body: some View {
         Menu {
             Button("New Project…") { model.sheet = .newProject }
             Button("Add Project Folder…") { model.openProjectFolder() }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary.opacity(isHovering ? 0.9 : 0.68))
-                .frame(width: Self.size, height: Self.size)
-                .background(Circle().fill(Color.primary.opacity(isHovering ? 0.12 : 0)))
-                .contentShape(Circle())
+            Label("Add a Project", systemImage: "plus")
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
-        .padding(.trailing, Self.trailingAlignment)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
         .help("Create a project, or add an existing project folder")
         .accessibilityLabel("Add a project")
     }

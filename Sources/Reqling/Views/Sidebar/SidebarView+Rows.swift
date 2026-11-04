@@ -24,6 +24,9 @@ struct SidebarProjectGroup: View {
 }
 
 private struct SidebarProjectLabel: View {
+    /// The disclosure caret ends 3pt before its label; this widens that to the 8pt between the icon and the name.
+    private static let caretGap: CGFloat = 5
+
     let project: LibraryProject
     let requestCount: Int
     let model: AppModel
@@ -39,6 +42,7 @@ private struct SidebarProjectLabel: View {
                     .foregroundStyle(.white)
             }
             .frame(width: 20, height: 20)
+            .padding(.leading, Self.caretGap)
             .accessibilityHidden(true)
             Text(project.name)
                 .fontWeight(.semibold)
