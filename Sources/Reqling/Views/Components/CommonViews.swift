@@ -139,12 +139,19 @@ struct CompactEmptyState<Actions: View>: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            VStack(spacing: 6) {
-                actions
+            // Side by side when the column allows, stacked near the sidebar's minimum width.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    actions
+                }
+                VStack(spacing: 6) {
+                    actions
+                }
             }
             .controlSize(.small)
         }
         .padding(AppMetrics.paneInset)
-        .frame(maxWidth: 220)
+        // Wide enough that a one-sentence message wraps to two lines in the sidebar's default width.
+        .frame(maxWidth: 300)
     }
 }

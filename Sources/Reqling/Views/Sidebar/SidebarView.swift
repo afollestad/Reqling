@@ -65,10 +65,18 @@ private struct SidebarProjectsHeader: View {
     let model: AppModel
 
     var body: some View {
-        HStack {
+        let isEmpty = model.library.projects.isEmpty
+        // Baseline alignment centers the glyph on the letters; centering would use the line box, which reserves
+        // descender space below them and leaves the glyph sitting low.
+        HStack(alignment: .firstTextBaseline) {
             Text("Projects")
             Spacer()
+            // The empty state offers the same actions. Hidden rather than removed, so the header keeps its height
+            // when the first project arrives.
             SidebarHeaderAddMenu(model: model)
+                .opacity(isEmpty ? 0 : 1)
+                .disabled(isEmpty)
+                .accessibilityHidden(isEmpty)
         }
     }
 }
@@ -117,7 +125,7 @@ private struct SidebarEmptyState: View {
         CompactEmptyState(
             systemImage: "shippingbox",
             title: "No Projects",
-            message: "A project holds your requests and the environments they run in."
+            message: "A project holds your requests and their environments."
         ) {
             Button("New Project…") { model.sheet = .newProject }
                 .buttonStyle(.borderedProminent)

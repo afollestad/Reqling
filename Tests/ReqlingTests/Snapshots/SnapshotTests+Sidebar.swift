@@ -23,4 +23,9 @@ extension SnapshotTests {
     func testSidebarEmpty() {
         assertBothAppearances(SidebarView(model: fixture.model), size: CGSize(width: 280, height: 360))
     }
+
+    /// The sidebar's minimum width, where the actions stack instead of sharing a row.
+    func testSidebarEmptyNarrow() {
+        assertBothAppearances(SidebarView(model: fixture.model), size: CGSize(width: 220, height: 360))
+    }
 }

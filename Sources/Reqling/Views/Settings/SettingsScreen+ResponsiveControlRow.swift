@@ -43,7 +43,7 @@ private struct SettingsResponsiveControlLabel: View {
                 .accessibilityHidden(true)
 
             if let helpText {
-                SettingsHelpIcon(text: helpText)
+                AppHoverInfoIcon(text: helpText)
             }
         }
     }
@@ -179,16 +179,4 @@ enum SettingsControlHorizontalSizing {
     case fillsAvailableWidth
     case intrinsic
     case intrinsicInline
-}
-
-/// An info glyph whose tooltip carries a row's longer explanation.
-struct SettingsHelpIcon: View {
-    let text: String
-
-    var body: some View {
-        Image(systemName: "info.circle")
-            .foregroundStyle(.secondary)
-            .help(text)
-            .accessibilityLabel(text)
-    }
 }

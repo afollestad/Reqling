@@ -9,7 +9,7 @@ struct ContentView: View {
         presentations(
             NavigationSplitView {
                 SidebarView(model: model)
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 380)
             } detail: {
                 DetailView(model: model)
                     .frame(minWidth: 520, minHeight: 420)
@@ -128,6 +128,7 @@ private struct DetailView: View {
             } actions: {
                 if model.library.projects.isEmpty {
                     Button("New Project…") { model.sheet = .newProject }
+                        .buttonStyle(.borderedProminent)
                 } else {
                     Button("New Request") { model.newRequest() }
                 }
