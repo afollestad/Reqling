@@ -76,7 +76,8 @@ private struct SettingsDetail: View {
                 }
             }
             .padding(SettingsScreenLayout.settingsContentInset)
-            .frame(maxWidth: 760, alignment: .leading)
+            // Fills the pane so the trailing inset matches the leading one; a width cap strands a gap on wide windows.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
