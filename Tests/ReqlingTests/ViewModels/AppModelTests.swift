@@ -1,0 +1,285 @@
+import Foundation
+import ReqlingKit
+import XCTest
+
+@testable import Reqling
+
+@MainActor
+final class AppModelTests: XCTestCase {
+    private var fixture: AppFixture!
+    private var gate: SleepGate!
+
+    override func setUp() async throws {
+        let gate = SleepGate()
+        self.gate = gate
+        fixture = AppFixture(sleep: { _ in await gate.sleep() })
+    }
+
+    override func tearDown() async throws {
+        gate.releaseAll()
+        fixture.tearDown()
+        fixture = nil
+    }
+
+    private var model: AppModel {
+        fixture.model
+    }
+
+    private func makeProject() throws -> ProjectID {
+        model.createProject(named: "API")
+        return try XCTUnwrap(model.selection?.projectID)
+    }
+
+    /// A second `AppModel` over the same storage, as a relaunch would build.
+    private func relaunch() -> AppModel {
+        AppModel(
+            library: fixture.library,
+            workspace: fixture.component.workspaceState,
+            runner: fixture.component.requestRunner,
+            settings: fixture.component.settingsStore,
+            appInfo: AppFixture.appInfo,
+            keychain: fixture.component.keychainIdentities,
+            system: fixture.system
+        )
+    }
+
+    func testCreatingAProjectSelectsIt() throws {
+        let project = try makeProject()
+
+        XCTAssertEqual(model.selection, .project(project))
+        XCTAssertEqual(fixture.library.document(project)?.name, "API")
+    }
+
+    func testNewItemsGoBesideTheSelectionOrInsideASelectedFolder() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let first = try XCTUnwrap(model.selection?.nodeID)
+        model.newFolder()
+        let folder = try XCTUnwrap(model.selection?.nodeID)
+        model.newRequest()
+        let nested = try XCTUnwrap(model.selection?.nodeID)
+
+        let document = try XCTUnwrap(fixture.library.document(project))
+        XCTAssertEqual(document.items.map(\.id), [first, folder])
+        XCTAssertEqual(document.folder(folder)?.children.map(\.id), [nested])
+        XCTAssertTrue(model.isExpanded(folder: folder, in: project))
+        XCTAssertNotNil(model.editor)
+    }
+
+    func testDeletingTheSelectionSelectsItsParent() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let folder = try XCTUnwrap(model.selection?.nodeID)
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+
+        model.delete(request, in: project)
+
+        XCTAssertEqual(model.selection, .node(project, folder))
+        XCTAssertNil(fixture.library.document(project)?.node(request))
+        XCTAssertNil(model.editor)
+    }
+
+    func testDuplicatingDeepCopiesWithFreshIDs() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let folder = try XCTUnwrap(model.selection?.nodeID)
+        model.newRequest()
+        model.selection = .node(project, folder)
+
+        model.duplicate(folder, in: project)
+
+        let document = try XCTUnwrap(fixture.library.document(project))
+        XCTAssertEqual(document.items.map(\.name), ["New Folder", "New Folder Copy"])
+        let copy = try XCTUnwrap(document.folder(document.items[1].id))
+        XCTAssertNotEqual(copy.children.first?.id, document.folder(folder)?.children.first?.id)
+        XCTAssertEqual(model.selection, .node(project, copy.id))
+    }
+
+    func testTheSelectionIsRestoredOnRelaunch() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+
+        let relaunched = relaunch()
+
+        XCTAssertEqual(relaunched.selection, .node(project, request))
+        XCTAssertEqual(relaunched.editor?.requestID, request)
+    }
+
+    func testARestoredSelectionWhoseItemIsGoneFallsBackToItsProject() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+        // Deleted while Reqling was closed: nothing re-validates the saved selection before the relaunch.
+        try fixture.library.mutate(project) { try $0.removeNode(request) }
+
+        let relaunched = relaunch()
+
+        XCTAssertEqual(relaunched.selection, .project(project))
+        XCTAssertNil(relaunched.editor)
+    }
+
+    func testTheEditorFollowsTheProjectWhenRequestIDsRepeatAcrossProjects() throws {
+        let first = try makeProject()
+        let shared = RequestItem(name: "Shared", kind: .http(HTTPRequestSpec(url: "https://first")))
+        try fixture.library.mutate(first) { try $0.insert(.request(shared), into: nil) }
+        let second = try fixture.library.createProject(named: "Copy")
+        let copy = RequestItem(id: shared.id, name: "Shared", kind: .http(HTTPRequestSpec(url: "https://second")))
+        try fixture.library.mutate(second) { try $0.insert(.request(copy), into: nil) }
+
+        model.selection = .node(first, shared.id)
+        model.selection = .node(second, shared.id)
+
+        XCTAssertEqual(model.editor?.projectID, second)
+        XCTAssertEqual(model.editor?.spec.url, "https://second")
+    }
+
+    func testFileReferencesAreRelativeInsideTheProjectAndAskedForOutside() throws {
+        let project = try makeProject()
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        let inside = root.appendingPathComponent("fixtures/body.bin")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("outside-\(UUID().uuidString).bin")
+
+        XCTAssertEqual(model.reference(for: inside, in: project), .relative("fixtures/body.bin"))
+
+        fixture.system.pathSharing = .thisMacOnly
+        guard case .local(let id) = model.reference(for: outside, in: project) else {
+            return XCTFail("Expected a this-Mac-only reference")
+        }
+        XCTAssertEqual(fixture.component.workspaceState.localPath(id), outside.path)
+
+        fixture.system.pathSharing = nil
+        XCTAssertNil(model.reference(for: outside, in: project))
+    }
+
+    func testAFolderCannotMoveIntoItselfOrItsDescendants() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let outer = try XCTUnwrap(model.selection?.nodeID)
+        model.newFolder()
+        let inner = try XCTUnwrap(model.selection?.nodeID)
+
+        XCTAssertFalse(model.canMove(outer, in: project, into: outer))
+        XCTAssertFalse(model.canMove(outer, in: project, into: inner))
+        XCTAssertTrue(model.canMove(inner, in: project, into: nil))
+    }
+
+    func testDeletingAFolderMovesASelectionInsideItToTheFolderParent() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let outer = try XCTUnwrap(model.selection?.nodeID)
+        model.newFolder()
+        let inner = try XCTUnwrap(model.selection?.nodeID)
+        model.newRequest()
+        model.editor?.spec.method = .post
+
+        model.delete(inner, in: project)
+
+        XCTAssertEqual(model.selection, .node(project, outer))
+        XCTAssertNil(model.editor)
+        XCTAssertNil(model.alert)
+    }
+
+    func testAnUnavailableProjectKeepsItsSelectionUntilItLeavesTheLibrary() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("project.json"))
+
+        fixture.library.reload(project)
+        model.libraryDidChange()
+        XCTAssertEqual(model.selection, .node(project, request))
+        XCTAssertNotNil(model.editor)
+
+        fixture.library.removeProject(project)
+        model.libraryDidChange()
+        XCTAssertNil(model.selection)
+    }
+
+    func testRenamingReadsTheTypedNameEvenWhenTheDialogClearsItsFlagFirst() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+        model.beginRename(request, in: project)
+        model.renaming?.name = "Renamed"
+
+        model.isRenaming = false
+        model.commitRename()
+
+        XCTAssertEqual(fixture.library.document(project)?.node(request)?.name, "Renamed")
+        XCTAssertNil(model.renaming)
+    }
+
+    func testFolderAuthSavesAfterThePauseOrWhenTheSelectionMoves() async throws {
+        let project = try makeProject()
+        model.newFolder()
+        let folderID = try XCTUnwrap(model.selection?.nodeID)
+        let folder = try XCTUnwrap(fixture.library.document(project)?.folder(folderID))
+        func storedAuth() -> HTTPAuth? {
+            fixture.library.document(project)?.folder(folderID)?.auth
+        }
+
+        model.setAuth(.bearer(token: "a"), forFolder: folderID, in: project)
+        model.setAuth(.bearer(token: "ab"), forFolder: folderID, in: project)
+        XCTAssertEqual(storedAuth(), .inherit)
+        XCTAssertEqual(model.folderAuth(folder, in: project), .bearer(token: "ab"))
+        await waitUntil("the autosave to start waiting") { gate.pendingCount > 0 }
+        gate.releaseAll()
+        await waitUntil("the folder auth autosave") { storedAuth() == .bearer(token: "ab") }
+
+        model.setAuth(.bearer(token: "abc"), forFolder: folderID, in: project)
+        model.selection = .project(project)
+        XCTAssertEqual(storedAuth(), .bearer(token: "abc"))
+    }
+
+    func testAFolderAuthEditStrandedByAnUnavailableProjectSaysItWasDiscarded() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let folderID = try XCTUnwrap(model.selection?.nodeID)
+        model.setAuth(.bearer(token: "a"), forFolder: folderID, in: project)
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("project.json"))
+        fixture.library.reload(project)
+
+        model.selection = .project(project)
+
+        XCTAssertEqual(model.alert?.title, "Unsaved Changes Discarded")
+    }
+
+    func testQuittingAsksBeforeLosingAFolderAuthEditStrandedByAnUnavailableProject() throws {
+        let project = try makeProject()
+        model.newFolder()
+        let folderID = try XCTUnwrap(model.selection?.nodeID)
+        model.setAuth(.bearer(token: "a"), forFolder: folderID, in: project)
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("project.json"))
+        fixture.library.reload(project)
+
+        XCTAssertFalse(model.confirmTermination())
+
+        XCTAssertEqual(fixture.system.quitConfirmations, 1)
+        XCTAssertNil(model.alert, "cancelling the quit keeps the draft rather than discarding it")
+    }
+
+    func testAnExternalDeleteMovesTheSelectionToTheProject() throws {
+        let project = try makeProject()
+        model.newRequest()
+        let request = try XCTUnwrap(model.selection?.nodeID)
+
+        try fixture.library.mutate(project) { try $0.removeNode(request) }
+        model.libraryDidChange()
+
+        XCTAssertEqual(model.selection, .project(project))
+    }
+
+    func testTheActiveEnvironmentFallsBackToDefault() throws {
+        let project = try makeProject()
+        let document = try XCTUnwrap(fixture.library.document(project))
+
+        XCTAssertEqual(model.activeEnvironmentID(for: project), document.defaultEnvironment.id)
+        model.setActiveEnvironment(EnvironmentID(), for: project)
+        XCTAssertEqual(model.activeEnvironmentID(for: project), document.defaultEnvironment.id)
+    }
+}

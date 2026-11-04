@@ -54,6 +54,29 @@ struct AppStorageProfile: @unchecked Sendable {
         try? fileManager.removeItem(at: applicationSupportDirectory)
     }
 
+    /// The list of known project folders.
+    var registryURL: URL {
+        applicationSupportDirectory.appendingPathComponent("library.json")
+    }
+
+    /// Where new projects go when no location is chosen.
+    var projectsDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Projects", isDirectory: true)
+    }
+
+    var workspaceStateURL: URL {
+        applicationSupportDirectory.appendingPathComponent("workspace.json")
+    }
+
+    var responsesDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Responses", isDirectory: true)
+    }
+
+    /// Ephemeral profiles "trash" into their own directory; the real Trash belongs to the user.
+    var trashDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
+    }
+
     private static var userApplicationSupportDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())

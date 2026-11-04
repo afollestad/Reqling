@@ -1,16 +1,188 @@
 import ReqlingKit
 import SwiftUI
 
-/// The main window's root view.
+/// The main window: projects on the side, and the selected request, folder, project, or Settings in the detail.
 struct ContentView: View {
-    let appInfo: AppInfo
+    @Bindable var model: AppModel
 
     var body: some View {
-        ContentUnavailableView {
-            Label(appInfo.name, systemImage: "curlybraces")
-        } description: {
-            Text("Version \(appInfo.version) (\(appInfo.build))")
+        presentations(
+            NavigationSplitView {
+                SidebarView(model: model)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
+            } detail: {
+                DetailView(model: model)
+                    .frame(minWidth: 520, minHeight: 420)
+            }
+            .toolbar { MainToolbar(model: model) }
+        )
+        .preferredColorScheme(Self.colorScheme(for: model.settings.settings.theme))
+        .onChange(of: model.library.projects) { _, _ in
+            model.libraryDidChange()
         }
-        .frame(minWidth: 720, minHeight: 480)
+    }
+
+    /// Sheets and alerts, lifted out of `body` to keep its type-check scope small.
+    private func presentations<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(item: $model.sheet) { sheet in
+                AppSheetView(sheet: sheet, model: model)
+                    .modifier(AlertPresenter(model: model, isInSheet: true))
+            }
+            .modifier(AlertPresenter(model: model, isInSheet: false))
+            .alert("Rename", isPresented: $model.isRenaming) {
+                TextField("Name", text: Binding(get: { model.renaming?.name ?? "" }, set: { model.renaming?.name = $0 }))
+                Button("Rename") { model.commitRename() }
+                Button("Cancel", role: .cancel) { model.cancelRename() }
+            }
+            .confirmationDialog(
+                "Move this project to the Trash?",
+                isPresented: Binding(get: { model.projectPendingDeletion != nil }, set: { if !$0 { model.projectPendingDeletion = nil } }),
+                titleVisibility: .visible,
+                // The action takes the ID from here, not the model: dismissal may clear `projectPendingDeletion` first.
+                presenting: model.projectPendingDeletion
+            ) { project in
+                Button("Move to Trash", role: .destructive) { model.deleteProject(project) }
+            } message: { _ in
+                Text("Its folder goes to the Trash, where Finder can put it back. Its secret values are removed from your Keychain.")
+            }
+    }
+
+    static func colorScheme(for theme: AppTheme) -> ColorScheme? {
+        switch theme {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+/// Presents `model.alert` from the window's frontmost presentation. A window shows one presentation at a time, so an
+/// alert attached beneath an open sheet stays hidden: the root presents only while no sheet is up, and the sheet's
+/// content presents while one is.
+private struct AlertPresenter: ViewModifier {
+    let model: AppModel
+    let isInSheet: Bool
+
+    func body(content: Content) -> some View {
+        content.alert(item: Binding(get: { (model.sheet != nil) == isInSheet ? model.alert : nil }, set: { model.alert = $0 })) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message))
+        }
+    }
+}
+
+private struct AppSheetView: View {
+    let sheet: AppSheet
+    let model: AppModel
+
+    var body: some View {
+        switch sheet {
+        case .newProject:
+            NewProjectSheet(model: model)
+        case .environments(let project):
+            EnvironmentEditorSheet(editor: EnvironmentEditorModel(projectID: project, app: model))
+        case .projectSettings(let project):
+            ProjectSettingsSheet(
+                settings: ProjectSettingsModel(projectID: project, app: model),
+                tokenContext: TemplateTokenContext(scope: model.scope(for: project))
+            )
+        }
+    }
+}
+
+private struct DetailView: View {
+    let model: AppModel
+
+    var body: some View {
+        if model.isShowingSettings {
+            SettingsScreen(model: model)
+        } else if let editor = model.editor {
+            RequestEditorView(editor: editor, model: model)
+                .id(editor.identity)
+        } else if case .node(let project, let node)? = model.selection, let folder = model.library.document(project)?.folder(node) {
+            FolderDetailView(folder: folder, projectID: project, model: model)
+        } else if let project = shownProject {
+            ProjectDetailView(project: project, model: model)
+        } else {
+            ContentUnavailableView {
+                Label("Nothing Selected", systemImage: "curlybraces")
+            } description: {
+                Text("Choose a request in the sidebar, or create one.")
+            } actions: {
+                if model.library.projects.isEmpty {
+                    Button("New Project…") { model.sheet = .newProject }
+                } else {
+                    Button("New Request") { model.newRequest() }
+                }
+            }
+        }
+    }
+
+    /// The selected project, or a selected item's project when that project did not load, so its "Project Unavailable"
+    /// state shows instead of an empty detail.
+    private var shownProject: LibraryProject? {
+        guard let selection = model.selection, let project = model.library.project(selection.projectID) else {
+            return nil
+        }
+        return selection.nodeID == nil || project.document == nil ? project : nil
+    }
+}
+
+private struct MainToolbar: ToolbarContent {
+    let model: AppModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            if let project = model.activeProjectID, let document = model.library.document(project) {
+                EnvironmentPicker(document: document, active: model.activeEnvironmentID(for: project), model: model)
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                if model.isShowingSettings {
+                    model.closeSettings()
+                } else {
+                    model.showSettings()
+                }
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .help("Settings")
+            .accessibilityLabel("Settings")
+        }
+    }
+}
+
+private struct EnvironmentPicker: View {
+    let document: ProjectDocument
+    let active: EnvironmentID?
+    let model: AppModel
+
+    var body: some View {
+        Menu {
+            ForEach(document.allEnvironments) { environment in
+                Button {
+                    model.setActiveEnvironment(environment.id, for: document.id)
+                } label: {
+                    if environment.id == active {
+                        Label(environment.name, systemImage: "checkmark")
+                    } else {
+                        Text(environment.name)
+                    }
+                }
+            }
+            Divider()
+            Button("Edit Environments…") { model.sheet = .environments(document.id) }
+        } label: {
+            Label(activeName, systemImage: "square.stack.3d.up")
+                .labelStyle(.titleAndIcon)
+        }
+        .help("The environment \(document.name)'s requests resolve variables against")
+        .accessibilityLabel("Environment")
+        .accessibilityValue(activeName)
+    }
+
+    private var activeName: String {
+        document.environment(active ?? document.defaultEnvironment.id)?.name ?? RequestEnvironment.defaultName
     }
 }

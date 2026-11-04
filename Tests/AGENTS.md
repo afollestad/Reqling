@@ -20,6 +20,7 @@ There is no CI yet, but every test must be able to run unattended on a clean mac
 - **External tools only where `scripts/setup.sh` guarantees them.** A test that needs `protoc` fails with "run ./scripts/setup.sh" when it is missing rather than skipping, so a misconfigured runner cannot pass silently. `codesign`, `spctl`, and `ditto` go through an injected command runner.
 - **No wall-clock timing.** Debounces, schedules, and timeouts take an injected clock or sleep; async waits use bounded expectations, never `sleep`.
 - **Deterministic and parallel-safe.** Inject IDs, dates, and random values such as multipart boundaries. Give each test unique temp directories and no shared mutable globals, so `swift test --parallel` stays safe.
+- **Never commit TLS keys or certificates.** `TLSFixtures` mints the CA, client identity, and server leaves per test process, which also keeps server certificates under Apple's 825-day limit.
 
 ## Test Value
 

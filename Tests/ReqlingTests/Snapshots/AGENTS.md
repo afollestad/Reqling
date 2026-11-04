@@ -20,4 +20,5 @@ These instructions cover `Tests/ReqlingTests/Snapshots/` — `SnapshotTests` and
 
 - Prefer focused `SnapshotTests+<Screen>.swift` companion files over growing `SnapshotTests.swift`; group coverage by screen or feature area.
 - **Moving a snapshot test between files changes its baseline lookup path** under `__Snapshots__/`; move or re-record the reference images to match.
+- **Snapshot lists unselected where the screen allows.** A `List`'s native selection highlight does not survive an offscreen capture and renders as a solid bar over the row, as in the Settings side list.
 - **A prose-dense baseline reflows across macOS versions.** A newer macOS fits slightly more text per line, so a wrapped line at its break point moves and clears the tolerance; assert wording textually instead.

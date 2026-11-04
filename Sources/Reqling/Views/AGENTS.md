@@ -10,6 +10,15 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
     - **Lift modifier groups out of `body`.** Move each group — presentation modifiers (`sheet`, `alert`, `confirmationDialog`) and observers (`onChange`, `task`) are the usual offenders — into a `func …<Content: View>(_ content: Content) -> some View` helper, its own type-check scope, and keep chain order identical so modifier semantics do not shift.
     - **Measure, and read local numbers as a lower bound.** `TYPECHECK_BUDGET_MS=400 ./scripts/build.sh` lists every body over that many milliseconds; slower machines measure several times higher than a fast local one.
 
+## Shared Components
+
+- **Take corner radii and pane or screen insets from `AppMetrics`**, never a literal, so fields, editors, and panes stay one family.
+- **Draw the accent from the `appAccent` environment value, never `Color.accentColor` or `NSColor.controlAccentColor`.** Tests run outside Reqling's bundle, where those render the system blue; snapshots pin `appAccent` to Reqling's purple.
+- **Lay out labeled inputs with `LabeledRow`**, never a bare `TextField` or a control's built-in label: in a grouped `Form`, macOS pushes the field to the trailing edge and draws a built-in label after its control.
+- **Use `SectionPicker` for segmented switchers**; macOS centers a segmented control inside a wider frame, pulling it off the pane's leading edge.
+- **Use `TemplateField` or `CodeEditor` for any text that accepts `{{variables}}`**; a plain `TextField` silently loses the pills, tooltips, and completion.
+- End a sheet with `SheetFooter` and head a detail screen with `ScreenHeader`. In a column too narrow for `ContentUnavailableView`, which clips there, use `CompactEmptyState`.
+
 ## Render Cost
 
 - **Hoist every view-model read above a `GeometryReader`.** Its closure re-runs on each geometry change — every frame of a window or split-view resize — so a read left inside it repeats whatever shaping it triggers per frame. Pair the hoist with memoizing that shaping in the view model (`Sources/Reqling/ViewModels/AGENTS.md`).

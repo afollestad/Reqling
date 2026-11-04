@@ -18,11 +18,18 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/uber/needle.git", revision: "69f7a889d2736f2621c6083ac29e0a75d158f249"),
-        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", exact: "1.19.2")
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", exact: "1.19.2"),
+        // Test-only: loopback HTTP(S) servers and runtime-minted certificates for the TLS suites.
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.104.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.5"),
+        .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.21.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.0.3"),
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3")
     ],
     targets: [
         .target(
-            name: "ReqlingKit"
+            name: "ReqlingKit",
+            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS")
         ),
         .executableTarget(
             name: "Reqling",
@@ -30,11 +37,20 @@ let package = Package(
                 "ReqlingKit",
                 .product(name: "NeedleFoundation", package: "needle")
             ],
-            exclude: guidanceFiles(in: "App", "DI", "Views", "ViewModels")
+            exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "ViewModels")
         ),
         .testTarget(
             name: "ReqlingKitTests",
-            dependencies: ["ReqlingKit"]
+            dependencies: [
+                "ReqlingKit",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SwiftASN1", package: "swift-asn1")
+            ]
         ),
         .testTarget(
             name: "ReqlingTests",

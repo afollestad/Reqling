@@ -1,0 +1,37 @@
+import ReqlingKit
+import SwiftUI
+import XCTest
+
+@testable import Reqling
+
+extension SnapshotTests {
+    func testEnvironmentEditor() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let editor = EnvironmentEditorModel(projectID: project.id, app: fixture.model)
+
+        assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
+    }
+
+    func testProjectSettings() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let settings = ProjectSettingsModel(projectID: project.id, app: fixture.model)
+        settings.clientCertificates = [ClientCertificateEntry(hostPattern: "*.internal", source: .pkcs12(.relative("client.p12")))]
+
+        assertBothAppearances(
+            ProjectSettingsSheet(settings: settings, tokenContext: TemplateTokenContext(scope: fixture.model.scope(for: project.id))),
+            size: CGSize(width: 640, height: 600)
+        )
+    }
+
+    func testSettingsWide() {
+        fixture.model.showSettings(.requests)
+
+        assertBothAppearances(SettingsScreen(model: fixture.model), size: CGSize(width: 900, height: 460))
+    }
+
+    func testSettingsCompact() {
+        fixture.model.showSettings(.interface)
+
+        assertBothAppearances(SettingsScreen(model: fixture.model), size: CGSize(width: 520, height: 400))
+    }
+}

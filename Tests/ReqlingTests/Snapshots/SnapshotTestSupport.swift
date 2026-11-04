@@ -342,6 +342,7 @@ func assertMacSnapshot<V: View>(
             .environment(\.timeZone, TimeZone(secondsFromGMT: 0) ?? .current)
             .environment(\.layoutDirection, .leftToRight)
             .environment(\.colorScheme, colorScheme)
+            .appAccent(SnapshotAccent.color)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor))
 
@@ -393,5 +394,54 @@ func assertMacSnapshot<V: View>(
             testName: testName,
             line: line
         )
+    }
+}
+
+/// Reqling's accent as the app bundle has it, read from the asset catalog itself so the purple is defined in one
+/// place. Tests run in `xctest`, which has none of Reqling's compiled assets, so without this every accent renders the
+/// system default blue, or whatever accent this Mac's settings pick.
+enum SnapshotAccent {
+    static let color: NSColor = {
+        let colorset = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("../../../Resources/Assets.xcassets/AccentColor.colorset/Contents.json")
+            .standardizedFileURL
+        guard let data = try? Data(contentsOf: colorset),
+              let catalog = try? JSONDecoder().decode(ColorSet.self, from: data),
+              let light = catalog.colors.first(where: { $0.appearances == nil })?.color.nsColor else {
+            preconditionFailure("Couldn't read the accent color from \(colorset.path)")
+        }
+        let dark = catalog.colors.first { $0.appearances?.contains { $0.value == "dark" } == true }?.color.nsColor ?? light
+        return NSColor(name: "ReqlingAccent") { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+    }()
+
+    private struct ColorSet: Decodable {
+        let colors: [Entry]
+    }
+
+    private struct Entry: Decodable {
+        let appearances: [Appearance]?
+        let color: Components
+    }
+
+    private struct Appearance: Decodable {
+        let value: String
+    }
+
+    private struct Components: Decodable {
+        let components: [String: String]
+
+        var nsColor: NSColor? {
+            guard let red = component("red"), let green = component("green"), let blue = component("blue") else {
+                return nil
+            }
+            return NSColor(srgbRed: red, green: green, blue: blue, alpha: component("alpha") ?? 1)
+        }
+
+        private func component(_ name: String) -> CGFloat? {
+            components[name].flatMap(Double.init).map { CGFloat($0) }
+        }
     }
 }

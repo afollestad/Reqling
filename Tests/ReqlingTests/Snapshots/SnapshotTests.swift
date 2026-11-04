@@ -6,15 +6,34 @@ import XCTest
 
 @MainActor
 final class SnapshotTests: XCTestCase {
-    private let appInfo = AppInfo(name: "Reqling", bundleIdentifier: "com.afollestad.reqling", version: "1.0.0", build: "1")
+    var fixture: AppFixture!
 
-    func testContentView() {
+    override func setUp() async throws {
+        fixture = AppFixture()
+    }
+
+    override func tearDown() async throws {
+        fixture.tearDown()
+        fixture = nil
+    }
+
+    /// Records a `light` and a `dark` baseline of `view`.
+    func assertBothAppearances<V: View>(
+        _ view: @autoclosure () -> V,
+        size: CGSize,
+        file: StaticString = #filePath,
+        testName: String = #function,
+        line: UInt = #line
+    ) {
         for colorScheme in [ColorScheme.light, .dark] {
             assertMacSnapshot(
-                ContentView(appInfo: appInfo),
-                size: CGSize(width: 720, height: 480),
+                view(),
+                size: size,
                 named: colorScheme == .dark ? "dark" : "light",
-                colorScheme: colorScheme
+                colorScheme: colorScheme,
+                file: file,
+                testName: testName,
+                line: line
             )
         }
     }
