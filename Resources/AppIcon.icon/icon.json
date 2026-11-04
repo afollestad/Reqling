@@ -1,0 +1,54 @@
+{
+  "fill-specializations": [
+    {
+      "value": "system-light"
+    },
+    {
+      "appearance": "dark",
+      "value": "system-dark"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Reqling courier",
+      "blur-material": null,
+      "hidden": false,
+      "layers": [
+        {
+          "glass": false,
+          "name": "Carrier bird with a data packet",
+          "position": {
+            "scale": 0.85,
+            "translation-in-points": [
+              12,
+              -34
+            ]
+          },
+          "image-name-specializations": [
+            {
+              "value": "courier-light.png"
+            },
+            {
+              "appearance": "dark",
+              "value": "courier-dark.png"
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
