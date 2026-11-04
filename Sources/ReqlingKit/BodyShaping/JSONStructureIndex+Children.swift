@@ -20,6 +20,8 @@ public struct JSONEntry: Hashable, Sendable {
     /// The container index of an object or array, for `children(of:)`.
     public let container: Int?
     public let childCount: Int
+    /// An object or array a cut body left open (`JSONStructureIndex.build(_:allowsSequence:allowsTruncation:)`).
+    public var isTruncated = false
 }
 
 /// Listing a container's values, a container at a time, by scanning only its own bytes and stepping over nested
@@ -91,9 +93,11 @@ extension JSONStructureIndex {
             return JSONEntry(
                 kind: bytes[start] == UInt8(ascii: "{") ? .object : .array,
                 key: key,
-                valueRange: start..<Int(ends[container]) + 1,
+                // A cut container has no closing bracket; its range stops at the end of the bytes.
+                valueRange: start..<min(Int(ends[container]) + 1, bytes.count),
                 container: container,
-                childCount: Int(childCounts[container])
+                childCount: Int(childCounts[container]),
+                isTruncated: truncated.contains(container)
             )
         case UInt8(ascii: "\""):
             return JSONEntry(kind: .string, key: key, valueRange: start..<JSONStrings.end(in: bytes, from: start), container: nil, childCount: 0)

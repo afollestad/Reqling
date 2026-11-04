@@ -73,8 +73,15 @@ public enum ResponseBodyShaper {
         }
     }
 
-    /// The body as `format` (from `classify`) shows it in `mode`. Throws once the current task is cancelled.
-    public static func shape(_ body: Data, as format: BodyFormat, mode: ShapingMode) throws(CancellationError) -> ShapedBody {
+    /// The body as `format` (from `classify`) shows it in `mode`. `isTruncated` says the body was cut short to fit the
+    /// response cache, so a tree keeps what came before the cut rather than failing on it. Throws once the current task
+    /// is cancelled.
+    public static func shape(
+        _ body: Data,
+        as format: BodyFormat,
+        mode: ShapingMode,
+        isTruncated: Bool = false
+    ) throws(CancellationError) -> ShapedBody {
         guard !body.isEmpty else {
             return ShapedBody(content: .empty, format: .empty)
         }
@@ -86,7 +93,7 @@ public enum ResponseBodyShaper {
         case .image:
             (resolved, language) = (.text(.plainText), .plainText)
         case .json(let source):
-            let index = source == .sniffed || mode == .tree ? try jsonIndex(body, source: source) : nil
+            let index = source == .sniffed || mode == .tree ? try jsonIndex(body, source: source, isTruncated: isTruncated) : nil
             if source == .sniffed, index?.tree == nil {
                 (resolved, language) = (.text(.plainText), .plainText)
                 break
@@ -101,7 +108,7 @@ public enum ResponseBodyShaper {
         case .xml:
             (resolved, language) = (.xml, .xml)
             if mode == .tree {
-                return ShapedBody(content: try xmlTree(body), format: resolved)
+                return ShapedBody(content: try xmlTree(body, isTruncated: isTruncated), format: resolved)
             }
         case .text(let textLanguage):
             (resolved, language) = (format, textLanguage)
@@ -119,10 +126,11 @@ public enum ResponseBodyShaper {
     /// The body's JSON index, or where it stops being JSON.
     private static func jsonIndex(
         _ body: Data,
-        source: BodyFormat.JSONSource
+        source: BodyFormat.JSONSource,
+        isTruncated: Bool
     ) throws(CancellationError) -> (tree: JSONStructureIndex?, failure: String?) {
         do {
-            return (try JSONStructureIndex.build(body, allowsSequence: source == .lines), nil)
+            return (try JSONStructureIndex.build(body, allowsSequence: source == .lines, allowsTruncation: isTruncated), nil)
         } catch {
             switch error {
             case .cancelled:
@@ -133,9 +141,9 @@ public enum ResponseBodyShaper {
         }
     }
 
-    private static func xmlTree(_ body: Data) throws(CancellationError) -> ShapedBody.Content {
+    private static func xmlTree(_ body: Data, isTruncated: Bool) throws(CancellationError) -> ShapedBody.Content {
         do {
-            return .tree(.xml(try XMLStructureIndex.build(body)))
+            return .tree(.xml(try XMLStructureIndex.build(body, allowsTruncation: isTruncated)))
         } catch {
             switch error {
             case .cancelled:

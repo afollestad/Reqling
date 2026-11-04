@@ -98,7 +98,7 @@ final class ResponseViewModel {
         guard let exchange, let response = exchange.response else {
             return .empty
         }
-        return presentation(of: response, startedAt: exchange.startedAt, preference: preference, shaped: shaped)
+        return presentation(of: response, in: exchange, preference: preference, shaped: shaped)
     }
 
     /// The response's Content-Type, as sent.

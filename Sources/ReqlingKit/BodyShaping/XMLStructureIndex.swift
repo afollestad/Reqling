@@ -34,7 +34,9 @@ public struct XMLStructureIndex: Sendable {
     /// More nodes than this and the tree is not worth its memory; Raw still shows the text.
     public static let nodeLimit = 2_000_000
 
-    public static func build(_ data: Data) throws(XMLIndexError) -> XMLStructureIndex {
+    /// Indexes `data`. With `allowsTruncation`, for a body known to be cut short, a parse that fails keeps the nodes
+    /// read before it.
+    public static func build(_ data: Data, allowsTruncation: Bool = false) throws(XMLIndexError) -> XMLStructureIndex {
         let builder = XMLTreeBuilder()
         let parser = XMLParser(data: data)
         parser.shouldResolveExternalEntities = false
@@ -46,6 +48,9 @@ public struct XMLStructureIndex: Sendable {
         }
         if builder.isTooLarge {
             throw .tooLarge
+        }
+        if !succeeded, allowsTruncation, !builder.roots.isEmpty {
+            return XMLStructureIndex(nodes: builder.nodes, roots: builder.roots)
         }
         guard succeeded, parser.parserError == nil else {
             let message = parser.parserError.map { ($0 as NSError).localizedDescription } ?? "The XML is not well-formed."

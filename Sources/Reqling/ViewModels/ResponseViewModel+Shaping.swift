@@ -49,10 +49,11 @@ extension ResponseViewModel {
 
     func presentation(
         of response: HTTPResponseRecord,
-        startedAt: Date,
+        in exchange: RequestExchange,
         preference: ResponseBodyMode,
         shaped: ShapedBodies
     ) -> ResponseBodyPresentation {
+        let startedAt = exchange.startedAt
         let (classified, image) = classify(response, startedAt: startedAt)
         if let image {
             return ResponseBodyPresentation(content: .image(image), availableModes: [.preview], mode: .preview, pendingShape: nil)
@@ -68,7 +69,7 @@ extension ResponseViewModel {
             return Self.presentation(done, preference: preference)
         }
         if response.body.count <= Self.inlineShapingLimit,
-           let done = try? ResponseBodyShaper.shape(response.body, as: classified, mode: mode.shapingMode) {
+           let done = try? ResponseBodyShaper.shape(response.body, as: classified, mode: mode.shapingMode, isTruncated: exchange.isBodyTruncated) {
             inlineShapes.store(done, for: key)
             return Self.presentation(done, preference: preference)
         }
@@ -94,8 +95,9 @@ extension ResponseViewModel {
         let body = response.body
         let (format, _) = classify(response, startedAt: key.startedAt)
         let mode = key.mode.shapingMode
+        let isTruncated = exchange.isBodyTruncated
         let task = Task.detached(priority: .userInitiated) {
-            try ResponseBodyShaper.shape(body, as: format, mode: mode)
+            try ResponseBodyShaper.shape(body, as: format, mode: mode, isTruncated: isTruncated)
         }
         shapingTask = task
         Task { [weak self] in

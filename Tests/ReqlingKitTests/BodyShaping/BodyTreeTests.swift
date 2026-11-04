@@ -129,4 +129,41 @@ final class BodyTreeTests: XCTestCase {
         XCTAssertEqual(messages[2].fields.map(\.key), ["other"])
         XCTAssertEqual(try BodyStructure.messages(timeline).find("hi").matches.map(\.path), [[0, 0], [2, 0, 0]])
     }
+
+    /// A body cut to fit the response cache keeps everything before the cut; without being told, it is an error.
+    func testACutBodyClosesAtItsLastCompleteValue() throws {
+        let cut = #"{"a": [1, 2, {"b": "xy"#
+        XCTAssertThrowsError(try json(cut)) { error in
+            XCTAssertEqual(error as? JSONIndexError, .syntax(message: "A string is never closed.", line: 1, column: 20))
+        }
+        let index = try JSONStructureIndex.build(Data(cut.utf8), allowsTruncation: true)
+        let root = try XCTUnwrap(index.rootEntries().first)
+        XCTAssertTrue(root.isTruncated)
+        let members = index.children(of: try XCTUnwrap(root.container))
+        XCTAssertEqual(members.map(\.key), ["a"])
+        let items = index.children(of: try XCTUnwrap(members[0].container))
+        XCTAssertEqual(items.map(\.kind), [.number, .number, .object])
+        XCTAssertEqual(items.map(\.isTruncated), [false, false, true])
+        XCTAssertEqual(index.children(of: try XCTUnwrap(items[2].container)), [], "a value cut short is dropped")
+
+        let betweenValues = try JSONStructureIndex.build(Data(#"[{"id":1},{"id":2},{"i"#.utf8), allowsTruncation: true)
+        XCTAssertEqual(betweenValues.children(of: 0).map(\.childCount), [1, 1, 0])
+        let numberAtCut = try JSONStructureIndex.build(Data("[1, 2, 12".utf8), allowsTruncation: true)
+        XCTAssertEqual(numberAtCut.children(of: 0).map { numberAtCut.text($0.valueRange) }, ["1", "2"], "12 may be 1234 cut short")
+        XCTAssertThrowsError(try JSONStructureIndex.build(Data("tru".utf8), allowsTruncation: true), "nothing complete to keep")
+        XCTAssertThrowsError(try JSONStructureIndex.build(Data("[1, }".utf8), allowsTruncation: true), "a real syntax error still fails")
+    }
+
+    func testTreeModeKeepsWhatCameBeforeACut() throws {
+        let cut = Data(#"{"stations": [{"id": 1}, {"id": 2}, {"na"#.utf8)
+        let shaped = try ResponseBodyShaper.shape(cut, as: .json(.declared), mode: .tree, isTruncated: true)
+        guard case .tree(.json(let index)) = shaped.content else {
+            return XCTFail("\(shaped.content)")
+        }
+        XCTAssertEqual(index.rootEntries().first?.isTruncated, true)
+
+        let xml = try XMLStructureIndex.build(Data("<a><b>one</b><b>tw".utf8), allowsTruncation: true)
+        XCTAssertEqual(xml.children(of: xml.roots[0]).map { xml.nodes[$0].name }, ["b", "b"])
+        XCTAssertThrowsError(try XMLStructureIndex.build(Data("<a><b>one</b><b>tw".utf8)))
+    }
 }

@@ -28,7 +28,7 @@ final class ResponseViewModelTests: XCTestCase {
 
     /// Makes a response the request's latest exchange. The runner's `latest` is Kit's to write, so this goes through the
     /// response cache: `forget` drops the previous exchange, and reading it back loads this one.
-    private func publish(_ body: Data, contentType: String?, at seconds: TimeInterval = 1_700_000_000) {
+    private func publish(_ body: Data, contentType: String?, at seconds: TimeInterval = 1_700_000_000, isTruncated: Bool = false) {
         let runner = fixture.component.requestRunner
         let request = response.requestID
         runner.forget(request, in: project)
@@ -46,7 +46,8 @@ final class ResponseViewModelTests: XCTestCase {
                 url: "https://api.test",
                 startedAt: startedAt,
                 duration: 0.1
-            ))
+            )),
+            isBodyTruncated: isTruncated
         ))
         _ = runner.exchange(for: request, in: project)
     }
@@ -172,5 +173,21 @@ final class ResponseViewModelTests: XCTestCase {
     func testTheContentTypeIsTheResponsesHeader() {
         publish(Data("[1]".utf8), contentType: "application/json; charset=utf-8")
         XCTAssertEqual(response.contentType, "application/json; charset=utf-8")
+    }
+
+    /// A body restored from the cache, cut at its size limit, still opens as a tree of what was kept.
+    func testARestoredCutBodyStillOpensAsATree() {
+        let cut = Data(#"{"fuel_stations": [{"id": 1}, {"id": 2}, {"station_na"#.utf8)
+        publish(cut, contentType: "application/json", isTruncated: true)
+
+        guard case .tree(.json(let index)) = response.body.content else {
+            return XCTFail("\(response.body.content)")
+        }
+        XCTAssertEqual(index.rootEntries().first?.isTruncated, true)
+
+        publish(cut, contentType: "application/json", at: 2)
+        guard case .treeFailed = response.body.content else {
+            return XCTFail("a live body that ends early is an error: \(response.body.content)")
+        }
     }
 }

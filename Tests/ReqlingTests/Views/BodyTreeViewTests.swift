@@ -157,4 +157,11 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertEqual(label(selected), #""a": 1"#)
         XCTAssertEqual(coordinator.path(of: selected), "$.nested.a", "paths start inside each message")
     }
+
+    func testACutContainerSaysItsCountIsPartial() throws {
+        coordinator.show(.json(try JSONStructureIndex.build(Data(#"{"stations": [{"id": 1}, {"id": 2}, {"na"#.utf8), allowsTruncation: true)))
+        coordinator.expand(from: nil, budget: BodyTreeView.expandBudget)
+        XCTAssertEqual(items().prefix(2).map(label), ["{ 1 key… }", #""stations": [ 3 items… ]"#])
+        XCTAssertEqual(coordinator.rowText(for: items()[1]).accessibilityLabel, "stations, array, 3 items…, cut short")
+    }
 }

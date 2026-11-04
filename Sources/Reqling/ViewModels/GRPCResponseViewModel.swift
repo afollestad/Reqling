@@ -119,7 +119,9 @@ struct GRPCMessageTreeCache {
         guard event.json.utf8.count <= indexLimit else {
             return nil
         }
-        return try? JSONStructureIndex.build(Data(event.json.utf8))
+        // The codec only writes valid JSON, so a message that ends early was cut to fit the response cache: keep what
+        // came before the cut.
+        return try? JSONStructureIndex.build(Data(event.json.utf8), allowsTruncation: true)
     }
 }
 

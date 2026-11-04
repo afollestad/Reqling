@@ -117,15 +117,15 @@ extension BodyTreeCoordinator {
         }
         let description: String
         switch entry.kind {
-        case .object:
-            description = entry.childCount == 0 ? "{}" : "{ \(Self.count(entry.childCount, "key")) }"
+        case .object, .array:
+            // A container the cut left open says so: its count is only what came before the cut.
+            let isObject = entry.kind == .object
+            let count = Self.count(entry.childCount, isObject ? "key" : "item") + (entry.isTruncated ? "…" : "")
+            let empty = isObject ? "{}" : "[]"
+            description = entry.childCount == 0 && !entry.isTruncated ? empty : isObject ? "{ \(count) }" : "[ \(count) ]"
             parts.add(description, .secondaryLabelColor)
-            parts.label = [labelKey, "object", Self.count(entry.childCount, "key")].filter { !$0.isEmpty }.joined(separator: ", ")
-            return
-        case .array:
-            description = entry.childCount == 0 ? "[]" : "[ \(Self.count(entry.childCount, "item")) ]"
-            parts.add(description, .secondaryLabelColor)
-            parts.label = [labelKey, "array", Self.count(entry.childCount, "item")].filter { !$0.isEmpty }.joined(separator: ", ")
+            let cut = entry.isTruncated ? "cut short" : ""
+            parts.label = [labelKey, isObject ? "object" : "array", count, cut].filter { !$0.isEmpty }.joined(separator: ", ")
             return
         case .string:
             let text = Self.oneLine(index.string(entry.valueRange, limit: Self.displayLimit * 4), limit: Self.displayLimit)
@@ -159,6 +159,9 @@ extension BodyTreeCoordinator {
         if message.index == nil {
             parts.add("  Not shown as a tree; switch to Text to read it", .secondaryLabelColor)
             label += ", not shown as a tree"
+        } else if message.index?.rootEntries().first?.isTruncated == true {
+            parts.add("  Shortened to fit the cache", .secondaryLabelColor)
+            label += ", shortened to fit the cache"
         }
         parts.label = label
     }

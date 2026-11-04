@@ -20,6 +20,8 @@ public struct JSONStructureIndex: Sendable {
     var childCounts: [UInt32] = []
     var subtreeSizes: [UInt32] = []
     var parents: [Int32] = []
+    /// Containers a cut body left open, closed after their last complete value.
+    var truncated = IndexSet()
 
     public var containerCount: Int {
         starts.count
@@ -28,19 +30,45 @@ public struct JSONStructureIndex: Sendable {
     /// Indexes `data`, which must hold exactly one JSON value, or, with `allowsSequence`, any number of them separated
     /// by whitespace (newline-delimited JSON). Throws `.cancelled` once the current task is cancelled, which it checks
     /// about every megabyte.
-    public static func build(_ data: Data, allowsSequence: Bool = false) throws(JSONIndexError) -> JSONStructureIndex {
+    ///
+    /// With `allowsTruncation`, for a body known to be cut short (the response cache keeps only its first 5 MB), text
+    /// that ends partway through a value keeps everything before it: each container left open closes after its last
+    /// complete value and is marked `isTruncated`. Without it, that is the syntax error it would be from a server.
+    public static func build(
+        _ data: Data,
+        allowsSequence: Bool = false,
+        allowsTruncation: Bool = false
+    ) throws(JSONIndexError) -> JSONStructureIndex {
         guard data.count < Int(UInt32.max) else {
             throw .syntax(message: "The body is too large to index.", line: 1, column: 1)
         }
         var result: Result<JSONStructureIndex, JSONIndexError> = .failure(.cancelled)
-        data.withUnsafeBytes { raw in
-            var scanner = Scanner(bytes: raw.bindMemory(to: UInt8.self), allowsSequence: allowsSequence)
-            result = Result { () throws(JSONIndexError) in
-                try scanner.scan()
-                return JSONStructureIndex(data: data, scanner: scanner)
-            }
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            result = scan(raw.bindMemory(to: UInt8.self), of: data, allowsSequence: allowsSequence, allowsTruncation: allowsTruncation)
         }
         return try result.get()
+    }
+
+    private static func scan(
+        _ bytes: UnsafeBufferPointer<UInt8>,
+        of data: Data,
+        allowsSequence: Bool,
+        allowsTruncation: Bool
+    ) -> Result<JSONStructureIndex, JSONIndexError> {
+        var scanner = Scanner(bytes: bytes, allowsSequence: allowsSequence)
+        do {
+            try scanner.scan()
+        } catch {
+            switch error {
+            case .index(let failure):
+                return .failure(failure)
+            case .endOfInput(let failure):
+                guard allowsTruncation, scanner.closeAtEnd() else {
+                    return .failure(failure)
+                }
+            }
+        }
+        return .success(JSONStructureIndex(data: data, scanner: scanner))
     }
 
     private init(data: Data, scanner: Scanner) {
@@ -51,6 +79,7 @@ public struct JSONStructureIndex: Sendable {
         childCounts = scanner.childCounts
         subtreeSizes = scanner.subtreeSizes
         parents = scanner.parents
+        truncated = scanner.truncated
     }
 }
 
@@ -58,6 +87,13 @@ public enum JSONIndexError: Error, Hashable, Sendable {
     /// Where the text stops being JSON. `line` and `column` count from 1; the column counts characters.
     case syntax(message: String, line: Int, column: Int)
     case cancelled
+}
+
+/// Why the validating pass stopped.
+private enum ScanFailure: Error {
+    case index(JSONIndexError)
+    /// The text ends partway through a value, which a body known to be cut short survives.
+    case endOfInput(JSONIndexError)
 }
 
 /// The validating pass: a state machine over bytes with an explicit stack of open containers.
@@ -71,6 +107,9 @@ private struct Scanner {
     var childCounts: [UInt32] = []
     var subtreeSizes: [UInt32] = []
     var parents: [Int32] = []
+    var truncated = IndexSet()
+    /// Per container, just past its last complete value (or its opening bracket), where a cut closes it.
+    private var lastEnds: [UInt32] = []
 
     private enum Expectation {
         case value
@@ -96,7 +135,7 @@ private struct Scanner {
         self.allowsSequence = allowsSequence
     }
 
-    mutating func scan() throws(JSONIndexError) {
+    mutating func scan() throws(ScanFailure) {
         var nextCancellationCheck = 1 << 20
         // A leading byte-order mark is not JSON, but servers send one.
         if bytes.count >= 3, bytes[0] == 0xEF, bytes[1] == 0xBB, bytes[2] == 0xBF {
@@ -107,7 +146,7 @@ private struct Scanner {
             if index >= nextCancellationCheck {
                 nextCancellationCheck = index + (1 << 20)
                 if Task.isCancelled {
-                    throw .cancelled
+                    throw .index(.cancelled)
                 }
             }
             guard index < bytes.count else {
@@ -116,14 +155,14 @@ private struct Scanner {
             try step(bytes[index])
         }
         guard open.isEmpty else {
-            throw failure("The text ends before every object and array is closed.")
+            throw .endOfInput(syntax("The text ends before every object and array is closed."))
         }
         guard !roots.isEmpty else {
             throw failure("Expected a JSON value.")
         }
     }
 
-    private mutating func step(_ byte: UInt8) throws(JSONIndexError) {
+    private mutating func step(_ byte: UInt8) throws(ScanFailure) {
         switch expectation {
         case .value, .valueOrEnd:
             if expectation == .valueOrEnd, byte == UInt8(ascii: "]") {
@@ -164,7 +203,7 @@ private struct Scanner {
         }
     }
 
-    private mutating func value(_ byte: UInt8) throws(JSONIndexError) {
+    private mutating func value(_ byte: UInt8) throws(ScanFailure) {
         if open.isEmpty {
             rootStart = index
         }
@@ -175,6 +214,7 @@ private struct Scanner {
             childCounts.append(0)
             subtreeSizes.append(0)
             parents.append(Int32(open.last ?? -1))
+            lastEnds.append(UInt32(index + 1))
             open.append(starts.count - 1)
             index += 1
             expectation = byte == UInt8(ascii: "{") ? .keyOrEnd : .valueOrEnd
@@ -183,6 +223,11 @@ private struct Scanner {
             valueEnded()
         case UInt8(ascii: "-"), UInt8(ascii: "0")...UInt8(ascii: "9"):
             try number()
+            // Inside an open container, a number running to the very end may be a longer one cut short (1234 kept as
+            // 12): the text ends unfinished either way, and a cut body drops it rather than show a wrong value.
+            if index == bytes.count, !open.isEmpty {
+                throw .endOfInput(syntax("The text ends before every object and array is closed."))
+            }
             valueEnded()
         case UInt8(ascii: "t"):
             try literal("true")
@@ -207,6 +252,7 @@ private struct Scanner {
     private mutating func valueEnded() {
         if let container = open.last {
             childCounts[container] += 1
+            lastEnds[container] = UInt32(index)
             expectation = .commaOrEnd
         } else {
             roots.append(rootStart..<index)
@@ -214,10 +260,10 @@ private struct Scanner {
         }
     }
 
-    private mutating func literal(_ word: StaticString) throws(JSONIndexError) {
+    private mutating func literal(_ word: StaticString) throws(ScanFailure) {
         let length = word.utf8CodeUnitCount
         guard index + length <= bytes.count else {
-            throw failure("Expected a JSON value.")
+            throw .endOfInput(syntax("Expected a JSON value."))
         }
         for offset in 0..<length where bytes[index + offset] != word.utf8Start[offset] {
             throw failure("Expected a JSON value.")
@@ -226,7 +272,7 @@ private struct Scanner {
         valueEnded()
     }
 
-    private mutating func string() throws(JSONIndexError) {
+    private mutating func string() throws(ScanFailure) {
         let start = index
         index += 1
         while index < bytes.count {
@@ -245,7 +291,12 @@ private struct Scanner {
                      UInt8(ascii: "n"), UInt8(ascii: "r"), UInt8(ascii: "t"):
                     index += 1
                 case UInt8(ascii: "u"):
-                    guard index + 4 < bytes.count, (1...4).allSatisfy({ Self.isHexDigit(bytes[index + $0]) }) else {
+                    guard index + 4 < bytes.count else {
+                        // Cut off mid-escape: run to the end, which reports the string as never closed.
+                        index = bytes.count
+                        continue
+                    }
+                    guard (1...4).allSatisfy({ Self.isHexDigit(bytes[index + $0]) }) else {
                         throw failure("Expected four hex digits after “\\u”.")
                     }
                     index += 5
@@ -260,14 +311,17 @@ private struct Scanner {
             index += 1
         }
         index = start
-        throw failure("A string is never closed.")
+        throw .endOfInput(syntax("A string is never closed."))
     }
 
-    private mutating func number() throws(JSONIndexError) {
+    private mutating func number() throws(ScanFailure) {
         if bytes[index] == UInt8(ascii: "-") {
             index += 1
         }
-        guard index < bytes.count, Self.isDigit(bytes[index]) else {
+        guard index < bytes.count else {
+            throw .endOfInput(syntax("Expected a digit."))
+        }
+        guard Self.isDigit(bytes[index]) else {
             throw failure("Expected a digit.")
         }
         if bytes[index] == UInt8(ascii: "0") {
@@ -314,8 +368,33 @@ private struct Scanner {
         isDigit(byte) || (byte >= UInt8(ascii: "a") && byte <= UInt8(ascii: "f")) || (byte >= UInt8(ascii: "A") && byte <= UInt8(ascii: "F"))
     }
 
+    /// Closes every container left open at its last complete value, innermost first, each counting as its parent's
+    /// last value; whatever partial value follows is dropped. Returns false when nothing complete is left.
+    mutating func closeAtEnd() -> Bool {
+        var closedEnd: Int?
+        while let container = open.popLast() {
+            if let closedEnd {
+                childCounts[container] += 1
+                lastEnds[container] = UInt32(closedEnd)
+            }
+            let end = Int(lastEnds[container])
+            ends[container] = UInt32(end)
+            subtreeSizes[container] = UInt32(starts.count - container)
+            truncated.insert(container)
+            closedEnd = min(end + 1, bytes.count)
+        }
+        if let closedEnd {
+            roots.append(rootStart..<closedEnd)
+        }
+        return !roots.isEmpty
+    }
+
+    private func failure(_ message: String) -> ScanFailure {
+        .index(syntax(message))
+    }
+
     /// A syntax error at the current offset, with its line and column counted from 1.
-    private func failure(_ message: String) -> JSONIndexError {
+    private func syntax(_ message: String) -> JSONIndexError {
         let offset = min(index, bytes.count)
         var line = 1
         var lineStart = 0
