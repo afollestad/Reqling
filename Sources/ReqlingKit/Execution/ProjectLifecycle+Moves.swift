@@ -7,8 +7,9 @@ extension ProjectLifecycle {
     /// at `index` in its children. Within one project it is `ProjectDocument.moveNode(_:to:at:)`.
     ///
     /// Into another project, it is saved there before it leaves `source`, so a failed save leaves it in both rather than
-    /// in neither; leaving `source` sends its old files to the Trash as a delete does. It keeps its IDs unless
-    /// `destination` already uses one, as a copied project folder would.
+    /// in neither; leaving `source` sends its old files to the Trash as a delete does. It keeps its IDs, and its
+    /// requests their history, unless `destination` already uses one, as a copied project folder would; a copy starts
+    /// with no history.
     public func moveNode(
         _ id: RequestNodeID,
         from source: ProjectID,
@@ -40,6 +41,13 @@ extension ProjectLifecycle {
             try library.mutate(source) { _ = try $0.removeNode(id) }
         } catch {
             throw ProjectMoveError.leftInSource(error)
+        }
+        if fresh.id == node.id {
+            runner.moveHistory(of: node.requestIDs, from: source, to: destination)
+        } else {
+            for request in node.requestIDs {
+                runner.forget(request, in: source)
+            }
         }
         return ProjectNodeMove(nodeID: moved.id, localizedPaths: localized)
     }

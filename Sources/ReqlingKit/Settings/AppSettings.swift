@@ -36,6 +36,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
         didSet { mcpPort = Self.clampPort(mcpPort) }
     }
     public var checksForUpdatesAutomatically = true
+    public var historyRetention: HistoryRetention = .month
+    public var historySizeLimit: HistorySizeLimit = .megabytes500
 
     public init() {}
 
@@ -59,6 +61,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
         mcpPort = Self.clampPort(port ?? defaults.mcpPort)
         checksForUpdatesAutomatically = (try? container.decodeIfPresent(Bool.self, forKey: .checksForUpdatesAutomatically))
             ?? defaults.checksForUpdatesAutomatically
+        historyRetention = (try? container.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)) ?? defaults.historyRetention
+        historySizeLimit = (try? container.decodeIfPresent(HistorySizeLimit.self, forKey: .historySizeLimit)) ?? defaults.historySizeLimit
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -71,6 +75,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case mcpEnabled
         case mcpPort
         case checksForUpdatesAutomatically
+        case historyRetention
+        case historySizeLimit
     }
 
     private static func clamp(_ value: Double) -> Double {

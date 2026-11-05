@@ -162,8 +162,9 @@ extension AppModel {
         selection = .node(project, copy.id)
     }
 
-    /// Moves the item to the Trash with its file; Finder's Put Back restores it. A selection on or inside the item moves
-    /// to its parent first, so a pending edit there saves before its file goes instead of failing after.
+    /// Moves the item to the Trash with its file, dropping its requests' history; Finder's Put Back restores the file.
+    /// A selection on or inside the item moves to its parent first, so a pending edit there saves before its file goes
+    /// instead of failing after.
     func delete(_ node: RequestNodeID, in project: ProjectID) {
         let document = library.document(project)
         if selection?.projectID == project, let selected = selection?.nodeID,
@@ -171,7 +172,7 @@ extension AppModel {
             selection = document?.parentID(of: node).map { .node(project, $0) } ?? .project(project)
         }
         perform("Couldn't Delete the Item") {
-            try library.mutate(project) { try $0.removeNode(node) }
+            try lifecycle.deleteNode(node, in: project)
         }
     }
 

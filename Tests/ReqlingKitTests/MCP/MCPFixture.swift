@@ -32,7 +32,7 @@ final class MCPFixture {
             settings: settings,
             keychain: EmptyKeychain(),
             pkcs12Probe: TLSFixtures.probe,
-            cache: ResponseCache(directory: storage.directory.file("Support/Responses")),
+            history: RunHistory(directory: storage.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
             grpcSchemas: GRPCSchemaService(workspaces: protoWorkspaces)
         )

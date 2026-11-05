@@ -160,8 +160,8 @@ extension BodyTreeCoordinator {
             parts.add("  Not shown as a tree; switch to Text to read it", .secondaryLabelColor)
             label += ", not shown as a tree"
         } else if message.index?.rootEntries().first?.isTruncated == true {
-            parts.add("  Shortened to fit the cache", .secondaryLabelColor)
-            label += ", shortened to fit the cache"
+            parts.add("  Shortened to fit the run history", .secondaryLabelColor)
+            label += ", shortened to fit the run history"
         }
         parts.label = label
     }

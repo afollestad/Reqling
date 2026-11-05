@@ -1,6 +1,6 @@
 import Foundation
 
-/// gRPC runs: the same entry points, cache, and outcome tracking as HTTP (`run`, `cancel`, `forget`), plus live
+/// gRPC runs: the same entry points, history, and outcome tracking as HTTP (`run`, `cancel`, `forget`), plus live
 /// sending on an open client-streaming or bidirectional call. A call's templates resolve once into sent and masked
 /// text, auth inherits as for HTTP and travels as metadata, and the schema comes from `GRPCSchemaService`, so the run
 /// and the editor's pickers agree on it.
@@ -41,12 +41,13 @@ extension RequestRunner {
     }
 
     /// The whole of a gRPC run, inside the run's task so `cancel` and `forget` reach every await.
-    func runGRPC(_ request: RequestNodeID, in project: ProjectID, options: RunOptions, startedAt: Date) async -> RequestExchange {
+    /// `id` is the run's, which every partial record it publishes carries.
+    func runGRPC(_ request: RequestNodeID, in project: ProjectID, options: RunOptions, id: RunID, startedAt: Date) async -> RequestExchange {
         let key = RunKey(request, in: project)
         let live: GRPCLiveCall
         let call: GRPCCallRequest
         do {
-            (live, call) = try await prepareGRPC(request, in: project, options: options, startedAt: startedAt)
+            (live, call) = try await prepareGRPC(request, in: project, options: options, id: id, startedAt: startedAt)
         } catch {
             return failedExchange(request, in: project, startedAt: startedAt, error)
         }
@@ -115,6 +116,7 @@ extension RequestRunner {
         _ request: RequestNodeID,
         in project: ProjectID,
         options: RunOptions,
+        id: RunID,
         startedAt: Date
     ) async throws(RunFailure) -> (GRPCLiveCall, GRPCCallRequest) {
         let context = try runContext(request, in: project, options: options)
@@ -146,6 +148,7 @@ extension RequestRunner {
             }
             let live = GRPCLiveCall(
                 context: GRPCLiveCall.Context(
+                    runID: id,
                     projectID: project,
                     requestID: request,
                     startedAt: startedAt,

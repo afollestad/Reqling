@@ -4,7 +4,7 @@ import Synchronization
 import SwiftProtobuf
 import XCTest
 
-/// What keeps a run bounded: deadlines, long streams, the cache, and waits that must give way to cancellation.
+/// What keeps a run bounded: deadlines, long streams, the history, and waits that must give way to cancellation.
 extension GRPCRunnerTests {
     /// A non-finite deadline cannot be saved to a project file, so only the conversion sees one.
     func testAHugeOrNonFiniteRequestDeadlineIsClamped() async throws {
@@ -63,22 +63,22 @@ extension GRPCRunnerTests {
         XCTAssertGreaterThanOrEqual(call.events.first?.sequence ?? -1, call.trimmedEventCount, "Trimmed ones come first")
     }
 
-    func testTheCacheCutsLargeGRPCRecordsToItsLimits() throws {
-        let cache = ResponseCache(directory: fixture.directory.file("Support/Responses"))
-        let big = String(repeating: "é", count: ResponseCache.grpcMessageLimit)
+    func testTheHistoryCutsLargeGRPCRecordsToItsLimits() throws {
+        let history = RunHistoryStore(directory: fixture.directory.file("Support/History"))
+        let big = String(repeating: "é", count: RunHistoryStore.grpcMessageLimit)
         let events = (0..<100).map { GRPCMessageEvent(direction: .received, offset: Double($0), json: big, byteCount: 1) }
         let record = GRPCCallRecord(target: "t:1", method: "a.B/C", kind: .serverStreaming, events: events, trimmedEventCount: 3)
         let exchange = RequestExchange(
             projectID: ProjectID(), requestID: RequestNodeID(), startedAt: Date(), environmentName: nil, request: nil, outcome: .grpc(record)
         )
 
-        cache.save(exchange)
-        let stored = try XCTUnwrap(cache.load(exchange.requestID, in: exchange.projectID))
+        history.save(exchange)
+        let stored = try XCTUnwrap(history.load(exchange.id, for: exchange.requestID, in: exchange.projectID))
 
         let call = try XCTUnwrap(stored.grpc)
         XCTAssertTrue(stored.isBodyTruncated)
-        XCTAssertTrue(call.events.allSatisfy { $0.json.utf8.count <= ResponseCache.grpcMessageLimit })
-        XCTAssertLessThanOrEqual(call.events.reduce(0) { $0 + $1.json.utf8.count }, ResponseCache.bodyLimit)
+        XCTAssertTrue(call.events.allSatisfy { $0.json.utf8.count <= RunHistoryStore.grpcMessageLimit })
+        XCTAssertLessThanOrEqual(call.events.reduce(0) { $0 + $1.json.utf8.count }, RunHistoryStore.bodyLimit)
         XCTAssertEqual(call.events.count + call.trimmedEventCount, 103, "Cut messages are the oldest, so trimmed")
         XCTAssertEqual(call.receivedCount, 100, "Totals survive the cut")
         XCTAssertEqual(call.events.last?.offset, 99, "The newest are kept")

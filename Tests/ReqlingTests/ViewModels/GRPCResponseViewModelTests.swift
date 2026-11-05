@@ -25,12 +25,12 @@ final class GRPCResponseViewModelTests: XCTestCase {
     }
 
     /// Makes `record` the request's latest exchange of one run, as each update of a live call does. The runner's
-    /// `latest` is Kit's to write, so this goes through the response cache: `forget` drops the previous update, and
+    /// `latest` is Kit's to write, so this goes through the run history: `forget` drops the previous update, and
     /// reading the exchange back loads this one.
     private func publish(_ record: GRPCCallRecord) {
         let runner = fixture.component.requestRunner
         runner.forget(project)
-        ResponseCache(directory: fixture.profile.responsesDirectory).save(RequestExchange(
+        RunHistoryStore(directory: fixture.profile.historyDirectory).save(RequestExchange(
             projectID: project,
             requestID: request,
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

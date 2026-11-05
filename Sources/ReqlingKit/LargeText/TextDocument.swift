@@ -12,7 +12,7 @@ public struct TextDocument: Sendable, Identifiable {
     public let id = UUID()
     public let bytes: Data
     /// How much of `bytes` is text: all of it, unless it ends partway through a character (a body cut to fit the
-    /// response cache), which is left off.
+    /// run history), which is left off.
     public let length: Int
     public let language: SyntaxLanguage
     /// Where each line's first byte is. A line ends before its `\n`, and before a `\r` ahead of that.

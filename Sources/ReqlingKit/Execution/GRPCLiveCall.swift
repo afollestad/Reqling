@@ -7,6 +7,7 @@ import Foundation
 @MainActor
 final class GRPCLiveCall {
     struct Context {
+        let runID: RunID
         let projectID: ProjectID
         let requestID: RequestNodeID
         let startedAt: Date
@@ -212,6 +213,7 @@ final class GRPCLiveCall {
 
     private func exchange(_ outcome: RequestExchange.Outcome) -> RequestExchange {
         RequestExchange(
+            id: context.runID,
             projectID: context.projectID,
             requestID: context.requestID,
             startedAt: context.startedAt,

@@ -50,7 +50,7 @@ extension GRPCRunnerTests {
         XCTAssertFalse(runner.openStreams.contains(key))
         XCTAssertFalse(runner.isInFlight(request, in: project))
         XCTAssertNil(runner.exchange(for: request, in: project))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/Responses/\(project)").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/History/\(project)").path))
     }
 
     /// Someone watching a stream keeps its timeline when they stop it.
@@ -71,7 +71,7 @@ extension GRPCRunnerTests {
         XCTAssertEqual(try texts(call, .received), ["first"])
         XCTAssertTrue(call.initialMetadata.contains(key: "x-initial", value: "hello"))
         XCTAssertFalse(runner.openStreams.contains(key))
-        runner.flushResponseCache()
+        runner.flushHistory()
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc, call, "Cached like any finished call")
         XCTAssertEqual(runner.outcome(for: request, in: project), .failed)
     }

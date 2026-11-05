@@ -1,6 +1,6 @@
 import Foundation
 
-/// What a gRPC call did, for display and the response cache: everything shown is masked.
+/// What a gRPC call did, for display and the run history: everything shown is masked.
 public struct GRPCCallRecord: Hashable, Sendable, Codable {
     /// The most events a record keeps. A long stream keeps its newest ones and counts the rest in
     /// `trimmedEventCount`, so neither memory nor each live update grows with the stream's length.
@@ -21,7 +21,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
     /// Every message the call sent or received, `events` and omitted ones alike.
     public var sentCount: Int
     public var receivedCount: Int
-    /// The oldest messages, cut to keep `eventLimit` (or to fit the response cache); all come before `events`.
+    /// The oldest messages, cut to keep `eventLimit` (or to fit the run history); all come before `events`.
     public var trimmedEventCount: Int
     /// Messages the app never recorded: dropped while it fell behind a fast stream, or still queued when the call
     /// was cancelled. They can fall between kept events.
@@ -121,7 +121,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         let sequence: Int?
     }
 
-    /// The record cut to fit the response cache: each message's JSON to `messageLimit` UTF-8 bytes, then the oldest
+    /// The record cut to fit the run history: each message's JSON to `messageLimit` UTF-8 bytes, then the oldest
     /// messages dropped until the rest total `totalLimit`. `wasCut` says whether anything changed.
     func fittingCache(messageLimit: Int, totalLimit: Int) -> (record: GRPCCallRecord, wasCut: Bool) {
         var record = self

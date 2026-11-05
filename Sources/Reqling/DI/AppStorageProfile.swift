@@ -68,8 +68,9 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("workspace.json")
     }
 
-    var responsesDirectory: URL {
-        applicationSupportDirectory.appendingPathComponent("Responses", isDirectory: true)
+    /// Every request's past runs (`RunHistoryStore`).
+    var historyDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)
     }
 
     /// Tools Reqling installs itself, such as `protoc` under `protoc/<version>`.

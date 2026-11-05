@@ -2,14 +2,22 @@ import Foundation
 
 /// One run of a request: what was sent (masked) and what came back, or why it failed.
 public struct RequestExchange: Hashable, Sendable, Codable {
+    /// Shared by every partial exchange an open gRPC call publishes and the one it finishes with.
+    public var id: RunID
     public var projectID: ProjectID
     public var requestID: RequestNodeID
     public var startedAt: Date
+    /// The environment the run resolved against, Default included; `nil` when the run failed before choosing one.
+    public var environmentID: EnvironmentID?
     public var environmentName: String?
+    /// The template that ran, a one-run spec included: what re-running the run sends again and restoring it puts back in
+    /// the editor. Its credentials are as typed, as in the project's files; resolved secret values never reach it.
+    /// `nil` when the request no longer existed.
+    public var spec: RequestKind?
     public var request: ResolvedHTTPRequest?
     public var outcome: Outcome
     public var unresolvedVariables: [String]
-    /// The stored HTTP body, or the stored gRPC messages, were cut to fit the cache (`ResponseCache.bodyLimit` and
+    /// The stored HTTP body, or the stored gRPC messages, were cut to fit the history (`RunHistoryStore.bodyLimit` and
     /// `grpcMessageLimit`); the run itself saw them all.
     public var isBodyTruncated: Bool
 
@@ -21,19 +29,25 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     }
 
     public init(
+        id: RunID = RunID(),
         projectID: ProjectID,
         requestID: RequestNodeID,
         startedAt: Date,
+        environmentID: EnvironmentID? = nil,
         environmentName: String?,
+        spec: RequestKind? = nil,
         request: ResolvedHTTPRequest?,
         outcome: Outcome,
         unresolvedVariables: [String] = [],
         isBodyTruncated: Bool = false
     ) {
+        self.id = id
         self.projectID = projectID
         self.requestID = requestID
         self.startedAt = startedAt
+        self.environmentID = environmentID
         self.environmentName = environmentName
+        self.spec = spec
         self.request = request
         self.outcome = outcome
         self.unresolvedVariables = unresolvedVariables
@@ -109,87 +123,5 @@ public struct RunFailure: Hashable, Sendable, Codable, Error {
         case .cancelled: .cancelled
         }
         self.init(kind: kind, message: error.localizedDescription)
-    }
-}
-
-/// Keeps each request's latest exchange on disk so the response pane survives a relaunch. Bodies over `bodyLimit`
-/// are cut, and the exchange says so.
-public struct ResponseCache: Sendable {
-    public static let bodyLimit = 5 * 1024 * 1024
-    /// Each cached gRPC message's JSON is cut to this; all of a call's messages together share `bodyLimit`.
-    public static let grpcMessageLimit = 64 * 1024
-
-    public let directory: URL
-
-    public init(directory: URL) {
-        self.directory = directory
-    }
-
-    public func load(_ request: RequestNodeID, in project: ProjectID) -> RequestExchange? {
-        guard let data = try? Data(contentsOf: fileURL(request, in: project)) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(RequestExchange.self, from: data)
-    }
-
-    /// Every request's latest outcome in a project, from a small index kept beside the exchanges, so filtering by
-    /// result never decodes a response body.
-    public func outcomes(in project: ProjectID) -> [RequestNodeID: RunOutcomeKind] {
-        guard let data = try? Data(contentsOf: indexURL(for: project)),
-              let index = try? JSONDecoder().decode([String: RunOutcomeKind].self, from: data) else {
-            return [:]
-        }
-        return Dictionary(uniqueKeysWithValues: index.compactMap { key, value in RequestNodeID(string: key).map { ($0, value) } })
-    }
-
-    public func save(_ exchange: RequestExchange) {
-        var stored = exchange
-        switch exchange.outcome {
-        case .response(var response) where response.body.count > Self.bodyLimit:
-            response.body = response.body.prefix(Self.bodyLimit)
-            stored.outcome = .response(response)
-            stored.isBodyTruncated = true
-        case .grpc(let call):
-            let fitted = call.fittingCache(messageLimit: Self.grpcMessageLimit, totalLimit: Self.bodyLimit)
-            if fitted.wasCut {
-                stored.outcome = .grpc(fitted.record)
-                stored.isBodyTruncated = true
-            }
-        default:
-            break
-        }
-        let url = fileURL(exchange.requestID, in: exchange.projectID)
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(stored).write(to: url, options: .atomic)
-            var index = Dictionary(uniqueKeysWithValues: outcomes(in: exchange.projectID).map { ($0.key.description, $0.value) })
-            index[exchange.requestID.description] = exchange.outcomeKind
-            try JSONEncoder().encode(index).write(to: indexURL(for: exchange.projectID), options: .atomic)
-        } catch {
-            // The cache only restores the last response after a relaunch; the live exchange is unaffected.
-        }
-    }
-
-    public func remove(_ request: RequestNodeID, in project: ProjectID) {
-        try? FileManager.default.removeItem(at: fileURL(request, in: project))
-        var index = Dictionary(uniqueKeysWithValues: outcomes(in: project).map { ($0.key.description, $0.value) })
-        guard index.removeValue(forKey: request.description) != nil else {
-            return
-        }
-        try? JSONEncoder().encode(index).write(to: indexURL(for: project), options: .atomic)
-    }
-
-    public func removeAll(in project: ProjectID) {
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent(project.description, isDirectory: true))
-    }
-
-    private func indexURL(for project: ProjectID) -> URL {
-        directory.appendingPathComponent(project.description, isDirectory: true).appendingPathComponent("index.json")
-    }
-
-    private func fileURL(_ request: RequestNodeID, in project: ProjectID) -> URL {
-        directory
-            .appendingPathComponent(project.description, isDirectory: true)
-            .appendingPathComponent("\(request).json")
     }
 }

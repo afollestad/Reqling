@@ -62,6 +62,10 @@ extension AppComponent {
         shared { SettingsStore(defaults: storageProfile.settingsDefaults) }
     }
 
+    var runHistory: RunHistory {
+        shared { RunHistory(directory: storageProfile.historyDirectory, settings: settingsStore) }
+    }
+
     var requestRunner: RequestRunner {
         shared {
             RequestRunner(
@@ -70,7 +74,7 @@ extension AppComponent {
                 settings: settingsStore,
                 keychain: keychainIdentities,
                 pkcs12Probe: pkcs12ImportProbe,
-                cache: ResponseCache(directory: storageProfile.responsesDirectory),
+                history: runHistory,
                 userAgent: appInfo.userAgent,
                 grpcSchemas: grpcSchema
             )

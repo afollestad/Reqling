@@ -77,6 +77,7 @@ public enum CertificateEntryTag {}
 public enum LocalPathTag {}
 public enum KeyValuePairTag {}
 public enum MultipartFieldTag {}
+public enum RunTag {}
 
 public typealias ProjectID = TypedID<ProjectTag>
 public typealias EnvironmentID = TypedID<EnvironmentTag>
@@ -89,3 +90,5 @@ public typealias LocalPathID = TypedID<LocalPathTag>
 public typealias KeyValuePairID = TypedID<KeyValuePairTag>
 /// Unique only within one request's form-data fields.
 public typealias MultipartFieldID = TypedID<MultipartFieldTag>
+/// One run of a request, as its history lists it.
+public typealias RunID = TypedID<RunTag>

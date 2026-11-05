@@ -30,7 +30,8 @@ final class SidebarViewModel {
         let query: String
         let filter: RequestFilter
         let projects: [LibraryProject]
-        let outcomeRevision: Int
+        /// `RunHistory.revision` while an outcome filter is on; any other time, outcomes cannot change the sections.
+        let historyRevision: Int
     }
 
     init(app: AppModel) {
@@ -47,7 +48,7 @@ final class SidebarViewModel {
             query: query,
             filter: filter,
             projects: app.library.projects,
-            outcomeRevision: filter.outcomes.isEmpty ? 0 : app.runner.outcomeRevision
+            historyRevision: filter.outcomes.isEmpty ? 0 : app.runner.history.revision
         )
         if let cache, cache.key == key {
             return cache.sections

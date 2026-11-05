@@ -43,9 +43,9 @@ enum ScreenshotDemoProject {
         }
         component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = requests.expandedFolderIDs }
 
-        let cache = ResponseCache(directory: component.storageProfile.responsesDirectory)
+        let history = RunHistoryStore(directory: component.storageProfile.historyDirectory)
         for run in requests.cachedRuns {
-            cache.save(RequestExchange(
+            history.save(RequestExchange(
                 projectID: acme,
                 requestID: run.request,
                 startedAt: startedAt,

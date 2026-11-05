@@ -31,7 +31,7 @@ final class GRPCRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    func testATemplatedUnaryCallIsRecordedAndCachedWithoutSecrets() async throws {
+    func testATemplatedUnaryCallIsRecordedWithoutSecrets() async throws {
         let server = try await start()
         var spec = echoSpec("Unary", messages: [#"{"text": "hi {{name}}", "index": {{count}}}"#])
         spec.auth = .bearer(token: "{{token}}")
@@ -60,8 +60,8 @@ final class GRPCRunnerTests: XCTestCase {
         XCTAssertTrue(call.trailers.contains(key: "x-trailer", value: "bye"))
         XCTAssertEqual(log.received.last?["authorization"], "Bearer s3cr3t-token")
         XCTAssertEqual(log.received.last?["x-secret"], "s3cr3t-token")
-        runner.flushResponseCache()
-        let cached = try Data(contentsOf: fixture.directory.file("Support/Responses/\(project)/\(request).json"))
+        runner.flushHistory()
+        let cached = try Data(contentsOf: fixture.directory.file("Support/History/\(project)/\(request)/\(exchange.id).json"))
         XCTAssertNil(cached.utf8Text?.range(of: "s3cr3t"))
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc, call, "The record survives a relaunch")
         XCTAssertEqual(makeRunner().outcome(for: request, in: project), .succeeded)
@@ -142,7 +142,7 @@ final class GRPCRunnerTests: XCTestCase {
         let call = try XCTUnwrap(exchange.grpc, "\(exchange.outcome)")
         XCTAssertEqual(call.events.map(\.unknownFieldCount), [0, 2])
         XCTAssertEqual(try texts(call, .received), ["newer"])
-        runner.flushResponseCache()
+        runner.flushHistory()
         XCTAssertEqual(makeRunner().exchange(for: request, in: project)?.grpc?.events.last?.unknownFieldCount, 2, "The count survives a relaunch")
     }
 
@@ -214,7 +214,7 @@ extension GRPCRunnerTests {
             settings: settings,
             keychain: EmptyKeychain(),
             pkcs12Probe: TLSFixtures.probe,
-            cache: ResponseCache(directory: fixture.directory.file("Support/Responses")),
+            history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
             grpcSchemas: schemas ?? makeSchemas()
         )
@@ -266,25 +266,6 @@ extension GRPCRunnerTests {
     /// The `text` of each message one way, in order.
     func texts(_ call: GRPCCallRecord, _ direction: GRPCMessageEvent.Direction) throws -> [String] {
         try call.events.filter { $0.direction == direction }.map { try json($0).value(forKey: "text") as? String ?? "" }
-    }
-
-    /// Returns once `condition` holds, re-checking whenever what it reads changes.
-    func waitUntil(_ description: String, _ condition: @escaping @MainActor () -> Bool) async {
-        let done = expectation(description: description)
-        let waiting = Task { @MainActor in
-            while !condition() {
-                await withCheckedContinuation { continuation in
-                    withObservationTracking {
-                        _ = condition()
-                    } onChange: {
-                        continuation.resume()
-                    }
-                }
-            }
-            done.fulfill()
-        }
-        await fulfillment(of: [done], timeout: 30)
-        waiting.cancel()
     }
 }
 

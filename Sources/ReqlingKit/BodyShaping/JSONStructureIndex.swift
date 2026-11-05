@@ -31,7 +31,7 @@ public struct JSONStructureIndex: Sendable {
     /// by whitespace (newline-delimited JSON). Throws `.cancelled` once the current task is cancelled, which it checks
     /// about every megabyte.
     ///
-    /// With `allowsTruncation`, for a body known to be cut short (the response cache keeps only its first 5 MB), text
+    /// With `allowsTruncation`, for a body known to be cut short (the run history keeps only its first 5 MB), text
     /// that ends partway through a value keeps everything before it: each container left open closes after its last
     /// complete value and is marked `isTruncated`. Without it, that is the syntax error it would be from a server.
     public static func build(

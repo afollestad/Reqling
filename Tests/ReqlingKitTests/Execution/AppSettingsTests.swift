@@ -25,6 +25,20 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(off.checksForUpdatesAutomatically)
     }
 
+    /// Settings saved before history existed keep 30 days within 500 MB; an unknown choice falls back the same way.
+    func testHistorySettingsDefaultAndDecodeLeniently() throws {
+        let missing = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        let invalid = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"historyRetention": "fortnight", "historySizeLimit": 3}"#.utf8))
+        let chosen = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"historyRetention": "week", "historySizeLimit": "1GB"}"#.utf8))
+
+        XCTAssertEqual(missing.historyRetention, .month)
+        XCTAssertEqual(missing.historySizeLimit, .megabytes500)
+        XCTAssertEqual(invalid.historyRetention, .month)
+        XCTAssertEqual(invalid.historySizeLimit, .megabytes500)
+        XCTAssertEqual(chosen.historyRetention, .week)
+        XCTAssertEqual(chosen.historySizeLimit, .gigabytes1)
+    }
+
     func testAssignmentsClampToo() {
         var settings = AppSettings()
         settings.requestTimeoutSeconds = 0

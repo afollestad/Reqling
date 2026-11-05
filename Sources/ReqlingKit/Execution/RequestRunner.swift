@@ -32,7 +32,7 @@ public struct RunOptions: Sendable {
     }
 
     /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
-    /// neither shows in the window nor lands in the response cache.
+    /// neither shows in the window nor lands in the history.
     var unsaved: RequestItem?
 }
 
@@ -48,16 +48,15 @@ public struct RunKey: Hashable, Sendable {
     }
 }
 
-/// Runs saved requests: resolves them against the project and environment, sends them, and records the latest
-/// exchange per request. The UI and the MCP server share it, so a run started by an agent shows up in the window.
+/// Runs saved requests: resolves them against the project and environment, sends them, and records each run in
+/// `history`, keeping the latest exchange per request at hand. The UI and the MCP server share it, so a run started by
+/// an agent shows up in the window.
 @MainActor
 @Observable
 public final class RequestRunner {
     public internal(set) var inFlight: Set<RunKey> = []
     /// The latest exchange per run; an open gRPC call publishes partial ones (status still `nil`) as it goes.
     public internal(set) var latest: [RunKey: RequestExchange] = [:]
-    /// Bumped whenever any request's outcome changes; `outcome(for:in:)` reads it so views re-filter.
-    public private(set) var outcomeRevision = 0
     /// gRPC calls whose request stream is open for `sendMessage`; `endStream` closes one.
     public internal(set) var openStreams: Set<RunKey> = []
 
@@ -67,7 +66,9 @@ public final class RequestRunner {
     @ObservationIgnored private let keychain: any KeychainIdentityStore
     /// Checks PKCS#12 files before they open; its first check of a file blocks `tlsContext` for one helper launch.
     @ObservationIgnored private let pkcs12Probe: any PKCS12ImportProbe
-    @ObservationIgnored private let cache: ResponseCacheWriter
+    /// Every recorded run. Only `record` adds to it; clearing goes through this runner too, so `latest` never shows a
+    /// run its history no longer has.
+    @ObservationIgnored public let history: RunHistory
     @ObservationIgnored private let userAgent: String
     @ObservationIgnored let dynamic: DynamicVariables
     @ObservationIgnored private let makeExecutor: @MainActor () -> HTTPExecutor
@@ -76,8 +77,6 @@ public final class RequestRunner {
     @ObservationIgnored public let grpcSchemas: GRPCSchemaService?
     @ObservationIgnored private var executors: [ProjectID: HTTPExecutor] = [:]
     @ObservationIgnored private var tasks: [RunKey: Task<RequestExchange, Never>] = [:]
-    /// Per-project outcomes, loaded from the cache's index on first use.
-    @ObservationIgnored private var outcomes: [ProjectID: [RequestNodeID: RunOutcomeKind]] = [:]
     /// Each running gRPC call's timeline and outbox, by run. A run only touches its own entry (checked by identity),
     /// so a replaced or forgotten run's late events never reach the newer one.
     @ObservationIgnored var liveCalls: [RunKey: GRPCLiveCall] = [:]
@@ -88,7 +87,7 @@ public final class RequestRunner {
         settings: SettingsStore,
         keychain: any KeychainIdentityStore,
         pkcs12Probe: any PKCS12ImportProbe,
-        cache: ResponseCache,
+        history: RunHistory,
         userAgent: String,
         dynamic: DynamicVariables = .live,
         grpcSchemas: GRPCSchemaService? = nil,
@@ -99,39 +98,35 @@ public final class RequestRunner {
         self.settings = settings
         self.keychain = keychain
         self.pkcs12Probe = pkcs12Probe
-        self.cache = ResponseCacheWriter(cache: cache)
+        self.history = history
         self.userAgent = userAgent
         self.dynamic = dynamic
         self.grpcSchemas = grpcSchemas
         self.makeExecutor = makeExecutor
     }
 
-    /// The latest exchange: from this session, or else the one cached on disk.
+    /// The latest exchange: from this session, or else the newest in the history.
     public func exchange(for request: RequestNodeID, in project: ProjectID) -> RequestExchange? {
         let key = RunKey(request, in: project)
         if let exchange = latest[key] {
             return exchange
         }
-        guard let cached = cache.load(request, in: project) else {
+        guard let stored = history.latest(for: request, in: project) else {
             return nil
         }
-        latest[key] = cached
-        return cached
+        latest[key] = stored
+        return stored
     }
 
-    /// Waits for every response still being written to the cache. Call it before quitting, and in tests that read a
-    /// run's cache file.
-    public func flushResponseCache() {
-        cache.flush()
+    /// Waits for every run still being written to the history. Call it before quitting, and in tests that read a run's
+    /// files.
+    public func flushHistory() {
+        history.flush()
     }
 
-    /// How the request's latest run went; `.notSent` when it has never run on this Mac.
+    /// How the request's latest run went; `.notSent` when it has none on this Mac.
     public func outcome(for request: RequestNodeID, in project: ProjectID) -> RunOutcomeKind {
-        _ = outcomeRevision
-        if outcomes[project] == nil {
-            outcomes[project] = cache.outcomes(in: project)
-        }
-        return outcomes[project]?[request] ?? .notSent
+        history.outcome(for: request, in: project)
     }
 
     /// Builds an HTTP request exactly as a run would, without sending it; a gRPC request fails.
@@ -154,29 +149,32 @@ public final class RequestRunner {
         inFlight.remove(key)
         liveCalls[key] = nil
         openStreams.remove(key)
-        let startedAt = Date()
+        let item = item(request, in: project, options: options)
+        let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
+        let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
         let task: Task<RequestExchange, Never>
-        if item(request, in: project, options: options)?.kind.grpcSpec != nil {
+        if item?.kind.grpcSpec != nil {
             // Inside the task, unlike HTTP's preparation: finding the schema can compile protos or ask the server, so
             // it must count as in flight and be cancellable.
-            task = Task { await self.runGRPC(request, in: project, options: options, startedAt: startedAt) }
+            task = Task { await self.runGRPC(request, in: project, options: options, id: stamp.id, startedAt: stamp.startedAt) }
         } else {
             let preparation: PreparedRun
             do {
                 preparation = try prepareRun(request, in: project, options: options)
             } catch {
-                return record(failedExchange(request, in: project, startedAt: startedAt, error))
+                let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
+                return options.unsaved == nil ? record(failed) : failed
             }
-            task = httpTask(preparation, request: request, in: project, startedAt: startedAt)
+            task = httpTask(preparation, request: request, in: project, startedAt: stamp.startedAt)
         }
         tasks[key] = task
         inFlight.insert(key)
         // The run is an unstructured task, so it outlives a replaced caller; the caller's cancellation is forwarded.
-        let exchange = await withTaskCancellationHandler {
+        let exchange = stamp.applied(to: await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
-        }
+        })
         // A newer run may have replaced this one, or `forget` dropped it; only the current run publishes.
         guard tasks[key] == task else {
             return exchange
@@ -187,8 +185,8 @@ public final class RequestRunner {
     }
 
     /// Runs `item` as though it were saved at the top of `project`, resolving against the project's environments and
-    /// auth, without recording it: the window never shows the run and nothing is cached. `item.id` must not be a saved
-    /// request's, or the two would share run tracking.
+    /// auth, without recording it: the window never shows the run and nothing reaches the history. `item.id` must not be
+    /// a saved request's, or the two would share run tracking.
     public func runUnsaved(_ item: RequestItem, in project: ProjectID, options: RunOptions = RunOptions()) async -> RequestExchange {
         var options = options
         options.unsaved = item
@@ -252,36 +250,68 @@ public final class RequestRunner {
         tasks[RunKey(request, in: project)]?.cancel()
     }
 
-    /// Drops a project's cookies, connections, and cached exchanges, as when it is deleted. Its runs in flight are
-    /// cancelled and detached first, so none can finish afterwards and write the cache back.
+    /// Drops a project's cookies, connections, and history, as when it is deleted. Its runs in flight are cancelled and
+    /// detached first, so none can finish afterwards and record into the history again.
     public func forget(_ project: ProjectID) {
-        for (key, task) in tasks where key.projectID == project {
-            task.cancel()
-            tasks[key] = nil
-            inFlight.remove(key)
+        for key in tasks.keys where key.projectID == project {
+            detach(key)
         }
         liveCalls = liveCalls.filter { $0.key.projectID != project }
         openStreams = openStreams.filter { $0.projectID != project }
         grpcSchemas?.refreshReflection(in: project)
         executors.removeValue(forKey: project)?.invalidate()
-        cache.removeAll(in: project)
+        history.clear(in: project)
         latest = latest.filter { $0.key.projectID != project }
-        outcomes[project] = nil
-        outcomeRevision += 1
     }
 
-    /// Drops one request's run history, as when it switches protocol and its last exchange no longer describes it. A
-    /// run in flight is cancelled and detached first, so it cannot finish afterwards and record the old protocol again.
+    /// Drops one request's history, as when it is deleted or switches protocol and its runs no longer describe it. A
+    /// run in flight is cancelled and detached first, so it cannot finish afterwards and record again.
     public func forget(_ request: RequestNodeID, in project: ProjectID) {
         let key = RunKey(request, in: project)
+        detach(key)
+        history.clear(for: request, in: project)
+        latest[key] = nil
+    }
+
+    /// Clears one request's history, leaving a run in flight to record when it finishes; an open gRPC call keeps
+    /// showing as it goes.
+    public func clearHistory(for request: RequestNodeID, in project: ProjectID) {
+        let key = RunKey(request, in: project)
+        history.clear(for: request, in: project)
+        if liveCalls[key] == nil {
+            latest[key] = nil
+        }
+    }
+
+    /// Clears every request's history in a project, as `clearHistory(for:in:)` does one's.
+    public func clearHistory(in project: ProjectID) {
+        history.clear(in: project)
+        latest = latest.filter { $0.key.projectID != project || liveCalls[$0.key] != nil }
+    }
+
+    /// Clears every project's history, as `clearHistory(for:in:)` does one request's.
+    public func clearAllHistory() {
+        history.clearAll()
+        latest = latest.filter { liveCalls[$0.key] != nil }
+    }
+
+    /// Carries requests' history into another project, as when they move there keeping their IDs. Their runs in flight
+    /// are cancelled and detached, since they resolve against the project being left.
+    public func moveHistory(of requests: [RequestNodeID], from source: ProjectID, to destination: ProjectID) {
+        for request in requests {
+            let key = RunKey(request, in: source)
+            detach(key)
+            latest[key] = nil
+        }
+        history.move(requests, from: source, to: destination)
+    }
+
+    /// Cancels a run and forgets it is running, so it can never publish or record.
+    private func detach(_ key: RunKey) {
         tasks.removeValue(forKey: key)?.cancel()
         inFlight.remove(key)
         liveCalls[key] = nil
         openStreams.remove(key)
-        cache.remove(request, in: project)
-        latest[key] = nil
-        outcomes[project]?[request] = nil
-        outcomeRevision += 1
     }
 
     private struct PreparedRun {
@@ -316,18 +346,10 @@ public final class RequestRunner {
         if let saved = document.request(request), options.unsaved == nil, saved.kind.name != item.kind.name {
             throw RunFailure(kind: .invalidRequest, message: "A one-run spec must be \(saved.kind.name.rawValue), as the request is.")
         }
-        // An environment an agent names must exist; a stored selection whose environment was deleted (perhaps on
-        // another Mac) falls back to Default, as the window shows it.
-        let environmentID: EnvironmentID?
-        if let explicit = options.environmentID {
-            guard document.environment(explicit) != nil else {
-                throw RunFailure(kind: .invalidRequest, message: "The environment no longer exists.")
-            }
-            environmentID = explicit
-        } else {
-            environmentID = workspace.projectState(projectID).activeEnvironmentID.flatMap { document.environment($0)?.id }
+        guard let environment = runEnvironment(in: document, project: projectID, options: options) else {
+            throw RunFailure(kind: .invalidRequest, message: "The environment no longer exists.")
         }
-        let scope = VariableScope(document: document, activeEnvironmentID: environmentID, overrides: options.variableOverrides)
+        let scope = VariableScope(document: document, activeEnvironmentID: environment.id, overrides: options.variableOverrides)
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
         return RunContext(
             item: item,
@@ -335,8 +357,17 @@ public final class RequestRunner {
             resolver: resolver,
             redaction: SecretRedaction(resolver: resolver),
             paths: ProjectPathResolver(projectRoot: project.url, localPaths: workspace.localPaths(in: projectID)),
-            environmentName: environmentID.flatMap { document.environment($0)?.name } ?? RequestEnvironment.defaultName
+            environmentName: environment.name
         )
+    }
+
+    /// The environment a run resolves against. One an agent or a re-run names must exist (`nil` otherwise); a stored
+    /// selection whose environment was deleted (perhaps on another Mac) falls back to Default, as the window shows it.
+    func runEnvironment(in document: ProjectDocument, project: ProjectID, options: RunOptions) -> RequestEnvironment? {
+        if let explicit = options.environmentID {
+            return document.environment(explicit)
+        }
+        return workspace.projectState(project).activeEnvironmentID.flatMap { document.environment($0) } ?? document.defaultEnvironment
     }
 
     private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
@@ -412,19 +443,14 @@ public final class RequestRunner {
         return executor
     }
 
-    /// Publishes and caches an exchange, unless its project is gone: a deleted project must leave nothing on disk.
+    /// Publishes an exchange and adds it to the history, unless its project is gone: a deleted project must leave
+    /// nothing on disk.
     func record(_ exchange: RequestExchange) -> RequestExchange {
         guard library.project(exchange.projectID) != nil else {
             return exchange
         }
         latest[RunKey(exchange.requestID, in: exchange.projectID)] = exchange
-        // Loaded before the save is queued, which the load would otherwise wait out.
-        if outcomes[exchange.projectID] == nil {
-            outcomes[exchange.projectID] = cache.outcomes(in: exchange.projectID)
-        }
-        cache.save(exchange)
-        outcomes[exchange.projectID]?[exchange.requestID] = exchange.outcomeKind
-        outcomeRevision += 1
+        history.record(exchange)
         return exchange
     }
 
@@ -441,5 +467,26 @@ public final class RequestRunner {
         case nil:
             RunFailure(kind: .transport, message: error.localizedDescription)
         }
+    }
+}
+
+/// What every exchange of one run carries, whichever path produced it: a failure before sending, a response, or a
+/// gRPC call's partial and final records.
+private struct RunStamp {
+    let id: RunID
+    let startedAt: Date
+    let spec: RequestKind?
+    /// `nil` when the project is gone or the environment named for the run no longer exists.
+    let environment: RequestEnvironment?
+
+    func applied(to exchange: RequestExchange) -> RequestExchange {
+        var stamped = exchange
+        stamped.id = id
+        stamped.spec = spec
+        if let environment {
+            stamped.environmentID = environment.id
+            stamped.environmentName = environment.name
+        }
+        return stamped
     }
 }

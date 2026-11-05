@@ -4,11 +4,11 @@ import XCTest
 
 @MainActor
 final class RequestRunnerTests: XCTestCase {
-    private var fixture: LibraryFixture!
-    private var workspace: WorkspaceStateStore!
-    private var settings: SettingsStore!
+    var fixture: LibraryFixture!
+    var workspace: WorkspaceStateStore!
+    var settings: SettingsStore!
     private var suiteName: String!
-    private var servers: [TestHTTPServer] = []
+    var servers: [TestHTTPServer] = []
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
@@ -25,19 +25,19 @@ final class RequestRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    private func makeRunner() -> RequestRunner {
+    func makeRunner() -> RequestRunner {
         RequestRunner(
             library: fixture.library,
             workspace: workspace,
             settings: settings,
             keychain: EmptyKeychain(),
             pkcs12Probe: TLSFixtures.probe,
-            cache: ResponseCache(directory: fixture.directory.file("Support/Responses")),
+            history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0"
         )
     }
 
-    private func echoServer(tls: Bool = false) async throws -> TestHTTPServer {
+    func echoServer(tls: Bool = false) async throws -> TestHTTPServer {
         let context = tls ? try TLSFixtures.serverContext(requireClientCertificate: true) : nil
         let server = try await TestHTTPServer.start(tls: context) { request in
             .text("\(request.method) \(request.uri) \(request.header("X-Extra") ?? "-")")
@@ -47,13 +47,13 @@ final class RequestRunnerTests: XCTestCase {
     }
 
     /// A project whose request targets `{{base}}/{{path}}`, with `path` set differently per environment.
-    private struct ProjectFixture {
+    struct ProjectFixture {
         let id: ProjectID
         let request: RequestNodeID
         let staging: EnvironmentID
     }
 
-    private func makeProject(base: String) throws -> ProjectFixture {
+    func makeProject(base: String) throws -> ProjectFixture {
         let id = try fixture.library.createProject(named: "Runner")
         let request = RequestItem.http("Echo", url: "{{base}}/{{path}}")
         let staging = RequestEnvironment(name: "Staging", variables: [Variable(key: "path", value: "staging")])
@@ -65,7 +65,7 @@ final class RequestRunnerTests: XCTestCase {
         return ProjectFixture(id: id, request: request.id, staging: staging.id)
     }
 
-    private func body(_ exchange: RequestExchange) -> String? {
+    func body(_ exchange: RequestExchange) -> String? {
         exchange.response?.body.utf8Text
     }
 
@@ -115,14 +115,14 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertEqual(server.requests.count, 1)
     }
 
-    func testTheLatestExchangeSurvivesARelaunchThroughTheCache() async throws {
+    func testTheLatestExchangeSurvivesARelaunchThroughTheHistory() async throws {
         let server = try await echoServer()
         let fixtureProject = try makeProject(base: server.baseURL)
         let project = fixtureProject.id
         let request = fixtureProject.request
         let runner = makeRunner()
         _ = await runner.run(request, in: project)
-        runner.flushResponseCache()
+        runner.flushHistory()
 
         let restored = makeRunner().exchange(for: request, in: project)
 
@@ -141,7 +141,7 @@ final class RequestRunnerTests: XCTestCase {
         _ = await runner.run(request, in: project)
 
         XCTAssertEqual(runner.outcome(for: request, in: project), .succeeded)
-        runner.flushResponseCache()
+        runner.flushHistory()
         XCTAssertEqual(makeRunner().outcome(for: request, in: project), .succeeded)
     }
 
@@ -161,7 +161,7 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertEqual(named.failure, RunFailure(kind: .invalidRequest, message: "The environment no longer exists."))
     }
 
-    func testForgettingAProjectCancelsItsRunsAndLeavesNoCache() async throws {
+    func testForgettingAProjectCancelsItsRunsAndLeavesNoHistory() async throws {
         let (received, signal) = AsyncStream<Void>.makeStream()
         let server = try await TestHTTPServer.start { _ in
             signal.yield()
@@ -184,11 +184,11 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertEqual(exchange.failure?.kind, .cancelled)
         XCTAssertFalse(runner.isInFlight(request, in: project))
         XCTAssertNil(runner.exchange(for: request, in: project))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/Responses/\(project)").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/History/\(project)").path))
 
         // A run of a project that is already gone records nothing either.
         _ = await runner.run(request, in: project)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/Responses/\(project)").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.file("Support/History/\(project)").path))
     }
 
     func testRunsOfTheSameRequestIDInTwoProjectsStayIndependent() async throws {
@@ -249,7 +249,7 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertTrue(message.contains("server"), message)
     }
 
-    func testTheCachedExchangeHoldsNoSecret() async throws {
+    func testTheStoredRunHoldsNoSecret() async throws {
         let server = try await TestHTTPServer.start { request in
             // Pass the query along, as servers that canonicalize URLs do.
             guard request.uri.hasPrefix("/start") else {
@@ -273,8 +273,8 @@ final class RequestRunnerTests: XCTestCase {
 
         XCTAssertEqual(server.requests.last?.uri, "/end/s3cr3t?key=s3cr3t")
         XCTAssertEqual(exchange.response?.url, "\(server.baseURL)/end/\(TemplateResolver.mask)?key=\(TemplateResolver.mask)")
-        runner.flushResponseCache()
-        let cached = try Data(contentsOf: fixture.directory.file("Support/Responses/\(project)/\(request).json"))
+        runner.flushHistory()
+        let cached = try Data(contentsOf: fixture.directory.file("Support/History/\(project)/\(request)/\(exchange.id).json"))
         XCTAssertNil(cached.utf8Text?.range(of: "s3cr3t"))
     }
 

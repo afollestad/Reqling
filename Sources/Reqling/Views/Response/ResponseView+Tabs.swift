@@ -61,7 +61,7 @@ private struct ResponseBodyView: View {
         let presentation = response.body
         VStack(alignment: .leading, spacing: 6) {
             if isTruncated {
-                Text("Restored from the last session; only the first 5 MB were kept.")
+                Text("Only the first 5 MB of this response were kept.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

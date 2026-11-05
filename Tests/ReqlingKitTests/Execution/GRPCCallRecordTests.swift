@@ -74,7 +74,7 @@ final class GRPCCallRecordTests: XCTestCase {
         )
         return GRPCLiveCall(
             context: GRPCLiveCall.Context(
-                projectID: ProjectID(), requestID: RequestNodeID(), startedAt: Date(), environmentName: "Default",
+                runID: RunID(), projectID: ProjectID(), requestID: RequestNodeID(), startedAt: Date(), environmentName: "Default",
                 unresolvedVariables: [], resolver: resolver, redaction: SecretRedaction(resolver: resolver), allowUnresolved: false
             ),
             method: method,

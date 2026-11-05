@@ -68,7 +68,7 @@ struct SnapshotProject {
         ),
         in fixture: AppFixture
     ) {
-        ResponseCache(directory: fixture.profile.responsesDirectory).save(RequestExchange(
+        RunHistoryStore(directory: fixture.profile.historyDirectory).save(RequestExchange(
             projectID: id,
             requestID: request,
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),

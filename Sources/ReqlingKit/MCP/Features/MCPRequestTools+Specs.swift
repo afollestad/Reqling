@@ -71,7 +71,7 @@ extension MCPRequestTools {
         ) { arguments in
             let (project, document) = try context.document(try arguments.string("project"))
             let id = try target.resolve(try arguments.string(argument), document)
-            try context.mutate(project.id) { _ = try $0.removeNode(id) }
+            try context.describingErrors { try context.lifecycle.deleteNode(id, in: project.id) }
             return .object(["deleted": .string(id.description)])
         }
     }

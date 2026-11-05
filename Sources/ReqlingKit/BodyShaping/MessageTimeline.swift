@@ -7,7 +7,7 @@ import Foundation
 public struct MessageTimeline: Sendable {
     public struct Message: Sendable {
         public let event: GRPCMessageEvent
-        /// `nil` when its JSON doesn't parse, as when the response cache cut a long message short.
+        /// `nil` when its JSON doesn't parse, as when the run history cut a long message short.
         public let index: JSONStructureIndex?
         /// The message's top-level fields, which its row expands to.
         public let fields: [JSONEntry]

@@ -3,15 +3,15 @@ import SwiftUI
 
 /// Every message both ways, in the order they crossed the wire, with the status message of a call that failed. Notes
 /// above the messages say what is left out, by cause: a long stream keeps only its newest messages, a stream too fast
-/// to record loses some in between, and a saved response may have been shortened to fit the cache.
+/// to record loses some in between, and a saved response may have been shortened to fit the run history.
 struct GRPCTimelineView: View {
     let entries: [GRPCTimelineEntry]
     let status: GRPCStatusRecord?
-    /// The oldest messages, cut to keep the record's window (or the cache's size).
+    /// The oldest messages, cut to keep the record's window (or the history's size).
     var trimmedCount = 0
     /// Messages never recorded while Reqling fell behind; they can fall between shown ones.
     var droppedCount = 0
-    /// A record restored from the response cache that `ResponseCache` cut to fit.
+    /// A stored record that `RunHistoryStore` cut to fit.
     var isCacheShortened = false
 
     var body: some View {
@@ -36,7 +36,7 @@ struct GRPCTimelineView: View {
     static func notes(trimmedCount: Int, droppedCount: Int, isCacheShortened: Bool) -> [String] {
         var notes: [String] = []
         if isCacheShortened {
-            notes.append("This saved response was shortened to fit the cache.")
+            notes.append("This saved response was shortened to fit the run history.")
         }
         if trimmedCount > 0 {
             let earlier = trimmedCount == 1 ? "1 earlier message" : "\(trimmedCount) earlier messages"

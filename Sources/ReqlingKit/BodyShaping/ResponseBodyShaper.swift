@@ -74,7 +74,7 @@ public enum ResponseBodyShaper {
     }
 
     /// The body as `format` (from `classify`) shows it in `mode`. `isTruncated` says the body was cut short to fit the
-    /// response cache, so a tree keeps what came before the cut rather than failing on it. Throws once the current task
+    /// run history, so a tree keeps what came before the cut rather than failing on it. Throws once the current task
     /// is cancelled.
     public static func shape(
         _ body: Data,

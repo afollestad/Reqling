@@ -13,37 +13,21 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id
         case name
-        case kind
-        case http
-        case grpc
     }
 
+    /// The kind's keys sit beside `id` and `name` (`RequestKind`'s coding), so a request file stays one flat object.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(RequestNodeID.self, forKey: .id) ?? RequestNodeID()
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
-        let kindName = try container.decodeIfPresent(String.self, forKey: .kind) ?? RequestKind.Name.http.rawValue
-        switch RequestKind.Name(rawValue: kindName) {
-        case .http:
-            kind = .http(try container.decodeIfPresent(HTTPRequestSpec.self, forKey: .http) ?? HTTPRequestSpec())
-        case .grpc:
-            kind = .grpc(try container.decodeIfPresent(GRPCRequestSpec.self, forKey: .grpc) ?? GRPCRequestSpec())
-        case nil:
-            throw DecodingError.dataCorruptedError(forKey: .kind, in: container, debugDescription: "Unknown request kind: \(kindName)")
-        }
+        kind = try RequestKind(from: decoder)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
-        try container.encode(kind.name.rawValue, forKey: .kind)
-        switch kind {
-        case .http(let spec):
-            try container.encode(spec, forKey: .http)
-        case .grpc(let spec):
-            try container.encode(spec, forKey: .grpc)
-        }
+        try kind.encode(to: encoder)
     }
 }
 
@@ -76,6 +60,39 @@ public enum RequestKind: Hashable, Sendable {
             return spec
         }
         return nil
+    }
+}
+
+/// Coded as `kind` plus the spec under its protocol's key, the shape request files and a run's history share.
+extension RequestKind: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case http
+        case grpc
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kindName = try container.decodeIfPresent(String.self, forKey: .kind) ?? Name.http.rawValue
+        switch Name(rawValue: kindName) {
+        case .http:
+            self = .http(try container.decodeIfPresent(HTTPRequestSpec.self, forKey: .http) ?? HTTPRequestSpec())
+        case .grpc:
+            self = .grpc(try container.decodeIfPresent(GRPCRequestSpec.self, forKey: .grpc) ?? GRPCRequestSpec())
+        case nil:
+            throw DecodingError.dataCorruptedError(forKey: .kind, in: container, debugDescription: "Unknown request kind: \(kindName)")
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name.rawValue, forKey: .kind)
+        switch self {
+        case .http(let spec):
+            try container.encode(spec, forKey: .http)
+        case .grpc(let spec):
+            try container.encode(spec, forKey: .grpc)
+        }
     }
 }
 
@@ -137,5 +154,13 @@ public enum RequestNode: Hashable, Sendable, Identifiable {
             return [id]
         }
         return [id] + folder.children.flatMap(\.subtreeIDs)
+    }
+
+    /// The IDs of this request, or of every request inside this folder.
+    var requestIDs: [RequestNodeID] {
+        switch self {
+        case .request(let request): [request.id]
+        case .folder(let folder): folder.children.flatMap(\.requestIDs)
+        }
     }
 }

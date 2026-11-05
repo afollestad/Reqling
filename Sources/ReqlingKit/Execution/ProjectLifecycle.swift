@@ -1,7 +1,7 @@
 import Foundation
 
-/// Adding, removing, and deleting projects with everything that has to happen alongside the library change: runs
-/// cancelled and cached responses dropped, this Mac's state for the project forgotten, and stale local paths pruned.
+/// Adding, removing, and deleting projects and items with everything that has to happen alongside the library change:
+/// runs cancelled and their history dropped, this Mac's state for the project forgotten, and stale local paths pruned.
 /// The window and the MCP server both go through it, so neither leaves the other's bookkeeping behind.
 @MainActor
 public struct ProjectLifecycle {
@@ -36,6 +36,16 @@ public struct ProjectLifecycle {
         try library.deleteProject(id)
         runner.forget(id)
         workspace.forgetProject(id, keepingLocalPaths: false)
+    }
+
+    /// Moves a folder or request to the Trash with its files, as `ProjectDocument.removeNode(_:)` does, and drops the
+    /// history of every request inside it. Finder's Put Back restores the files but not the runs.
+    public func deleteNode(_ id: RequestNodeID, in project: ProjectID) throws {
+        let requests = library.document(project)?.node(id)?.requestIDs ?? []
+        try library.mutate(project) { _ = try $0.removeNode(id) }
+        for request in requests {
+            runner.forget(request, in: project)
+        }
     }
 
     /// Drops the stored paths `project` no longer references; see `WorkspaceStateStore.reconcileLocalPaths(in:keeping:)`

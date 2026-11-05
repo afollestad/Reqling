@@ -27,13 +27,13 @@ final class ResponseViewModelTests: XCTestCase {
     }
 
     /// Makes a response the request's latest exchange. The runner's `latest` is Kit's to write, so this goes through the
-    /// response cache: `forget` drops the previous exchange, and reading it back loads this one.
+    /// run history: `forget` drops the previous exchange, and reading it back loads this one.
     private func publish(_ body: Data, contentType: String?, at seconds: TimeInterval = 1_700_000_000, isTruncated: Bool = false) {
         let runner = fixture.component.requestRunner
         let request = response.requestID
         runner.forget(request, in: project)
         let startedAt = Date(timeIntervalSince1970: seconds)
-        ResponseCache(directory: fixture.profile.responsesDirectory).save(RequestExchange(
+        RunHistoryStore(directory: fixture.profile.historyDirectory).save(RequestExchange(
             projectID: project,
             requestID: request,
             startedAt: startedAt,
