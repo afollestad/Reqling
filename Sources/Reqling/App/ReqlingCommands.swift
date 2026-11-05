@@ -8,6 +8,9 @@ struct ReqlingCommands: Commands {
     @FocusedValue(\.bodySearch) private var focusedSearch
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About \(model.appInfo.name)") { AboutPanel.show() }
+        }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { model.showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
