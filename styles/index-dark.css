@@ -1,0 +1,55 @@
+/* Dark theme: the courier at night, a deep plum sky under the lavender of the
+   dark icon.
+   Don't forget to update the theme colors in scripts/dark-mode.js if --bg changes,
+   and re-render images/og-image.png, which bakes it in as its canvas. */
+
+:root {
+    color-scheme: dark;
+
+    /* A near-black tinted with the icon's plum. */
+    --bg: #130d16;
+    --fg: #f6f0f8;
+    /* 9.3:1 on --bg, and 5.6:1 on the ghost button's glass at the glow's
+       strongest point. */
+    --secondary: #bfb0c6;
+    /* AccentColor's dark variant on main (#aa86c2). */
+    --accent: #aa86c2;
+    /* 6.3:1 on --accent. */
+    --on-accent: #130d16;
+    /* The dark icon's light wing, lifted: 9.1:1 on --bg and 6.7:1 on the glow. */
+    --accent-text: #c9a6e0;
+    --hairline: rgba(246, 240, 248, .12);
+    --surface: rgba(255, 255, 255, .04);
+    --chip-bg: var(--accent);
+    --chip-fg: var(--on-accent);
+    /* Behind the logo, at least 3:1 with its main blues, #0057d5 and #0186fb.
+       Matches af.codes. */
+    --logo-circle: #05070d;
+    --glass: rgba(255, 255, 255, .07);
+    --glass-border: rgba(255, 255, 255, .14);
+    --glass-shadow: rgba(0, 0, 0, .35);
+    --icon-shadow: rgba(0, 0, 0, .45);
+    --media-shadow: rgba(0, 0, 0, .55);
+    --window-rim-shadow: rgba(0, 0, 0, .5);
+    /* The dark icon's light wing, faint. */
+    --trail: rgba(201, 166, 224, .2);
+    /* The icon's cream beak through the dark icon's wing to AccentColor; every
+       stop holds at least 3.8:1 where the glow meets the beak's haze. */
+    --title-gradient: linear-gradient(100deg, #ffe6cf 5%, #d7b4ea 50%, #aa86c2 95%);
+}
+
+html {
+    background: var(--bg);
+}
+
+.theme-toggle .icon-sun {
+    display: block;
+}
+
+/* AccentColor glowing down from the top, and a faint haze of the icon's
+   cream beak to the right. */
+.hero-sky {
+    background:
+        radial-gradient(ellipse 1100px 560px at 50% 0%, rgba(116, 58, 138, .42) 0%, rgba(116, 58, 138, 0) 100%),
+        radial-gradient(ellipse 700px 420px at 82% 18%, rgba(255, 230, 207, .07) 0%, rgba(255, 230, 207, 0) 100%);
+}

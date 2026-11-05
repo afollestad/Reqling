@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Reqling link preview</title>
+    <!-- Links the site's own sheets without media, so the preview can't drift
+         from the dark theme. render.sh screenshots it at 1200x630. -->
+    <link rel="stylesheet" href="../styles/index-common.css">
+    <link rel="stylesheet" href="../styles/index-dark.css">
+    <style>
+        html,
+        body {
+            width: 1200px;
+            height: 630px;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .section-hero {
+            height: 630px;
+            padding: 0;
+            text-align: left;
+        }
+
+        /* The glow and flight paths run to the frame's edges instead of
+           fading out. */
+        .hero-sky {
+            -webkit-mask-image: none;
+            mask-image: none;
+        }
+
+        /* Rises behind the copy on the left, ending above the icon, and
+           behind the window's top edge on the right. */
+        .trails {
+            height: 760px;
+            top: -40px;
+        }
+
+        .trails path {
+            animation: none;
+        }
+
+        .hero-copy {
+            position: absolute;
+            top: 50%;
+            left: 72px;
+            width: 470px;
+            max-width: none;
+            padding: 0;
+            transform: translateY(-50%);
+        }
+
+        .app-icon {
+            width: 150px;
+            margin: 0;
+        }
+
+        .hero-copy h1 {
+            margin-top: 28px;
+            font-size: 104px;
+        }
+
+        .tagline {
+            margin: 16px 0 0;
+            font-size: 32px;
+            line-height: 1.35;
+            text-wrap: balance;
+        }
+
+        /* Cut off by the frame's right and bottom edges. */
+        .hero-media {
+            position: absolute;
+            top: 120px;
+            left: 590px;
+            width: 960px;
+            margin: 0;
+            padding: 0;
+        }
+
+        .screenshot {
+            max-width: none;
+            width: 960px;
+        }
+    </style>
+</head>
+
+<body>
+    <section class="section-hero">
+        <div class="hero-sky" aria-hidden="true">
+            <svg class="trails" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMin slice" focusable="false">
+                <path d="M-40 700 C80 620 150 520 170 420 S230 250 330 200"/>
+                <path d="M1240 620 C1120 560 1060 470 1040 380 S980 220 880 170"/>
+                <path d="M-20 420 C60 360 90 300 120 220"/>
+                <rect x="322" y="180" width="34" height="24" rx="7" transform="rotate(-24 339 192)"/>
+                <rect x="852" y="152" width="34" height="24" rx="7" transform="rotate(24 869 164)"/>
+            </svg>
+        </div>
+
+        <div class="container hero-copy">
+            <picture class="app-icon">
+                <img src="../images/app-icon-dark.png" alt="" width="256" height="256">
+            </picture>
+            <h1>Reqling</h1>
+            <p class="tagline">A native Mac client for HTTP and gRPC APIs.</p>
+        </div>
+
+        <div class="hero-media">
+            <img class="screenshot" src="../images/request-dark.webp" alt="" width="1920" height="1248">
+        </div>
+    </section>
+</body>
+
+</html>

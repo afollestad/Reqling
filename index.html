@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reqling</title>
+    <meta name="description"
+        content="Reqling is a native macOS client for HTTP and gRPC APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
+
+    <meta name="theme-color" content="#fbf7fa" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#130d16" media="(prefers-color-scheme: dark)">
+
+    <meta property="og:title" content="Reqling">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://reqling.af.codes">
+    <meta property="og:description"
+        content="A native macOS client for HTTP and gRPC APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
+    <!-- Rendered from og-image/ on the dark theme; re-render it whenever the
+         name, tagline, dark colors, flight paths, icon or the dark request
+         screenshot change (AGENTS.md). -->
+    <meta property="og:image" content="https://reqling.af.codes/images/og-image.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt"
+        content="The Reqling app icon, a purple carrier bird holding a data packet, beside its name and tagline, with the app's window showing a GET request and its JSON response over a plum glow and dotted flight paths.">
+    <!-- Twitter never reads og:image:alt, so the image is repeated here to give
+         its alt an anchor. -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://reqling.af.codes/images/og-image.png">
+    <meta name="twitter:image:alt"
+        content="The Reqling app icon, a purple carrier bird holding a data packet, beside its name and tagline, with the app's window showing a GET request and its JSON response over a plum glow and dotted flight paths.">
+
+    <link rel="icon" href="favicon.png" type="image/png" sizes="96x96">
+    <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+    <link rel="stylesheet" href="styles/index-common.css">
+
+    <link rel="stylesheet" href="styles/index-dark.css" id="theme-dark" media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="styles/index-light.css" id="theme-light"
+        media="(prefers-color-scheme: no-preference), (prefers-color-scheme: light)">
+
+    <script src="scripts/dark-mode.js"></script>
+</head>
+
+<body>
+    <section class="section-hero" id="overview">
+        <!-- A glow from the top, and dotted flight paths up the hero's sides,
+             the courier's trails, each ending in a packet like the one in the
+             icon's beak. The SVG slices to its own height, so on narrow
+             screens the trails crop away rather than running under the text. -->
+        <div class="hero-sky" aria-hidden="true">
+            <svg class="trails" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMin slice" focusable="false">
+                <path d="M-40 700 C80 620 150 520 170 420 S230 250 330 200"/>
+                <path d="M1240 620 C1120 560 1060 470 1040 380 S980 220 880 170"/>
+                <path d="M-20 420 C60 360 90 300 120 220"/>
+                <rect x="322" y="180" width="34" height="24" rx="7" transform="rotate(-24 339 192)"/>
+                <rect x="852" y="152" width="34" height="24" rx="7" transform="rotate(24 869 164)"/>
+            </svg>
+        </div>
+
+        <div class="top-brand">
+            <a class="brand-logo" href="https://af.codes" aria-label="af.codes, Aidan Follestad">
+                <img src="https://af.codes/images/af.png" alt="" width="1024" height="1024" decoding="async">
+            </a>
+        </div>
+
+        <div class="top-actions">
+            <button class="top-btn theme-toggle" id="theme-toggle" type="button" aria-label="Dark mode">
+                <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="container hero-copy">
+            <picture class="app-icon">
+                <source srcset="images/app-icon-dark.png" data-theme="dark" media="(prefers-color-scheme: dark)">
+                <img src="images/app-icon-light.png" alt="" width="256" height="256" decoding="async"
+                    fetchpriority="high">
+            </picture>
+
+            <h1>Reqling</h1>
+            <p class="tagline">
+                A small, native Mac client for HTTP and gRPC APIs. Keep your requests in your repository, and send
+                them yourself or through your AI agent.
+            </p>
+
+            <div class="cta-row">
+                <a class="btn-primary"
+                    href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span class="btn-stack">
+                        <span>Download</span>
+                        <span class="btn-subtext">macOS 26 or later</span>
+                    </span>
+                </a>
+                <a class="btn-ghost" href="https://github.com/afollestad/Reqling">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+                    </svg>
+                    <span class="btn-stack">
+                        <span>View on GitHub</span>
+                        <span class="btn-subtext">Stars appreciated!</span>
+                    </span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Window captures from main's scripts/screenshots.sh, cut to the
+             window with transparent rounded corners, so .screenshot draws no
+             frame of its own. Each ships in both appearances: the dark one is
+             the <source>, so the light one stays the <img> fallback and only
+             the matching appearance downloads. -->
+        <div class="container hero-media">
+            <picture>
+                <source srcset="images/request-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/request-light.webp"
+                    alt="The Reqling window with the Acme API project in the sidebar and its Get user request open: a GET to {{baseUrl}}/users/{{userId}} with include and trace parameters, above a 200 OK response in 86 ms whose JSON tree shows Ada Lovelace's id, name, email, roles, and team."
+                    width="1920" height="1248" decoding="async" fetchpriority="high">
+            </picture>
+        </div>
+    </section>
+
+    <section class="section-feature" id="projects">
+        <div class="container feature-split">
+            <div class="feature-text">
+                <p class="chip">Projects</p>
+                <h2>Requests that live with your code</h2>
+                <p class="feature-copy">
+                    A project is a folder of small JSON files, so it diffs cleanly and sits in your API's own
+                    repository. Edits from a <code>git pull</code> or your editor show up in the window as they land.
+                </p>
+            </div>
+            <!-- The project format from main's README.md; keep them in step. -->
+            <figure class="file-tree">
+                <figcaption class="visually-hidden">The files in a Reqling project</figcaption>
+                <ul>
+                    <li class="folder">My API.reqling/
+                        <ul>
+                            <li>project.json</li>
+                            <li class="folder">environments/
+                                <ul>
+                                    <li>default.json</li>
+                                    <li>staging.json</li>
+                                </ul>
+                            </li>
+                            <li class="folder">requests/
+                                <ul>
+                                    <li class="folder">users/
+                                        <ul>
+                                            <li>_folder.json</li>
+                                            <li>get-user.json</li>
+                                            <li>create-user.json</li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </figure>
+        </div>
+    </section>
+
+    <section class="section-feature section-centered" id="requests">
+        <div class="container">
+            <p class="chip">Requests</p>
+            <h2>Build any request, then see where the time went</h2>
+            <p class="feature-copy">
+                Raw, form, binary, and GraphQL bodies, with auth set per request or inherited from a folder.
+                <code>{{variables}}</code> fill in from the active environment, and every response breaks its time
+                down by phase.
+            </p>
+            <picture>
+                <source srcset="images/body-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/body-light.webp"
+                    alt="The Create user request on its Body tab, a raw JSON body using {{name}} and {{$uuid}} variables, above the Timing tab of its 201 Created response: a waterfall from DNS lookup to download, 142 ms in total."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
+    <section class="section-feature section-centered" id="grpc">
+        <div class="container">
+            <p class="chip">gRPC</p>
+            <h2>Streams in both directions</h2>
+            <p class="feature-copy">
+                Call unary and streaming methods with messages written as proto3 JSON. The schema comes from your
+                project's protos, a descriptor set, or server reflection, and every message lands on one timeline.
+            </p>
+            <picture>
+                <source srcset="images/grpc-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/grpc-light.webp"
+                    alt="The Chat gRPC request, a bidirectional stream to acme.greeter.v1.Greeter over TLS with its schema from greeter.binpb, above a timeline of two messages sent and two greetings received, ending OK in 48 ms."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
+    <section class="section-feature" id="mcp">
+        <div class="container feature-split feature-split-reverse">
+            <div class="feature-text">
+                <p class="chip">MCP</p>
+                <h2>Hand your agent the API</h2>
+                <p class="feature-copy">
+                    Turn on the built-in MCP server, and agents like Claude Code and Codex can write requests, pick
+                    environments, and send them while you watch the window. Secret values are write-only, so no tool
+                    ever returns one.
+                </p>
+            </div>
+            <!-- The setup command Settings ▸ MCP shows, at its default port. -->
+            <figure class="terminal">
+                <figcaption class="visually-hidden">Adding Reqling to Claude Code</figcaption>
+                <pre><code><span class="prompt" aria-hidden="true">$ </span>claude mcp add \
+    --transport http reqling \
+    http://127.0.0.1:39717/mcp \
+    --header "Authorization: Bearer &lt;token&gt;"</code></pre>
+            </figure>
+        </div>
+    </section>
+
+    <section class="section-feature" id="details">
+        <div class="container details">
+            <div class="detail">
+                <h2>Secrets stay put</h2>
+                <p>Mark a variable secret, and its value lives in your Keychain, never in the project.</p>
+            </div>
+            <div class="detail">
+                <h2>Mutual TLS</h2>
+                <p>Client certificates matched by host, extra trusted CAs, and passphrases in your Keychain.</p>
+            </div>
+            <div class="detail">
+                <h2>cURL in and out</h2>
+                <p>Paste a cURL command into the URL field, or copy any request back out as one.</p>
+            </div>
+            <div class="detail">
+                <h2>Find anything</h2>
+                <p>Filter by name, method, URL, or service, and search any response in place.</p>
+            </div>
+            <div class="detail">
+                <h2>Updates itself</h2>
+                <p>Reqling checks for new versions, and verifies each download before it installs.</p>
+            </div>
+            <div class="detail">
+                <h2>Native</h2>
+                <p>A SwiftUI app for macOS 26, in light and dark, with no account to make.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer class="site-footer">
+        <p>
+            Built by <a href="https://af.codes">Aidan Follestad</a> &#8226;
+            <a href="https://github.com/afollestad/Reqling">Open source</a>
+            (<a href="https://github.com/afollestad/Reqling/blob/main/LICENSE.md">GPL-3.0</a>)
+        </p>
+    </footer>
+
+    <!-- Do NOT rename this to a generic "back to top" name (jump-to-top, back-to-top,
+         scroll-to-top): ad-block cosmetic filters hide those id/class names, which
+         makes the button vanish in browsers with a content blocker. -->
+    <button class="overview-return" id="overview-return" type="button" aria-label="Scroll to top">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="19" x2="12" y2="5"/>
+            <polyline points="5 12 12 5 19 12"/>
+        </svg>
+    </button>
+
+    <script src="scripts/overview-return.js"></script>
+</body>
+
+</html>

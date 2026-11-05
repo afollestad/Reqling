@@ -1,0 +1,52 @@
+/* Light theme: the courier at midday, a pale lilac sky under a lavender glow.
+   Don't forget to update the theme colors in scripts/dark-mode.js if --bg changes. */
+
+:root {
+    color-scheme: light;
+
+    /* A near-white tinted with the icon's plum. */
+    --bg: #fbf7fa;
+    --fg: #2a1533;
+    /* 6.9:1 on --bg, 5:1 at the glow's strongest point. */
+    --secondary: #62506a;
+    /* AccentColor on main (#743a8a), the app's own purple. */
+    --accent: #743a8a;
+    /* 7.7:1 on --accent. */
+    --on-accent: #ffffff;
+    /* AccentColor is dark enough for text as-is: 7.3:1 on --bg, 5.3:1 on the glow. */
+    --accent-text: #743a8a;
+    --hairline: rgba(42, 21, 51, .12);
+    --surface: #ffffff;
+    --chip-bg: var(--accent);
+    --chip-fg: var(--on-accent);
+    /* Behind the logo, at least 3:1 with its main blues, #0057d5 and #0186fb.
+       Matches af.codes. */
+    --logo-circle: #ffffff;
+    --glass: rgba(255, 255, 255, .55);
+    --glass-border: rgba(42, 21, 51, .1);
+    --glass-shadow: rgba(84, 24, 120, .18);
+    --icon-shadow: rgba(84, 24, 120, .22);
+    --media-shadow: rgba(84, 24, 120, .3);
+    --window-rim-shadow: rgba(42, 21, 51, .2);
+    /* The icon's wing, faint. */
+    --trail: rgba(144, 96, 180, .3);
+    /* The light icon's plum body (#541878) through AccentColor to its packet
+       (#8a40ad); the lightest stop holds 4.2:1 at the glow's strongest point. */
+    --title-gradient: linear-gradient(100deg, #4f1872 5%, #743a8a 50%, #8a40ad 95%);
+}
+
+html {
+    background: var(--bg);
+}
+
+.theme-toggle .icon-moon {
+    display: block;
+}
+
+/* The icon's wing washing down from the top, and its cream beak warming the
+   right. */
+.hero-sky {
+    background:
+        radial-gradient(ellipse 1100px 520px at 50% 0%, rgba(148, 102, 184, .26) 0%, rgba(148, 102, 184, 0) 100%),
+        radial-gradient(ellipse 700px 420px at 82% 18%, rgba(255, 230, 207, .6) 0%, rgba(255, 230, 207, 0) 100%);
+}

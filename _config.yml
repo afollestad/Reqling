@@ -1,0 +1,5 @@
+# Names files outright, since Jekyll's "**/*.md" doesn't match the repo root.
+exclude:
+  - og-image/
+  - AGENTS.md
+  - CLAUDE.md
