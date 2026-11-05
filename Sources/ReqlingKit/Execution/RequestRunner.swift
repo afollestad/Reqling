@@ -324,7 +324,12 @@ public final class RequestRunner {
         guard let environment = runEnvironment(in: document, project: projectID, options: options) else {
             throw RunFailure(kind: .invalidRequest, message: "The environment no longer exists.")
         }
-        let scope = VariableScope(document: document, activeEnvironmentID: environment.id, overrides: options.variableOverrides)
+        let scope = VariableScope(
+            global: library.globalEnvironment,
+            document: document,
+            activeEnvironmentID: environment.id,
+            overrides: options.variableOverrides
+        )
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
         return RunContext(
             item: item,

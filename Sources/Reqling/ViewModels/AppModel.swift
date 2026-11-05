@@ -83,7 +83,15 @@ final class AppModel {
     /// The selection opening Settings cleared, so closing Settings returns to it. Choosing an item while Settings is up
     /// replaces it. Observed, since `activeProjectID` falls back to it.
     private(set) var selectionBeforeSettings: SidebarItem?
-    var sheet: AppSheet?
+    var sheet: AppSheet? {
+        didSet {
+            // Here rather than in the sheet's editor, which its view rebuilds on every library change, so the Keychain is
+            // retried once per opening and before the editor copies Global.
+            if case .environments = sheet {
+                library.reloadGlobalSecretsIfUnread()
+            }
+        }
+    }
     var alert: AppAlert?
     /// A project awaiting confirmation before its folder moves to the Trash.
     var projectPendingDeletion: ProjectID?
@@ -281,16 +289,17 @@ final class AppModel {
         guard let document = library.document(project) else {
             return VariableScope()
         }
-        return VariableScope(document: document, activeEnvironmentID: activeEnvironmentID(for: project))
+        return VariableScope(global: library.globalEnvironment, document: document, activeEnvironmentID: activeEnvironmentID(for: project))
     }
 
-    /// What the editors know about the variables in `project`, rebuilt only when its environments or the active one
-    /// change. Every `TemplateField` and `CodeEditor` compares this in `updateNSView`, and a request screen re-renders
+    /// What the editors know about the variables in `project`, rebuilt only when Global, its environments, or the active
+    /// one change. Every `TemplateField` and `CodeEditor` compares this in `updateNSView`, and a request screen re-renders
     /// once per frame of a resize, so building a fresh scope per read multiplied across every field.
     func tokenContext(for project: ProjectID) -> TemplateTokenContext {
         // Read every observable input before consulting the cache, so observation keeps tracking them.
         let document = library.document(project)
         let key = TokenContextKey(
+            globalEnvironment: library.globalEnvironment,
             defaultEnvironment: document?.defaultEnvironment,
             environments: document?.environments ?? [],
             activeEnvironmentID: activeEnvironmentID(for: project)
@@ -470,9 +479,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// Everything `AppModel.tokenContext(for:)` builds from: the project's environments, Default included (the document
-/// stores it apart from the others), and which one is active.
+/// Everything `AppModel.tokenContext(for:)` builds from: Global, the project's environments, Default included (the
+/// document stores it apart from the others), and which one is active.
 private struct TokenContextKey: Equatable {
+    let globalEnvironment: RequestEnvironment
     let defaultEnvironment: RequestEnvironment?
     let environments: [RequestEnvironment]
     let activeEnvironmentID: EnvironmentID?

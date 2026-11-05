@@ -4,15 +4,49 @@ import Synchronization
 
 /// Holds the values Reqling never writes into project files: secret variable values and certificate passphrases.
 ///
-/// Values are grouped per project under string keys (`SecretKey`), so one Keychain item serves a whole project and
-/// loading it costs at most one Keychain prompt.
+/// Values are grouped per account (a project, or the Global environment) under string keys (`SecretKey`), so one
+/// Keychain item serves a whole project and loading it costs at most one Keychain prompt.
 public protocol SecretStore: Sendable {
-    func secrets(for project: ProjectID) throws -> [String: String]
-    /// Replaces the project's secrets; an empty dictionary removes them.
-    func setSecrets(_ secrets: [String: String], for project: ProjectID) throws
+    func secrets(for account: SecretAccount) throws -> [String: String]
+    /// Replaces the account's secrets; an empty dictionary removes them.
+    func setSecrets(_ secrets: [String: String], for account: SecretAccount) throws
 }
 
-/// The keys inside a project's secret dictionary.
+extension SecretStore {
+    public func secrets(for project: ProjectID) throws -> [String: String] {
+        try secrets(for: .project(project))
+    }
+
+    public func setSecrets(_ secrets: [String: String], for project: ProjectID) throws {
+        try setSecrets(secrets, for: .project(project))
+    }
+}
+
+/// Whose secrets a Keychain item holds.
+///
+/// A project's account name is its ID, which is what every item written before Global existed uses, so none needs
+/// migrating; `global` can never collide with one, since project IDs are UUIDs.
+public enum SecretAccount: Hashable, Sendable, CustomStringConvertible {
+    case project(ProjectID)
+    /// The Global environment every project shares (`RequestEnvironment.globalID`).
+    case global
+
+    public var description: String {
+        switch self {
+        case .project(let id): id.description
+        case .global: "global"
+        }
+    }
+
+    var keychainLabel: String {
+        switch self {
+        case .project: "Reqling project secrets"
+        case .global: "Reqling global secrets"
+        }
+    }
+}
+
+/// The keys inside an account's secret dictionary.
 public enum SecretKey {
     static let variablePrefix = "variable."
 
@@ -29,10 +63,10 @@ public enum SecretKey {
     }
 }
 
-/// Stores each project's secrets as one generic-password Keychain item, cached in memory after the first read.
+/// Stores each account's secrets as one generic-password Keychain item, cached in memory after the first read.
 public final class KeychainSecretStore: SecretStore {
     private let service: String
-    private let cache = Mutex<[ProjectID: [String: String]]>([:])
+    private let cache = Mutex<[SecretAccount: [String: String]]>([:])
 
     /// `service` is scoped by bundle identifier, so the dev build never prompts for, or overwrites, the release
     /// build's items.
@@ -40,11 +74,11 @@ public final class KeychainSecretStore: SecretStore {
         self.service = service
     }
 
-    public func secrets(for project: ProjectID) throws -> [String: String] {
-        if let cached = cache.withLock({ $0[project] }) {
+    public func secrets(for account: SecretAccount) throws -> [String: String] {
+        if let cached = cache.withLock({ $0[account] }) {
             return cached
         }
-        var query = baseQuery(for: project)
+        var query = baseQuery(for: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -61,23 +95,23 @@ public final class KeychainSecretStore: SecretStore {
         default:
             throw SecretStoreError.keychain(status)
         }
-        cache.withLock { $0[project] = secrets }
+        cache.withLock { $0[account] = secrets }
         return secrets
     }
 
-    public func setSecrets(_ secrets: [String: String], for project: ProjectID) throws {
+    public func setSecrets(_ secrets: [String: String], for account: SecretAccount) throws {
         if secrets.isEmpty {
-            let status = SecItemDelete(baseQuery(for: project) as CFDictionary)
+            let status = SecItemDelete(baseQuery(for: account) as CFDictionary)
             guard status == errSecSuccess || status == errSecItemNotFound else {
                 throw SecretStoreError.keychain(status)
             }
         } else {
             let data = try JSONEncoder().encode(secrets)
-            let status = SecItemUpdate(baseQuery(for: project) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            let status = SecItemUpdate(baseQuery(for: account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
             if status == errSecItemNotFound {
-                var item = baseQuery(for: project)
+                var item = baseQuery(for: account)
                 item[kSecValueData as String] = data
-                item[kSecAttrLabel as String] = "Reqling project secrets"
+                item[kSecAttrLabel as String] = account.keychainLabel
                 let addStatus = SecItemAdd(item as CFDictionary, nil)
                 guard addStatus == errSecSuccess else {
                     throw SecretStoreError.keychain(addStatus)
@@ -86,21 +120,21 @@ public final class KeychainSecretStore: SecretStore {
                 throw SecretStoreError.keychain(status)
             }
         }
-        cache.withLock { $0[project] = secrets }
+        cache.withLock { $0[account] = secrets }
     }
 
-    private func baseQuery(for project: ProjectID) -> [String: Any] {
+    private func baseQuery(for account: SecretAccount) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: project.description
+            kSecAttrAccount as String: account.description
         ]
     }
 }
 
 /// An in-memory `SecretStore` for tests and previews.
 public final class InMemorySecretStore: SecretStore {
-    private let storage = Mutex<[ProjectID: [String: String]]>([:])
+    private let storage = Mutex<[SecretAccount: [String: String]]>([:])
     private let readFailure = Mutex(false)
 
     public init() {}
@@ -111,15 +145,15 @@ public final class InMemorySecretStore: SecretStore {
         set { readFailure.withLock { $0 = newValue } }
     }
 
-    public func secrets(for project: ProjectID) throws -> [String: String] {
+    public func secrets(for account: SecretAccount) throws -> [String: String] {
         if isFailingReads {
             throw SecretStoreError.keychain(errSecAuthFailed)
         }
-        return storage.withLock { $0[project] ?? [:] }
+        return storage.withLock { $0[account] ?? [:] }
     }
 
-    public func setSecrets(_ secrets: [String: String], for project: ProjectID) throws {
-        storage.withLock { $0[project] = secrets.isEmpty ? nil : secrets }
+    public func setSecrets(_ secrets: [String: String], for account: SecretAccount) throws {
+        storage.withLock { $0[account] = secrets.isEmpty ? nil : secrets }
     }
 }
 

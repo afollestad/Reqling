@@ -328,6 +328,20 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.activeEnvironmentID(for: project), document.defaultEnvironment.id)
     }
 
+    func testEditorsSeeGlobalBeneathDefaultAndFollowItsChanges() throws {
+        let project = try makeProject()
+        try fixture.library.mutate(project) { $0.defaultEnvironment.variables = [Variable(key: "host", value: "project")] }
+        XCTAssertNil(model.tokenContext(for: project).entries["region"])
+
+        try fixture.library.mutateGlobalEnvironment { global in
+            global.variables = [Variable(key: "host", value: "global"), Variable(key: "region", value: "eu")]
+        }
+
+        let context = model.tokenContext(for: project)
+        XCTAssertEqual(context.entries["region"], TemplateTokenContext.Entry(displayValue: "eu", sourceName: "Global"))
+        XCTAssertEqual(context.entries["host"]?.displayValue, "project")
+    }
+
     // MARK: - Proto workspaces
 
     func testProtoWorkspacesFollowEachProjectsProtoDefinitions() throws {

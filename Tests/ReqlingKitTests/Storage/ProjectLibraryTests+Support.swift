@@ -25,6 +25,10 @@ struct LibraryFixture {
         directory.file("Support/library.json")
     }
 
+    var globalEnvironmentURL: URL {
+        directory.file("Support/global-environment.json")
+    }
+
     var trashDirectory: URL {
         directory.file("Trash")
     }
@@ -65,6 +69,7 @@ struct LibraryFixture {
         ProjectLibrary(configuration: .init(
             registryURL: directory.file("Support/library.json"),
             defaultProjectsDirectory: directory.file("Projects"),
+            globalEnvironmentURL: directory.file("Support/global-environment.json"),
             secretStore: secrets,
             trasher: trash,
             monitorFactory: nil
@@ -104,14 +109,14 @@ final class LockableSecretStore: SecretStore, @unchecked Sendable {
         self.wrapped = wrapped
     }
 
-    func secrets(for project: ProjectID) throws -> [String: String] {
+    func secrets(for account: SecretAccount) throws -> [String: String] {
         if isLocked {
             throw SecretStoreError.keychain(errSecAuthFailed)
         }
-        return try wrapped.secrets(for: project)
+        return try wrapped.secrets(for: account)
     }
 
-    func setSecrets(_ secrets: [String: String], for project: ProjectID) throws {
-        try wrapped.setSecrets(secrets, for: project)
+    func setSecrets(_ secrets: [String: String], for account: SecretAccount) throws {
+        try wrapped.setSecrets(secrets, for: account)
     }
 }

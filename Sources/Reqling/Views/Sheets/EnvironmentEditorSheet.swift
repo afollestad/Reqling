@@ -1,7 +1,8 @@
 import ReqlingKit
 import SwiftUI
 
-/// Edits a project's environments. Default is always first; the others override its variables when active.
+/// Edits a project's environments, under the project's name, beneath the Global environment every project shares.
+/// Default overrides Global; the others override Default when active.
 struct EnvironmentEditorSheet: View {
     @State var editor: EnvironmentEditorModel
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +15,7 @@ struct EnvironmentEditorSheet: View {
                 EnvironmentDetail(editor: editor)
                     .frame(minWidth: 420)
             }
-            SheetFooter(note: Self.note) {
+            SheetFooter(note: editor.reservedNameProblem ?? Self.note, isPrimaryEnabled: editor.reservedNameProblem == nil) {
                 dismiss()
             } onPrimary: {
                 if editor.save() {
@@ -25,8 +26,8 @@ struct EnvironmentEditorSheet: View {
         .frame(width: 760, height: 480)
     }
 
-    private static let note =
-        "The active environment's variables override Default's. Secret values are stored in your Keychain, never in the project."
+    private static let note = "Default overrides Global, and the active environment overrides Default. "
+        + "Secret values are stored in your Keychain, never in the project."
 }
 
 private struct EnvironmentList: View {
@@ -35,18 +36,13 @@ private struct EnvironmentList: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $editor.selectedID) {
-                ForEach(editor.allEnvironments) { environment in
-                    Label(
-                        environment.name,
-                        systemImage: environment.id == editor.defaultEnvironment.id ? "square.stack.3d.up.fill" : "square.stack.3d.up"
-                    )
-                        .tag(environment.id)
-                        .contextMenu {
-                            Button("Duplicate") { editor.duplicateEnvironment(environment.id) }
-                            if environment.id != editor.defaultEnvironment.id {
-                                Button("Delete", role: .destructive) { editor.removeEnvironment(environment.id) }
-                            }
-                        }
+                // Headers are rows rather than `Section`s, which macOS sets far apart with no way to bring them closer.
+                EnvironmentListHeader(title: "All Projects")
+                row(editor.globalEnvironment, systemImage: "globe")
+                EnvironmentListHeader(title: editor.projectName)
+                    .padding(.top, 6)
+                ForEach(editor.projectEnvironments) { environment in
+                    row(environment, systemImage: systemImage(for: environment))
                 }
             }
             HStack(spacing: 2) {
@@ -62,7 +58,7 @@ private struct EnvironmentList: View {
                 } label: {
                     Image(systemName: "minus")
                 }
-                .disabled(editor.isDefaultSelected)
+                .disabled(!editor.canRemoveSelected)
                 .help("Delete the selected environment")
                 .accessibilityLabel("Delete the selected environment")
                 Spacer()
@@ -72,6 +68,41 @@ private struct EnvironmentList: View {
             .padding(4)
         }
     }
+
+    /// A warning in place of the stack for an environment named like Global, so the one blocking Done is easy to find.
+    private func systemImage(for environment: RequestEnvironment) -> String {
+        if environment.id == editor.defaultEnvironment.id {
+            return "square.stack.3d.up.fill"
+        }
+        return RequestEnvironment.isGlobalName(environment.name) ? "exclamationmark.triangle" : "square.stack.3d.up"
+    }
+
+    private func row(_ environment: RequestEnvironment, systemImage: String) -> some View {
+        Label(environment.name, systemImage: systemImage)
+            .tag(environment.id)
+            // Inset to the text rather than the icon, they read as stray lines between so few rows.
+            .listRowSeparator(.hidden)
+            .contextMenu {
+                Button("Duplicate") { editor.duplicateEnvironment(environment.id) }
+                if editor.environments.contains(where: { $0.id == environment.id }) {
+                    Button("Delete", role: .destructive) { editor.removeEnvironment(environment.id) }
+                }
+            }
+    }
+}
+
+/// A group's title among the environment list's rows: Global's, then the project's own.
+private struct EnvironmentListHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .selectionDisabled()
+            .listRowSeparator(.hidden)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 private struct EnvironmentDetail: View {
@@ -79,17 +110,32 @@ private struct EnvironmentDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if editor.isDefaultSelected {
-                Text("Default")
-                    .font(.title3.weight(.semibold))
-                Text("Every request sees these variables. Other environments override them by key.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if editor.isGlobalSelected {
+                FixedEnvironmentHeader(
+                    title: RequestEnvironment.globalName,
+                    caption: "Every request in every project sees these variables, kept on this Mac. Each project's environments "
+                        + "override them by key."
+                )
+                if let issue = editor.globalEnvironmentIssue {
+                    Label(issue, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } else if editor.isDefaultSelected {
+                FixedEnvironmentHeader(
+                    title: RequestEnvironment.defaultName,
+                    caption: "Every request in this project sees these variables. Other environments override them by key."
+                )
             } else {
                 TextField("Name", text: $editor.selected.name)
                     .textFieldStyle(.plain)
                     .font(.title3.weight(.semibold))
                     .accessibilityLabel("Environment name")
+                if RequestEnvironment.isGlobalName(editor.selected.name) {
+                    Label(EnvironmentEditorModel.reservedNameWarning, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
             if !editor.duplicateKeys.isEmpty {
                 Label(
@@ -104,6 +150,20 @@ private struct EnvironmentDetail: View {
             }
         }
         .padding(AppMetrics.paneInset)
+    }
+}
+
+/// The title and caption of an environment that can't be renamed: Global or Default.
+private struct FixedEnvironmentHeader: View {
+    let title: String
+    let caption: String
+
+    var body: some View {
+        Text(title)
+            .font(.title3.weight(.semibold))
+        Text(caption)
+            .font(.callout)
+            .foregroundStyle(.secondary)
     }
 }
 

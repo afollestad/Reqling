@@ -12,6 +12,17 @@ extension SnapshotTests {
         assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
     }
 
+    func testEnvironmentEditorGlobal() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        try fixture.library.mutateGlobalEnvironment { global in
+            global.variables = [Variable(key: "region", value: "eu-west-1"), Variable(key: "apiKey", value: "global-key", isSecret: true)]
+        }
+        let editor = EnvironmentEditorModel(projectID: project.id, app: fixture.model)
+        editor.selectedID = editor.globalEnvironment.id
+
+        assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
+    }
+
     func testProjectSettings() async throws {
         let project = try SnapshotProject.make(in: fixture)
         let settings = ProjectSettingsModel(projectID: project.id, app: fixture.model)

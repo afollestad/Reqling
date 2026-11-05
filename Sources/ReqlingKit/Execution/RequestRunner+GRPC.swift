@@ -325,15 +325,21 @@ extension RequestRunner {
         )
     }
 
-    /// Masks every secret value the project holds, in any environment, wherever it appears in `text`, such as a
-    /// response that echoes a token back. Every environment, not just the run's: a last response may have come from any
-    /// of them. Take it before a run starts, so a request deleted meanwhile cannot leave the output unmasked.
+    /// Masks every secret value the project can resolve, in any environment and from Global, wherever it appears in
+    /// `text`, such as a response that echoes a token back. Every environment, not just the run's: a last response may
+    /// have come from any of them. Take it before a run starts, so a request deleted meanwhile cannot leave the output
+    /// unmasked.
     func maskingSecrets(in project: ProjectID, variableOverrides: [String: String] = [:]) -> @Sendable (String) -> String {
         guard let document = library.document(project) else {
             return { $0 }
         }
         let redactions = document.allEnvironments.map { environment in
-            let scope = VariableScope(document: document, activeEnvironmentID: environment.id, overrides: variableOverrides)
+            let scope = VariableScope(
+                global: library.globalEnvironment,
+                document: document,
+                activeEnvironmentID: environment.id,
+                overrides: variableOverrides
+            )
             return SecretRedaction(resolver: TemplateResolver(scope: scope, dynamic: dynamic))
         }
         return { text in redactions.reduce(text) { $1.apply($0) } }

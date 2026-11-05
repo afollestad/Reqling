@@ -95,6 +95,21 @@ final class RequestRunnerTests: XCTestCase {
         XCTAssertTrue(fixture.library.document(project)?.request(request)?.kind.httpSpec?.headers.isEmpty ?? false)
     }
 
+    func testGlobalVariablesResolveBeneathDefault() async throws {
+        let server = try await echoServer()
+        let fixtureProject = try makeProject(base: server.baseURL)
+        try fixture.library.mutateGlobalEnvironment { global in
+            global.variables = [Variable(key: "path", value: "global"), Variable(key: "version", value: "v2")]
+        }
+        try fixture.library.mutate(fixtureProject.id) { document in
+            try document.updateRequest(fixtureProject.request) { $0.kind = .http(HTTPRequestSpec(url: "{{base}}/{{path}}/{{version}}")) }
+        }
+
+        let exchange = await makeRunner().run(fixtureProject.request, in: fixtureProject.id)
+
+        XCTAssertEqual(body(exchange), "GET /default/v2 -")
+    }
+
     func testUndefinedVariablesFailBeforeAnythingIsSent() async throws {
         let server = try await echoServer()
         let fixtureProject = try makeProject(base: server.baseURL)

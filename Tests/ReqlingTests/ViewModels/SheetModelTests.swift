@@ -20,10 +20,11 @@ final class SheetModelTests: XCTestCase {
         fixture = nil
     }
 
-    func testEnvironmentsKeepDefaultFirstAndSaveWithSecretsInTheStore() throws {
+    func testEnvironmentsKeepGlobalAndDefaultFirstAndSaveWithSecretsInTheStore() throws {
         let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.removeEnvironment(editor.globalEnvironment.id)
         editor.removeEnvironment(editor.defaultEnvironment.id)
-        XCTAssertEqual(editor.allEnvironments.count, 1)
+        XCTAssertEqual(editor.allEnvironments.map(\.name), ["Global", "Default"])
 
         editor.addEnvironment()
         editor.addEnvironment()
@@ -88,6 +89,70 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(saved.value, "typed")
         let file = try XCTUnwrap(fixture.library.project(project)?.url.appendingPathComponent("environments/default.json"))
         XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("typed"))
+    }
+
+    func testGlobalSavesForEveryProjectAndNeverBecomesActive() throws {
+        fixture.model.createProject(named: "Other")
+        let other = try XCTUnwrap(fixture.model.selection?.projectID)
+        let active = fixture.model.activeEnvironmentID(for: project)
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.selectedID = editor.globalEnvironment.id
+        XCTAssertFalse(editor.canRemoveSelected)
+        editor.selected.name = "Renamed"
+        editor.selected.variables = [Variable(key: "region", value: "eu"), Variable(key: "token", value: "g10bal", isSecret: true)]
+
+        XCTAssertTrue(editor.save())
+
+        XCTAssertEqual(fixture.library.globalEnvironment.name, "Global")
+        XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.value), ["eu", "g10bal"])
+        XCTAssertEqual(fixture.model.activeEnvironmentID(for: project), active)
+        XCTAssertEqual(try fixture.component.secretStore.secrets(for: .global).values.sorted(), ["g10bal"])
+        XCTAssertTrue(try fixture.component.secretStore.secrets(for: project).isEmpty)
+        XCTAssertEqual(EnvironmentEditorModel(projectID: other, app: fixture.model).globalEnvironment.variables.map(\.key), ["region", "token"])
+        XCTAssertEqual(fixture.model.scope(for: other).lookup("region")?.value, "eu")
+    }
+
+    func testGlobalDoneMergesWithChangesMadeElsewhereWhileTheSheetWasOpen() throws {
+        try fixture.library.mutateGlobalEnvironment { $0.variables = [Variable(key: "a", value: "1"), Variable(key: "b", value: "1")] }
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.globalEnvironment.variables[0].value = "sheet"
+
+        try fixture.library.mutateGlobalEnvironment { $0.variables[1].value = "agent" }
+        XCTAssertTrue(editor.save())
+
+        XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.value), ["sheet", "agent"])
+        XCTAssertEqual(editor.globalEnvironment, fixture.library.globalEnvironment, "the sheet shows what Done stored")
+    }
+
+    func testDoneSavesGlobalFromAReadOnlyProjectsSheet() throws {
+        let projectFile = try XCTUnwrap(fixture.library.project(project)?.url.appendingPathComponent("project.json"))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: projectFile)) as? [String: Any])
+        json["formatVersion"] = ProjectDocument.currentFormatVersion + 1
+        try JSONSerialization.data(withJSONObject: json).write(to: projectFile)
+        fixture.library.reload(project)
+        XCTAssertEqual(fixture.library.project(project)?.isReadOnly, true)
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.globalEnvironment.variables = [Variable(key: "region", value: "eu")]
+
+        XCTAssertTrue(editor.save())
+
+        XCTAssertNil(fixture.model.alert)
+        XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.key), ["region"])
+    }
+
+    func testDoneRefusesAProjectEnvironmentNamedLikeGlobal() throws {
+        let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
+        editor.addEnvironment()
+        editor.selected.name = " global "
+
+        XCTAssertNotNil(editor.reservedNameProblem)
+        XCTAssertFalse(editor.save())
+        XCTAssertTrue(try XCTUnwrap(fixture.library.document(project)).environments.isEmpty, "nothing was saved")
+
+        editor.selected.name = "Global Staging"
+        XCTAssertNil(editor.reservedNameProblem)
+        XCTAssertTrue(editor.save())
+        XCTAssertEqual(try XCTUnwrap(fixture.library.document(project)).environments.map(\.name), ["Global Staging"])
     }
 
     func testDuplicateKeysAreReported() {

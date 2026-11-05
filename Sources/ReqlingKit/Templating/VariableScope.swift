@@ -1,7 +1,7 @@
 import Foundation
 
-/// The variables visible to one run: Default's enabled variables, overridden by the active environment's, overridden
-/// by one-run overrides (from MCP's `execute_request`, for example).
+/// The variables visible to one run: Global's enabled variables, overridden by the project's Default's, overridden by
+/// the active environment's, overridden by one-run overrides (from MCP's `execute_request`, for example).
 public struct VariableScope: Sendable {
     public struct Entry: Hashable, Sendable {
         public let value: String
@@ -26,8 +26,9 @@ public struct VariableScope: Sendable {
         self.entries = entries
     }
 
-    /// `activeEnvironmentID` of `nil` or of the Default environment means Default alone.
-    public init(document: ProjectDocument, activeEnvironmentID: EnvironmentID?, overrides: [String: String] = [:]) {
+    /// `activeEnvironmentID` of `nil` or of the Default environment means Global and Default alone. `global` has no
+    /// default value, so no caller can leave Global's variables out of what a run sees or what masking covers.
+    public init(global: RequestEnvironment, document: ProjectDocument, activeEnvironmentID: EnvironmentID?, overrides: [String: String] = [:]) {
         var entries: [String: Entry] = [:]
         func add(_ environment: RequestEnvironment) {
             for variable in environment.variables where variable.isEnabled && !variable.key.isEmpty {
@@ -38,6 +39,7 @@ public struct VariableScope: Sendable {
                 )
             }
         }
+        add(global)
         add(document.defaultEnvironment)
         if let activeEnvironmentID, !document.isDefaultEnvironment(activeEnvironmentID),
            let active = document.environment(activeEnvironmentID) {

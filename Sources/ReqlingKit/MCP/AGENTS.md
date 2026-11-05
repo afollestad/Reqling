@@ -11,7 +11,7 @@ These instructions cover `Sources/ReqlingKit/MCP/`: the built-in MCP server (`Se
 ### Handler Contract
 
 - **Read arguments through `MCPArguments`,** whatever the advertised schema promises; it refuses unknown keys and checks every type, with a path the agent can act on.
-- **Change projects through `MCPToolContext.mutate` and `ProjectLifecycle`,** the paths the window uses, so secrets, the Trash, local paths, and the window's live update all stay right. Never write project files here.
+- **Change projects through `MCPToolContext.mutate` and `ProjectLifecycle`, and Global through `MCPToolContext.mutateGlobalEnvironment`,** the paths the window uses, so secrets, the Trash, local paths, and the window's live update all stay right. Never write project files here.
 - **Never return a secret value.** Describe variables with `MCPDescriptions.variable`, and mask anything a run or a server produced with `RequestRunner.maskingSecrets(in:variableOverrides:)`, since servers echo credentials back.
 - **Read and write specs, auth, and certificate entries in their on-disk JSON,** so what `get_request` returns is exactly what `create_request` and `update_request` take. Row IDs follow `Sources/ReqlingKit/Storage/AGENTS.md`.
 - **Reach the window only through `MCPAppHost`.** It is `nil` in tests and before launch, so a tool that needs it says so instead of failing silently.

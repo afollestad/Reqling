@@ -1,7 +1,8 @@
 import Foundation
 import Observation
 
-/// The projects Reqling knows about, loaded into memory, and the single path for changing them.
+/// The projects Reqling knows about, loaded into memory, and the single path for changing them, plus the Global
+/// environment they all share (`ProjectLibrary+GlobalEnvironment.swift`).
 ///
 /// Every edit, from the UI or the MCP server, goes through `mutate`, which saves the folder before publishing the
 /// new document. Memory therefore always matches disk after a mutation, which is what lets an external-change reload
@@ -10,8 +11,15 @@ import Observation
 @Observable
 public final class ProjectLibrary {
     public private(set) var projects: [LibraryProject] = []
+    /// The variables every project sees beneath its own Default. Set only by `mutateGlobalEnvironment` and its loader.
+    public internal(set) var globalEnvironment = RequestEnvironment.global()
+    /// Why Global loaded incomplete (its file set aside, or its secret values unreadable), if it did.
+    public internal(set) var globalEnvironmentIssue: String?
 
-    @ObservationIgnored private let configuration: Configuration
+    @ObservationIgnored let configuration: Configuration
+    /// Whether Global's secret values still sit blank because loading could not read them; see
+    /// `reloadGlobalSecretsIfUnread`.
+    @ObservationIgnored var globalSecretsUnread = false
     @ObservationIgnored private var indexes: [ProjectID: ProjectDiskIndex] = [:]
     @ObservationIgnored private var monitors: [ProjectID: any ProjectChangeMonitor] = [:]
 
@@ -20,6 +28,8 @@ public final class ProjectLibrary {
         public var registryURL: URL
         /// Where new projects go when no location is chosen.
         public var defaultProjectsDirectory: URL
+        /// The Global environment's file, kept on this Mac rather than in any project.
+        public var globalEnvironmentURL: URL
         public var secretStore: any SecretStore
         public var trasher: any FileTrashing
         /// `nil` disables watching, as tests do.
@@ -28,12 +38,14 @@ public final class ProjectLibrary {
         public init(
             registryURL: URL,
             defaultProjectsDirectory: URL,
+            globalEnvironmentURL: URL,
             secretStore: any SecretStore,
             trasher: any FileTrashing,
             monitorFactory: ProjectChangeMonitorFactory?
         ) {
             self.registryURL = registryURL
             self.defaultProjectsDirectory = defaultProjectsDirectory
+            self.globalEnvironmentURL = globalEnvironmentURL
             self.secretStore = secretStore
             self.trasher = trasher
             self.monitorFactory = monitorFactory
@@ -43,6 +55,7 @@ public final class ProjectLibrary {
     public init(configuration: Configuration) {
         self.configuration = configuration
         loadRegistry()
+        loadGlobalEnvironment()
     }
 
     // MARK: - Queries
@@ -139,7 +152,7 @@ public final class ProjectLibrary {
             return result
         }
         let secrets = SecretChanges(old: Self.secretValues(in: old), new: Self.secretValues(in: new))
-        try updateSecrets(of: id, storing: secrets.stored, deleting: [])
+        try updateSecrets(of: .project(id), storing: secrets.stored, deleting: [])
         do {
             indexes[id] = try ProjectWriter(root: projects[position].url, trasher: configuration.trasher).save(new, previous: index)
         } catch {
@@ -148,7 +161,7 @@ public final class ProjectLibrary {
         }
         projects[position].status = .loaded(new)
         // The folder no longer references these; a failure here only leaves unused values in the Keychain.
-        try? updateSecrets(of: id, storing: [:], deleting: secrets.deleted)
+        try? updateSecrets(of: .project(id), storing: [:], deleting: secrets.deleted)
         return result
     }
 
@@ -206,7 +219,7 @@ public final class ProjectLibrary {
                 deleted.insert(key)
             }
         }
-        try updateSecrets(of: project, storing: stored, deleting: deleted)
+        try updateSecrets(of: .project(project), storing: stored, deleting: deleted)
     }
 
     // MARK: - Loading
@@ -277,25 +290,30 @@ public final class ProjectLibrary {
         }
     }
 
-    /// One read-modify-write of the project's secrets that touches only the listed keys, so values nobody changed (or
+    /// One read-modify-write of an account's secrets that touches only the listed keys, so values nobody changed (or
     /// that a failed Keychain read left blank in memory) are never overwritten. Writes nothing when nothing changes.
-    private func updateSecrets(of project: ProjectID, storing values: [String: String], deleting keys: Set<String>) throws {
+    func updateSecrets(of account: SecretAccount, storing values: [String: String], deleting keys: Set<String>) throws {
         guard !values.isEmpty || !keys.isEmpty else {
             return
         }
-        let stored = try configuration.secretStore.secrets(for: project)
+        let stored = try configuration.secretStore.secrets(for: account)
         var updated = stored.merging(values) { _, new in new }
         for key in keys {
             updated[key] = nil
         }
         if updated != stored {
-            try configuration.secretStore.setSecrets(updated, for: project)
+            try configuration.secretStore.setSecrets(updated, for: account)
         }
     }
 
     private static func secretValues(in document: ProjectDocument) -> [String: String] {
+        secretValues(in: document.allEnvironments)
+    }
+
+    /// Every secret variable's value, keyed by `SecretKey`.
+    static func secretValues(in environments: [RequestEnvironment]) -> [String: String] {
         var values: [String: String] = [:]
-        for environment in document.allEnvironments {
+        for environment in environments {
             for variable in environment.variables where variable.isSecret {
                 values[SecretKey.variable(variable.id, in: environment.id)] = variable.value
             }
@@ -373,8 +391,8 @@ public struct LibraryProject: Identifiable, Hashable, Sendable {
     }
 }
 
-/// How an edit changes a project's secret variable values, keyed by `SecretKey`.
-private struct SecretChanges {
+/// How an edit changes a project's or Global's secret variable values, keyed by `SecretKey`.
+struct SecretChanges {
     /// New and changed values, stored before the folder is saved.
     let stored: [String: String]
     /// Keys the edit removed, deleted only after the folder no longer references them.

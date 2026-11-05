@@ -47,6 +47,7 @@ extension AppComponent {
             ProjectLibrary(configuration: .init(
                 registryURL: storageProfile.registryURL,
                 defaultProjectsDirectory: storageProfile.projectsDirectory,
+                globalEnvironmentURL: storageProfile.globalEnvironmentURL,
                 secretStore: secretStore,
                 trasher: trasher,
                 monitorFactory: storageProfile.isEphemeral ? nil : FSEventsProjectMonitor.factory

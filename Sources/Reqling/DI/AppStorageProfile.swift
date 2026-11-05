@@ -68,6 +68,11 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("workspace.json")
     }
 
+    /// The Global environment every project shares; its secret values live in the Keychain.
+    var globalEnvironmentURL: URL {
+        applicationSupportDirectory.appendingPathComponent("global-environment.json")
+    }
+
     /// Every request's past runs (`RunHistoryStore`).
     var historyDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)

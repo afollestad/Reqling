@@ -34,7 +34,7 @@ Create a project in Reqling's own folder, or choose a location such as a reposit
 
 ## Environments and variables
 
-Every project has a **Default** environment; add others (Staging, Production) to override its variables by key, and pick the active one from the toolbar. Reference a variable as `{{name}}` in the URL, parameters, headers, bodies, and auth. Built-ins such as `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, and `{{$randomInt}}` generate a value on each send. Variables render as pills, red when undefined, and `{{` offers completion.
+Every project has its own **Default** environment; add others (Staging, Production) to override its variables by key, and pick the active one from the toolbar. The **Global** environment, at the top of every project's Environments sheet, holds variables every project shares; it is kept on your Mac, never in a project, and each project's environments override it by key. Reference a variable as `{{name}}` in the URL, parameters, headers, bodies, and auth. Built-ins such as `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, and `{{$randomInt}}` generate a value on each send. Variables render as pills, red when undefined, and `{{` offers completion.
 
 Mark a variable **secret** to keep its value in your Keychain instead of the project's files. Which environment is active, and anything else specific to your Mac, is never written into the project.
 

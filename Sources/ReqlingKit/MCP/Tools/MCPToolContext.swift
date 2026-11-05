@@ -85,10 +85,17 @@ public final class MCPToolContext {
         return (project, document)
     }
 
-    /// The environment an argument names, by ID or name (ignoring case); `nil` names Default.
+    /// The project environment an argument names, by ID or name (ignoring case); `nil` names Default. Global is
+    /// refused here, since it always applies and is never chosen, renamed, or deleted; `variableTarget` reaches it.
     func environment(_ reference: String?, in document: ProjectDocument) throws -> RequestEnvironment {
         guard let reference else {
             return document.defaultEnvironment
+        }
+        if Self.namesGlobal(reference) {
+            throw MCPToolError(
+                "Global applies to every request, beneath each project's Default, so it can't be chosen, renamed, or deleted. "
+                    + "Pass environment `Global` to the variable tools to edit its variables."
+            )
         }
         if let id = EnvironmentID(string: reference), let environment = document.environment(id) {
             return environment
@@ -101,6 +108,24 @@ public final class MCPToolContext {
             throw MCPToolError("“\(document.name)” has no environment “\(reference)”; list_environments shows its environments.")
         }
         return environment
+    }
+
+    /// Where a variable tool reads and writes: Global, which needs no project, or one of a project's environments.
+    func variableTarget(project projectReference: String?, environment reference: String?) throws -> VariableTarget {
+        if let reference, Self.namesGlobal(reference) {
+            return .global(library.globalEnvironment)
+        }
+        guard let projectReference else {
+            throw MCPToolError("`project` is required unless `environment` is Global.")
+        }
+        let (project, document) = try document(projectReference)
+        return .project(project.id, try environment(reference, in: document))
+    }
+
+    /// Whether an argument names Global, by its ID or its name (ignoring case). The name is reserved: a project
+    /// environment that already carries it stays reachable by its ID.
+    static func namesGlobal(_ reference: String) -> Bool {
+        EnvironmentID(string: reference) == RequestEnvironment.globalID || RequestEnvironment.isGlobalName(reference)
     }
 
     func request(_ reference: String, in document: ProjectDocument) throws -> RequestItem {
@@ -168,6 +193,12 @@ public final class MCPToolContext {
         try describingErrors { try library.mutate(project, body) }
     }
 
+    /// Applies `body` through `ProjectLibrary.mutateGlobalEnvironment`, with the same messages as `mutate`.
+    @discardableResult
+    func mutateGlobalEnvironment<Result>(_ body: (inout RequestEnvironment) throws -> Result) throws -> Result {
+        try describingErrors { try library.mutateGlobalEnvironment(body) }
+    }
+
     /// Runs a change made some other way than `mutate`, such as through `ProjectLifecycle`, with the same messages.
     func describingErrors<Result>(_ change: () throws -> Result) throws -> Result {
         do {
@@ -196,5 +227,17 @@ extension LibraryProject {
             return reason
         }
         return nil
+    }
+}
+
+/// The environment a variable tool acts on.
+enum VariableTarget {
+    case global(RequestEnvironment)
+    case project(ProjectID, RequestEnvironment)
+
+    var environment: RequestEnvironment {
+        switch self {
+        case .global(let environment), .project(_, let environment): environment
+        }
     }
 }

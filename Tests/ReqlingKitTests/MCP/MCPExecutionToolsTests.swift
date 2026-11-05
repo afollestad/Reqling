@@ -77,6 +77,26 @@ final class MCPExecutionToolsTests: XCTestCase {
         XCTAssertFalse(MCPJSON.text(.object(last)).contains("staging-only-secret"))
     }
 
+    func testAGlobalSecretIsMaskedAndGlobalIsNeverTheRunsEnvironment() async throws {
+        _ = try await fixture.success("create_variables", ["environment": "Global", "variables": [
+            ["key": "globalToken", "value": "g10bal-secret", "secret": true]
+        ]])
+        _ = try await fixture.success("update_request", [
+            "project": .string(project.description),
+            "request": .string(request),
+            "spec": ["url": "{{baseUrl}}/{{path}}", "auth": ["type": "bearer", "token": "{{globalToken}}"]]
+        ])
+
+        let result = try await execute()
+        let refused = await fixture.failure("execute_request", [
+            "project": .string(project.description), "request": .string(request), "environment": "Global"
+        ])
+
+        XCTAssertEqual(server.requests.last?.header("Authorization"), "Bearer g10bal-secret")
+        XCTAssertFalse(MCPJSON.text(.object(result)).contains("g10bal-secret"))
+        XCTAssertTrue(refused.contains("Global applies to every request"), refused)
+    }
+
     func testUndefinedVariablesFailFastUnlessAllowed() async throws {
         _ = try await fixture.success("update_request", [
             "project": .string(project.description),

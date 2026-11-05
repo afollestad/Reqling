@@ -72,8 +72,12 @@ enum MCPSchema {
     // MARK: - Shared arguments
 
     static let project = string("The project's ID, or its exact name when that is unique.")
+    /// For tools that edit variables, which can reach Global without one.
+    static let variablesProject = string("The project's ID, or its exact name when that is unique. Not needed for Global.")
     /// For tools that edit variables, where leaving it out means the project-wide values.
-    static let variablesEnvironment = string("An environment's ID or name. Omit for the Default environment.")
+    static let variablesEnvironment = string(
+        "An environment's ID or name, or `Global` for the variables every project shares. Omit for the project's Default."
+    )
     /// For tools that resolve or send, where leaving it out means what the window would use.
     static let runEnvironment = string("An environment's ID or name. Omit for the project's active environment.")
     static let request = string("The request's ID, from list_requests.")

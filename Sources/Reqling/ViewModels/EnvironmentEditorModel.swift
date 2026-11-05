@@ -2,8 +2,9 @@ import Foundation
 import Observation
 import ReqlingKit
 
-/// Edits a project's environments as a draft that commits on Done, so a half-typed secret is not written to the
-/// Keychain on every keystroke. Default stays first and can be neither renamed nor removed.
+/// Edits a project's environments, and the Global environment every project shares, as a draft that commits on Done,
+/// so a half-typed secret is not written to the Keychain on every keystroke. Global comes first, then Default; neither
+/// can be renamed or removed, and Global is never made active.
 ///
 /// Done merges the draft into what is stored now (see `save()`), so an agent's or a `git pull`'s change made while the
 /// sheet was open survives unless the sheet changed the same environment name or variable.
@@ -11,12 +12,14 @@ import ReqlingKit
 @Observable
 final class EnvironmentEditorModel {
     let projectID: ProjectID
+    var globalEnvironment: RequestEnvironment
     var defaultEnvironment: RequestEnvironment
     var environments: [RequestEnvironment]
     var selectedID: EnvironmentID
 
     @ObservationIgnored private unowned let app: AppModel
     /// The environments as loaded or last saved: the base of Done's merge.
+    @ObservationIgnored private var baseGlobalEnvironment: RequestEnvironment
     @ObservationIgnored private var baseDefaultEnvironment: RequestEnvironment
     @ObservationIgnored private var baseEnvironments: [RequestEnvironment]
 
@@ -24,6 +27,8 @@ final class EnvironmentEditorModel {
         self.projectID = projectID
         self.app = app
         let document = app.library.document(projectID)
+        globalEnvironment = app.library.globalEnvironment
+        baseGlobalEnvironment = app.library.globalEnvironment
         let defaultEnvironment = document?.defaultEnvironment ?? RequestEnvironment(name: RequestEnvironment.defaultName)
         let environments = document?.environments ?? []
         self.defaultEnvironment = defaultEnvironment
@@ -33,12 +38,46 @@ final class EnvironmentEditorModel {
         selectedID = app.activeEnvironmentID(for: projectID) ?? defaultEnvironment.id
     }
 
-    var allEnvironments: [RequestEnvironment] {
+    /// The heading over the project's own environments, so they never read as shared like Global.
+    var projectName: String {
+        app.library.document(projectID)?.name ?? ""
+    }
+
+    /// Default first, then the others: the project's own, which the list shows under its name.
+    var projectEnvironments: [RequestEnvironment] {
         [defaultEnvironment] + environments
+    }
+
+    var allEnvironments: [RequestEnvironment] {
+        [globalEnvironment] + projectEnvironments
+    }
+
+    var isGlobalSelected: Bool {
+        selectedID == globalEnvironment.id
     }
 
     var isDefaultSelected: Bool {
         selectedID == defaultEnvironment.id
+    }
+
+    /// Whether the selection can be removed: only a project's own environments other than Default can.
+    var canRemoveSelected: Bool {
+        environments.contains { $0.id == selectedID }
+    }
+
+    static let reservedNameWarning = "“\(RequestEnvironment.globalName)” is reserved for the environment every project shares."
+
+    /// Why Done is refused, if it is: one of the project's environments is named like Global, a name reserved for it.
+    var reservedNameProblem: String? {
+        guard environments.contains(where: { RequestEnvironment.isGlobalName($0.name) }) else {
+            return nil
+        }
+        return "\(Self.reservedNameWarning) Rename the environment using it."
+    }
+
+    /// Why Global loaded incomplete, shown above its variables.
+    var globalEnvironmentIssue: String? {
+        app.library.globalEnvironmentIssue
     }
 
     var selected: RequestEnvironment {
@@ -46,7 +85,9 @@ final class EnvironmentEditorModel {
             allEnvironments.first { $0.id == selectedID } ?? defaultEnvironment
         }
         set {
-            if newValue.id == defaultEnvironment.id {
+            if newValue.id == globalEnvironment.id {
+                globalEnvironment = RequestEnvironment.global(variables: newValue.variables)
+            } else if newValue.id == defaultEnvironment.id {
                 defaultEnvironment = newValue
                 defaultEnvironment.name = RequestEnvironment.defaultName
             } else if let index = environments.firstIndex(where: { $0.id == newValue.id }) {
@@ -68,7 +109,7 @@ final class EnvironmentEditorModel {
     }
 
     func removeEnvironment(_ id: EnvironmentID) {
-        guard id != defaultEnvironment.id else {
+        guard environments.contains(where: { $0.id == id }) else {
             return
         }
         environments.removeAll { $0.id == id }
@@ -90,12 +131,31 @@ final class EnvironmentEditorModel {
     }
 
     /// Merges the draft into the stored environments, three-way against what the sheet loaded: environments per ID
-    /// (Default included), each one's name as a field and its variables per ID (`ListMerge`). Whatever the sheet left
-    /// alone takes the stored version, deletions included. Secret values need no bookkeeping here: they travel with
-    /// their variables, and `ProjectLibrary.mutate` stores and deletes them by comparing what the merge produced with
-    /// what was stored.
+    /// (Global and Default included), each one's name as a field and its variables per ID (`ListMerge`). Whatever the
+    /// sheet left alone takes the stored version, deletions included. Secret values need no bookkeeping here: they
+    /// travel with their variables, and the library's mutations store and delete them by comparing what the merge
+    /// produced with what was stored.
+    ///
+    /// Global saves first, in its own write: when the project's save then fails, Global's base already matches what
+    /// was stored, so Done again merges only what is still unsaved.
     @discardableResult
     func save() -> Bool {
+        guard reservedNameProblem == nil, saveGlobalEnvironment(), let (mergedDefault, mergedEnvironments) = saveProjectEnvironments() else {
+            return false
+        }
+        defaultEnvironment = mergedDefault
+        environments = mergedEnvironments
+        baseDefaultEnvironment = mergedDefault
+        baseEnvironments = mergedEnvironments
+        if mergedEnvironments.contains(where: { $0.id == selectedID }) || selectedID == mergedDefault.id {
+            app.setActiveEnvironment(selectedID, for: projectID)
+        }
+        return true
+    }
+
+    /// The project's environments after Done: merged and saved, or as stored when the sheet changed none of them, since
+    /// a read-only project refuses even an empty save and Done may have changed only Global.
+    private func saveProjectEnvironments() -> (RequestEnvironment, [RequestEnvironment])? {
         let draftDefault = defaultEnvironment
         let draftEnvironments = environments.map { environment in
             var trimmed = environment
@@ -104,7 +164,10 @@ final class EnvironmentEditorModel {
         }
         let baseDefault = baseDefaultEnvironment
         let base = baseEnvironments
-        let saved = app.perform("Couldn't Save the Environments") {
+        if draftDefault == baseDefault, draftEnvironments == base, let document = app.library.document(projectID) {
+            return (document.defaultEnvironment, document.environments)
+        }
+        return app.perform("Couldn't Save the Environments") {
             try app.library.mutate(projectID) { document in
                 document.defaultEnvironment = Self.merge(base: baseDefault, draft: draftDefault, stored: document.defaultEnvironment)
                 document.environments = ListMerge.merge(
@@ -116,16 +179,22 @@ final class EnvironmentEditorModel {
                 return (document.defaultEnvironment, document.environments)
             }
         }
-        guard let (mergedDefault, mergedEnvironments) = saved else {
+    }
+
+    private func saveGlobalEnvironment() -> Bool {
+        let draft = globalEnvironment
+        let base = baseGlobalEnvironment
+        let merged = app.perform("Couldn't Save the Environments") {
+            try app.library.mutateGlobalEnvironment { stored in
+                stored = Self.merge(base: base, draft: draft, stored: stored)
+            }
+            return app.library.globalEnvironment
+        }
+        guard let merged else {
             return false
         }
-        defaultEnvironment = mergedDefault
-        environments = mergedEnvironments
-        baseDefaultEnvironment = mergedDefault
-        baseEnvironments = mergedEnvironments
-        if mergedEnvironments.contains(where: { $0.id == selectedID }) || selectedID == mergedDefault.id {
-            app.setActiveEnvironment(selectedID, for: projectID)
-        }
+        globalEnvironment = merged
+        baseGlobalEnvironment = merged
         return true
     }
 

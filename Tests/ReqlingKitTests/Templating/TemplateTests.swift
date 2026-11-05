@@ -72,13 +72,18 @@ final class TemplateResolverTests: XCTestCase {
         return (document, staging.id)
     }
 
+    /// A scope with an empty Global, for tests about the project's own environments.
+    private func scope(_ document: ProjectDocument, active: EnvironmentID?) -> VariableScope {
+        VariableScope(global: .global(), document: document, activeEnvironmentID: active)
+    }
+
     func testTheActiveEnvironmentOverridesDefaultAndOverridesWin() {
         let (document, staging) = document()
 
-        let defaultOnly = TemplateResolver(scope: VariableScope(document: document, activeEnvironmentID: nil), dynamic: fixedDynamic)
-        let onStaging = TemplateResolver(scope: VariableScope(document: document, activeEnvironmentID: staging), dynamic: fixedDynamic)
+        let defaultOnly = TemplateResolver(scope: scope(document, active: nil), dynamic: fixedDynamic)
+        let onStaging = TemplateResolver(scope: scope(document, active: staging), dynamic: fixedDynamic)
         let overridden = TemplateResolver(
-            scope: VariableScope(document: document, activeEnvironmentID: staging, overrides: ["host": "local"]),
+            scope: VariableScope(global: .global(), document: document, activeEnvironmentID: staging, overrides: ["host": "local"]),
             dynamic: fixedDynamic
         )
 
@@ -89,9 +94,29 @@ final class TemplateResolverTests: XCTestCase {
         XCTAssertEqual(onStaging.resolve("{{disabled}}").value, "default")
     }
 
+    func testGlobalSitsBeneathDefault() {
+        let (document, staging) = document()
+        let global = RequestEnvironment.global(variables: [
+            Variable(key: "host", value: "global.example.com"),
+            Variable(key: "region", value: "eu"),
+            Variable(key: "off", value: "hidden", isEnabled: false)
+        ])
+
+        let scope = VariableScope(global: global, document: document, activeEnvironmentID: staging, overrides: ["region": "us"])
+        let defaultOnly = VariableScope(global: global, document: document, activeEnvironmentID: nil)
+
+        // Default and the active environment override Global by key, overrides beat everything, and a disabled Global
+        // variable is not there at all.
+        XCTAssertEqual(scope.lookup("host")?.value, "staging.example.com")
+        XCTAssertEqual(defaultOnly.lookup("host")?.value, "example.com")
+        XCTAssertEqual(scope.lookup("region")?.value, "us")
+        XCTAssertEqual(defaultOnly.lookup("region")?.source, .environment(id: RequestEnvironment.globalID, name: "Global"))
+        XCTAssertNil(defaultOnly.lookup("off"))
+    }
+
     func testUnresolvedNamesStayVerbatimAndAreReported() {
         let (document, _) = document()
-        let resolution = TemplateResolver(scope: VariableScope(document: document, activeEnvironmentID: nil), dynamic: fixedDynamic)
+        let resolution = TemplateResolver(scope: scope(document, active: nil), dynamic: fixedDynamic)
             .resolve("{{missing}}-{{host}}-{{missing}}-{{$nope}}")
 
         XCTAssertEqual(resolution.value, "{{missing}}-example.com-{{missing}}-{{$nope}}")
@@ -112,7 +137,7 @@ final class TemplateResolverTests: XCTestCase {
 
     func testMaskingHidesSecretsButStillReportsThem() {
         let (document, _) = document()
-        let resolver = TemplateResolver(scope: VariableScope(document: document, activeEnvironmentID: nil), dynamic: fixedDynamic)
+        let resolver = TemplateResolver(scope: scope(document, active: nil), dynamic: fixedDynamic)
 
         let masked = resolver.resolve("Bearer {{token}}", masked: true)
         let plain = resolver.resolve("Bearer {{token}}")

@@ -50,9 +50,23 @@ public struct Variable: Hashable, Sendable, Identifiable, Codable {
 }
 
 /// A named set of variables. Every project has an undeletable Default environment, and the active
-/// environment's variables override Default's.
+/// environment's variables override Default's, which override the Global environment every project shares
+/// (`ProjectLibrary.globalEnvironment`).
 public struct RequestEnvironment: Hashable, Sendable, Identifiable, Codable {
     public static let defaultName = "Default"
+    public static let globalName = "Global"
+    /// Fixed rather than stored, so Global's secret keys and an agent's reference to it hold even before its file exists.
+    public static let globalID = EnvironmentID.derived(from: "reqling.global-environment")
+
+    public static func global(variables: [Variable] = []) -> RequestEnvironment {
+        RequestEnvironment(id: globalID, name: globalName, variables: variables)
+    }
+
+    /// Whether `name` is Global's, ignoring case and surrounding space. A project's own environment can't take it: agents
+    /// address environments by name, and this one names the shared environment.
+    public static func isGlobalName(_ name: String) -> Bool {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(globalName) == .orderedSame
+    }
 
     public let id: EnvironmentID
     public var name: String

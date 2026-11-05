@@ -103,7 +103,54 @@ final class MCPEnvironmentToolsTests: XCTestCase {
 
         let listed = try await fixture.success("list_variables", ["project": projectArgument, "includeAllEnvironments": true])
 
-        XCTAssertEqual(listed["environments"]?.arrayValue?.map { $0["name"] }, ["Default", "Prod"])
+        XCTAssertEqual(listed["environments"]?.arrayValue?.map { $0["name"] }, ["Global", "Default", "Prod"])
         XCTAssertEqual(listed["environments"]?.arrayValue?.last?["variables"]?.arrayValue?.first?["value"], "p")
+    }
+
+    func testGlobalVariablesNeedNoProjectAndKeepSecretsOutOfItsFile() async throws {
+        _ = try await fixture.success("create_variables", ["environment": "Global", "variables": [
+            ["key": "region", "value": "eu"],
+            ["key": "apiKey", "value": "g10bal-s3cr3t", "secret": true]
+        ]])
+        _ = try await fixture.success("update_variables", ["project": projectArgument, "environment": "global", "variables": [
+            ["key": "region", "value": "us"]
+        ]])
+        let listed = try await fixture.success("list_variables", ["environment": "Global"])
+        _ = try await fixture.success("delete_variables", ["environment": .string(RequestEnvironment.globalID.description), "keys": ["region"]])
+        let withoutProject = await fixture.failure("list_variables")
+
+        XCTAssertEqual(listed["environment"]?["name"], "Global")
+        XCTAssertEqual(listed["variables"]?.arrayValue?.first?["value"], "us")
+        XCTAssertNil(listed["variables"]?.arrayValue?.last?["value"], "A secret's value is never returned")
+        XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.key), ["apiKey"])
+        XCTAssertEqual(fixture.library.globalEnvironment.variables.first?.value, "g10bal-s3cr3t")
+        XCTAssertFalse(try String(contentsOf: fixture.storage.globalEnvironmentURL, encoding: .utf8).contains("g10bal-s3cr3t"))
+        XCTAssertEqual(try fixture.storage.secrets.secrets(for: .global).values.sorted(), ["g10bal-s3cr3t"])
+        XCTAssertTrue(try fixture.document(project).defaultEnvironment.variables.isEmpty)
+        XCTAssertTrue(withoutProject.contains("`project` is required"), withoutProject)
+    }
+
+    func testGlobalIsListedButNeverChosenRenamedDeletedOrNamedAgain() async throws {
+        let listed = try await fixture.success("list_environments", ["project": projectArgument])
+        let activate = await fixture.failure("set_active_environment", ["project": projectArgument, "environment": "Global"])
+        let rename = await fixture.failure("update_environment", ["project": projectArgument, "environment": "Global", "name": "X"])
+        let delete = await fixture.failure("delete_environment", ["project": projectArgument, "environment": "Global"])
+        let create = await fixture.failure("create_environment", ["project": projectArgument, "name": "global"])
+        let legacy = RequestEnvironment(name: "Global")
+        try fixture.library.mutate(project) { $0.environments.append(legacy) }
+        let recase = await fixture.failure("update_environment", [
+            "project": projectArgument, "environment": .string(legacy.id.description), "name": "global"
+        ])
+
+        let first = listed["environments"]?.arrayValue?.first
+        XCTAssertEqual(first?["name"], "Global")
+        XCTAssertEqual(first?["isGlobal"], true)
+        XCTAssertEqual(first?["isActive"], false)
+        for message in [activate, rename, delete] {
+            XCTAssertTrue(message.contains("Global applies to every request"), message)
+        }
+        XCTAssertTrue(create.contains("reserved"), create)
+        XCTAssertTrue(recase.contains("reserved"), recase)
+        XCTAssertEqual(try fixture.document(project).environments.map(\.name), ["Global"])
     }
 }

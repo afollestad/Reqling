@@ -2,7 +2,8 @@ import Foundation
 import MCP
 
 /// Environments and their `{{variables}}`. Variable tools default to the Default environment, whose values every
-/// other environment inherits and overrides by key. Secret values go to the Keychain and are never returned.
+/// other environment inherits and overrides by key, and reach Global, which every project inherits beneath Default,
+/// when `environment` names it. Secret values go to the Keychain and are never returned.
 @MainActor
 struct MCPEnvironmentTools {
     let context: MCPToolContext
@@ -20,14 +21,15 @@ struct MCPEnvironmentTools {
         MCPTool(
             "list_environments",
             title: "List environments",
-            description: "A project's environments, Default first, and which one is active in the window.",
+            description: "Global, which every project shares, then a project's environments, Default first, and which one is "
+                + "active in the window.",
             properties: ["project": MCPSchema.project],
             required: ["project"],
             annotations: .read
         ) { arguments in
             let (_, document) = try context.document(try arguments.string("project"))
             let active = context.workspace.activeEnvironment(in: document).id
-            return .object(["environments": .array(document.allEnvironments.map {
+            return .object(["environments": .array(([context.library.globalEnvironment] + document.allEnvironments).map {
                 .object(MCPDescriptions.environment($0, in: document, active: active))
             })])
         }
@@ -75,7 +77,9 @@ struct MCPEnvironmentTools {
                 throw MCPToolError("Default can't be renamed.")
             }
             let name = try arguments.string("name")
-            if name.caseInsensitiveCompare(environment.name) != .orderedSame {
+            // A change of case alone keeps the name unique, but not unreserved: an environment named Global before the
+            // name was reserved can't be renamed to "global".
+            if RequestEnvironment.isGlobalName(name) || name.caseInsensitiveCompare(environment.name) != .orderedSame {
                 try Self.requireUniqueName(name, in: document)
             }
             try context.mutate(project.id) { $0.updateEnvironment(environment.id) { $0.name = name } }
@@ -130,16 +134,20 @@ struct MCPEnvironmentTools {
             title: "List variables",
             description: "An environment's variables. Secret variables show `secret: true` and never their value.",
             properties: [
-                "project": MCPSchema.project,
+                "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
-                "includeAllEnvironments": MCPSchema.boolean("List every environment's variables instead, side by side.")
+                "includeAllEnvironments": MCPSchema.boolean("List Global's and every project environment's variables instead, side by side.")
             ],
-            required: ["project"],
             annotations: .read
         ) { arguments in
-            let (_, document) = try context.document(try arguments.string("project"))
+            let projectReference = try arguments.optionalString("project")
             if try arguments.bool("includeAllEnvironments", default: false) {
-                return .object(["environments": .array(document.allEnvironments.map { environment in
+                guard let projectReference else {
+                    throw MCPToolError("`includeAllEnvironments` needs a `project`.")
+                }
+                let (_, document) = try context.document(projectReference)
+                let environments = [context.library.globalEnvironment] + document.allEnvironments
+                return .object(["environments": .array(environments.map { environment in
                     [
                         "id": .string(environment.id.description),
                         "name": .string(environment.name),
@@ -147,7 +155,8 @@ struct MCPEnvironmentTools {
                     ]
                 })])
             }
-            let environment = try context.environment(try arguments.optionalString("environment"), in: document)
+            let environment = try context.variableTarget(project: projectReference, environment: try arguments.optionalString("environment"))
+                .environment
             return .object([
                 "environment": MCPDescriptions.environmentReference(environment),
                 "variables": .array(environment.variables.map(MCPDescriptions.variable))
@@ -159,23 +168,23 @@ struct MCPEnvironmentTools {
         MCPTool(
             "create_variables",
             title: "Create variables",
-            description: "Adds variables to an environment (Default unless named). Fails, adding none, if any key already exists "
-                + "there; use update_variables to change one.",
+            description: "Adds variables to an environment (Default unless named, or Global). Fails, adding none, if any key "
+                + "already exists there; use update_variables to change one.",
             properties: [
-                "project": MCPSchema.project,
+                "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
                 "variables": Self.newVariablesSchema
             ],
-            required: ["project", "variables"],
+            required: ["variables"],
             annotations: .create
         ) { arguments in
-            let (project, document) = try context.document(try arguments.string("project"))
-            let environment = try context.environment(try arguments.optionalString("environment"), in: document)
+            let target = try Self.target(arguments, context: context)
+            let environment = target.environment
             let variables = try Self.newVariables(arguments, existing: environment.variables)
             guard !variables.isEmpty else {
                 throw MCPToolError("`variables` must list at least one variable.")
             }
-            try context.mutate(project.id) { $0.updateEnvironment(environment.id) { $0.variables += variables } }
+            try changeVariables(of: target) { $0 += variables }
             return .object([
                 "environment": MCPDescriptions.environmentReference(environment),
                 "created": .array(variables.map(MCPDescriptions.variable))
@@ -187,10 +196,10 @@ struct MCPEnvironmentTools {
         MCPTool(
             "update_variables",
             title: "Update variables",
-            description: "Changes existing variables in an environment (Default unless named), by key: a new key, value, enabled "
-                + "state, or secret flag. Omitted fields keep their value. Fails, changing none, if a key doesn't exist.",
+            description: "Changes existing variables in an environment (Default unless named, or Global), by key: a new key, "
+                + "value, enabled state, or secret flag. Omitted fields keep their value. Fails, changing none, if a key doesn't exist.",
             properties: [
-                "project": MCPSchema.project,
+                "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
                 "variables": MCPSchema.array(MCPSchema.object([
                     "key": MCPSchema.string("The variable to change."),
@@ -200,11 +209,11 @@ struct MCPEnvironmentTools {
                     "secret": MCPSchema.boolean("Keep the value in the Keychain instead of the project's files.")
                 ], required: ["key"]), "The changes.", minItems: 1)
             ],
-            required: ["project", "variables"],
+            required: ["variables"],
             annotations: .edit
         ) { arguments in
-            let (project, document) = try context.document(try arguments.string("project"))
-            let environment = try context.environment(try arguments.optionalString("environment"), in: document)
+            let target = try Self.target(arguments, context: context)
+            let environment = target.environment
             let changes = try arguments.objects("variables", allowed: ["key", "newKey", "value", "enabled", "secret"]) ?? []
             var variables = environment.variables
             for change in changes {
@@ -225,7 +234,7 @@ struct MCPEnvironmentTools {
                 variables[index].isSecret = try change.optionalBool("secret") ?? variables[index].isSecret
             }
             let updated = variables
-            try context.mutate(project.id) { $0.updateEnvironment(environment.id) { $0.variables = updated } }
+            try changeVariables(of: target) { $0 = updated }
             return .object([
                 "environment": MCPDescriptions.environmentReference(environment),
                 "variables": .array(updated.map(MCPDescriptions.variable))
@@ -237,29 +246,43 @@ struct MCPEnvironmentTools {
         MCPTool(
             "delete_variables",
             title: "Delete variables",
-            description: "Removes variables from an environment (Default unless named) by key, deleting any secret values. "
-                + "Fails, removing none, if a key doesn't exist.",
+            description: "Removes variables from an environment (Default unless named, or Global) by key, deleting any secret "
+                + "values. Fails, removing none, if a key doesn't exist.",
             properties: [
-                "project": MCPSchema.project,
+                "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
                 "keys": MCPSchema.array(["type": "string"], "The keys to remove.", minItems: 1)
             ],
-            required: ["project", "keys"],
+            required: ["keys"],
             annotations: .edit
         ) { arguments in
-            let (project, document) = try context.document(try arguments.string("project"))
-            let environment = try context.environment(try arguments.optionalString("environment"), in: document)
+            let target = try Self.target(arguments, context: context)
+            let environment = target.environment
             let keys = Set(try arguments.stringArray("keys") ?? [])
             let missing = keys.subtracting(environment.variables.map(\.key)).sorted()
             guard missing.isEmpty else {
                 throw MCPToolError("\(environment.name) has no variable \(missing.map { "`\($0)`" }.joined(separator: ", ")).")
             }
-            try context.mutate(project.id) { $0.updateEnvironment(environment.id) { $0.variables.removeAll { keys.contains($0.key) } } }
+            try changeVariables(of: target) { $0.removeAll { keys.contains($0.key) } }
             return .object(["environment": MCPDescriptions.environmentReference(environment), "deleted": .array(keys.sorted().map(Value.string))])
         }
     }
 
     // MARK: - Helpers
+
+    private static func target(_ arguments: MCPArguments, context: MCPToolContext) throws -> VariableTarget {
+        try context.variableTarget(project: try arguments.optionalString("project"), environment: try arguments.optionalString("environment"))
+    }
+
+    /// Saves a change to the target's variables through the path that owns them: the library's Global, or the project.
+    private func changeVariables(of target: VariableTarget, _ change: (inout [Variable]) -> Void) throws {
+        switch target {
+        case .global:
+            try context.mutateGlobalEnvironment { change(&$0.variables) }
+        case .project(let project, let environment):
+            try context.mutate(project) { $0.updateEnvironment(environment.id) { change(&$0.variables) } }
+        }
+    }
 
     static let newVariablesSchema = MCPSchema.array(MCPSchema.object([
         "key": MCPSchema.string("The name requests use, as {{key}}."),
@@ -285,6 +308,9 @@ struct MCPEnvironmentTools {
     }
 
     private static func requireUniqueName(_ name: String, in document: ProjectDocument) throws {
+        guard !RequestEnvironment.isGlobalName(name) else {
+            throw MCPToolError("“\(RequestEnvironment.globalName)” is reserved for the environment every project shares.")
+        }
         guard !document.allEnvironments.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
             throw MCPToolError("“\(document.name)” already has an environment named “\(name)”.")
         }

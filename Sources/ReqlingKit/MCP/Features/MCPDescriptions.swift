@@ -33,6 +33,7 @@ enum MCPDescriptions {
         [
             "id": .string(environment.id.description),
             "name": .string(environment.name),
+            "isGlobal": .bool(environment.id == RequestEnvironment.globalID),
             "isDefault": .bool(document.isDefaultEnvironment(environment.id)),
             "isActive": .bool(environment.id == active),
             "variableCount": .int(environment.variables.count)
