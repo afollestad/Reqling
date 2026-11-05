@@ -26,4 +26,6 @@ enum AppMetrics {
     /// `LabeledRow`'s label column, and the gap between it and the control.
     static let labelWidth: CGFloat = 96
     static let labelSpacing: CGFloat = 8
+    /// The space each side of a split divider between editors, so neither pane's chrome or caption touches it.
+    static let splitPaneGap: CGFloat = 8
 }

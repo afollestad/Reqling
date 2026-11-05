@@ -24,6 +24,7 @@ struct GraphQLBodyEditor: View {
             }
             HSplitView {
                 GraphQLQueryPane(query: $editor.spec.body.graphQL.query, tokenContext: tokenContext, model: editor.graphQL)
+                    .padding(.trailing, AppMetrics.splitPaneGap)
                     .frame(minWidth: 200)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Variables")
@@ -39,6 +40,7 @@ struct GraphQLBodyEditor: View {
                     )
                         .editorChrome()
                 }
+                .padding(.leading, AppMetrics.splitPaneGap)
                 .frame(minWidth: 160)
             }
         }
