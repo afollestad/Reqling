@@ -5,10 +5,11 @@ import ReqlingKit
 /// and suggestions need their kind, type, and description.
 ///
 /// Typing opens it where the assistant has suggestions: a name character, `@`, `$`, `(`, or a space after `:` or
-/// `on`; ⌥Esc and F5 open it anywhere (⌃Space too, where the input source switcher leaves it alone). Pastes, undo,
-/// and outside changes never open it. While it is open the text view keeps focus: ↑ and ↓ move the highlight, Return
-/// and Tab accept, Escape closes it without reaching a sheet's Cancel, and a ⌘ shortcut closes it and runs. `{{`
-/// still opens AppKit's list of variables, which wins: the two are never open together.
+/// `on`; ⌃Space, ⌥Esc, and F5 open it anywhere, with what fits there (⌃Space only where macOS's input source switcher
+/// leaves it alone). Pastes, undo, and outside changes never open it. While it is open the text view keeps focus: ↑
+/// and ↓ move the highlight, Return and Tab accept, Escape closes it without reaching a sheet's Cancel, and a ⌘
+/// shortcut closes it and runs. `{{` still opens AppKit's list of variables, which wins: the two are never open
+/// together.
 extension CodeTextView {
     var isShowingAssistantCompletions: Bool {
         assistance.completion != nil
@@ -45,8 +46,13 @@ extension CodeTextView {
         super.deleteBackward(sender)
     }
 
-    /// ⌥Esc and F5 reach here. Inside `{{` they complete variables, as before; elsewhere they open the assistant's list.
+    /// ⌥Esc and F5 reach here, and ⌃Space through `handleCompletionShortcut`. Inside `{{` they complete variables, as
+    /// before; elsewhere they open the assistant's list. A disabled editor beeps: nothing chosen could be inserted.
     override func complete(_ sender: Any?) {
+        guard isEditable else {
+            NSSound.beep()
+            return
+        }
         guard assistance.assistant != nil, TemplateParser.openTokenRange(in: string as NSString, cursor: selectedRange().location) == nil else {
             super.complete(sender)
             return
@@ -85,17 +91,24 @@ extension CodeTextView {
         return true
     }
 
-    /// A ⌘ shortcut closes the list before it runs; ⌃Space opens it.
+    /// A ⌘ shortcut closes the list before it runs.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .control, event.charactersIgnoringModifiers == " ",
-           window?.firstResponder === self, assistance.assistant != nil {
-            complete(nil)
-            return true
-        }
         if event.modifierFlags.contains(.command) {
             dismissCompletions()
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// ⌃Space opens the list for where the cursor is, as ⌥Esc does; returns whether it took the press. Called from
+    /// `keyDown`, which ⌃Space reaches as an ordinary key press: an override of `performKeyEquivalent` never saw it.
+    /// Caps Lock is ignored, and an input method that is composing keeps the key, as does a disabled editor.
+    func handleCompletionShortcut(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .control,
+              event.charactersIgnoringModifiers == " ", !hasMarkedText(), isEditable, assistance.assistant != nil else {
+            return false
+        }
+        complete(nil)
+        return true
     }
 
     /// Moving the cursor out of the name being completed closes the list.

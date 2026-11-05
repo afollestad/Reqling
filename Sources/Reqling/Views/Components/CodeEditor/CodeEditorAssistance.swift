@@ -37,7 +37,7 @@ final class CodeEditorAssistance {
     struct Completion {
         let model: CodeCompletionModel
         var replacementRange: NSRange
-        /// Opened with ⌥Esc or F5: it stays open with nothing typed.
+        /// Opened with ⌃Space, ⌥Esc, or F5: it stays open with nothing typed.
         let isForced: Bool
     }
 

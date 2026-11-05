@@ -210,6 +210,37 @@ extension CodeTextViewTests {
         window.close()
     }
 
+    /// Sent the way the window delivers a key press, which is how ⌃Space arrives; calling the text view's own methods
+    /// would skip the path that never reached the old handler.
+    func testControlSpaceOpensTheListWhereTheCursorIs() throws {
+        let (textView, presenter) = makeAssisted(text: "{  }")
+        let window = focus(textView)
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+
+        window.sendEvent(try Self.keyPress(" ", modifiers: [.control, .capsLock], in: window))
+
+        XCTAssertEqual(presenter.completions.map { Set($0.items.map(\.label)) }, ["name", "nickname", "id"])
+        XCTAssertEqual(textView.string, "{  }", "nothing is typed")
+        textView.dismissCompletions()
+        window.sendEvent(try Self.keyPress(" ", modifiers: [.control, .option], in: window))
+        XCTAssertNil(presenter.completions, "another chord is not the shortcut")
+        window.close()
+    }
+
+    /// A disabled editor, such as one in a read-only project, could insert nothing chosen from the list.
+    func testADisabledEditorOpensNoList() throws {
+        let (textView, presenter) = makeAssisted(text: "{  }")
+        let window = focus(textView)
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        textView.isEditable = false
+
+        window.sendEvent(try Self.keyPress(" ", modifiers: .control, in: window))
+        XCTAssertNil(presenter.completions, "⌃Space")
+        textView.complete(nil)
+        XCTAssertNil(presenter.completions, "⌥Esc")
+        window.close()
+    }
+
     // MARK: - Updates and the live panel
 
     func testReplacingWithTheSameTextKeepsTheListOpen() {
@@ -283,6 +314,22 @@ extension CodeTextViewTests {
     }
 
     // MARK: - Support
+
+    private static func keyPress(_ key: String, modifiers: NSEvent.ModifierFlags, in window: NSWindow) throws -> NSEvent {
+        // ⌃Space types NUL; the shortcut reads the key without its modifiers.
+        try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "\u{0}",
+            charactersIgnoringModifiers: key,
+            isARepeat: false,
+            keyCode: 49
+        ))
+    }
 
     private static func model(rows: Int) -> CodeCompletionModel {
         let model = CodeCompletionModel()

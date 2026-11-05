@@ -25,6 +25,7 @@ final class GraphQLCompletionTests: XCTestCase {
         XCTAssertEqual(authorFields.last, "nickname")
         XCTAssertEqual(Set(labels("{ | }")), ["node", "book", "books", "authors", "search", "me", "ping", "__schema", "__type", "__typename"])
         XCTAssertEqual(labels("{ books { author { books { tit| } } } }"), ["title"])
+        XCTAssertEqual(Set(labels("query {\n  me {\n    |\n  }\n}")), Set(authorFields), "on an empty line of the set")
         XCTAssertEqual(Set(labels("mutation { | }")), ["addBook", "removeBook", "__typename"])
         XCTAssertEqual(labels("subscription { | }"), ["bookAdded", "__typename"])
     }

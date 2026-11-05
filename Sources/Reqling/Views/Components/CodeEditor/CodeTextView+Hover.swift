@@ -107,6 +107,9 @@ extension CodeTextView {
 
     override func keyDown(with event: NSEvent) {
         hideHover()
+        if handleCompletionShortcut(event) {
+            return
+        }
         super.keyDown(with: event)
     }
 }

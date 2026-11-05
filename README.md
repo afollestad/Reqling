@@ -64,7 +64,7 @@ The schema comes from one of three places:
 
 ## GraphQL
 
-A GraphQL body's query editor knows the API's schema. As you type (or on ⌥Esc) it completes fields, arguments, enum values, variables, directives, and fragments; it describes whatever the pointer rests on; and it underlines misspelled fields, missing required arguments, type mismatches, and deprecated usage, with a menu of the problems above the query. `{{variables}}` inside the query are left alone.
+A GraphQL body's query editor knows the API's schema. As you type, or on ⌃Space (or ⌥Esc) anywhere in the query, it completes what fits there: fields of the enclosing type, arguments, enum values, variables, directives, and fragments; it describes whatever the pointer rests on; and it underlines misspelled fields, missing required arguments, type mismatches, and deprecated usage, with a menu of the problems above the query. `{{variables}}` inside the query are left alone.
 
 The schema comes from one of two places, chosen in the **Schema** row:
 
