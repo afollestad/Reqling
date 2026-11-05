@@ -47,8 +47,8 @@ public struct MCPTool {
     }
 }
 
-/// The hints MCP clients use to decide what to confirm. Every deletion here moves files to the Trash, so none is
-/// destructive in the irreversible sense the hint means.
+/// The hints MCP clients use to decide what to confirm. Deleting items moves their files to the Trash, so that is not
+/// destructive in the irreversible sense the hint means; clearing run history is (`destroy`).
 public struct MCPToolAnnotations: Sendable {
     let readOnly: Bool
     let destructive: Bool
@@ -62,6 +62,8 @@ public struct MCPToolAnnotations: Sendable {
     static let create = MCPToolAnnotations(readOnly: false, destructive: false, idempotent: false, openWorld: false)
     static let network = MCPToolAnnotations(readOnly: false, destructive: false, idempotent: false, openWorld: true)
     static let networkRead = MCPToolAnnotations(readOnly: true, destructive: false, idempotent: true, openWorld: true)
+    /// Deletes for good, with nothing in the Trash to put back.
+    static let destroy = MCPToolAnnotations(readOnly: false, destructive: true, idempotent: true, openWorld: false)
 }
 
 /// A tool's answer. `structuredContent` carries the data; `text` repeats it as JSON, since some clients show only the

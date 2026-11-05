@@ -40,7 +40,13 @@ struct MCPExecutionTools {
             options.spec = try Self.applyingMessages(arguments, to: kind)
             let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
             let exchange = await context.runner.run(request.id, in: project.id, options: options)
-            return .object(Self.describe(exchange, mask: mask))
+            var description = Self.describe(exchange, mask: mask)
+            // Only a recorded run can be read back with get_run; a run replaced by a newer one, or of a project removed
+            // meanwhile, never was.
+            if context.runner.latest[RunKey(request.id, in: project.id)]?.id == exchange.id {
+                description["run"] = .string(exchange.id.description)
+            }
+            return .object(description)
         }
     }
 
@@ -130,6 +136,7 @@ struct MCPExecutionTools {
             }
             var description = Self.describe(exchange, mask: context.runner.maskingSecrets(in: project.id))
             description["ran"] = true
+            description["run"] = .string(exchange.id.description)
             description["inFlight"] = .bool(context.runner.isInFlight(request.id, in: project.id))
             return .object(description)
         }

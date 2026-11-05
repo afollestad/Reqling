@@ -73,7 +73,8 @@ struct MCPAppTools {
         MCPTool(
             "get_settings",
             title: "Get settings",
-            description: "Reqling's preferences: theme, HTTP request defaults, the gRPC deadline, and the protoc path override.",
+            description: "Reqling's preferences: theme, HTTP request defaults, the gRPC deadline, the protoc path override, and "
+                + "how long and how much run history stays on this Mac.",
             annotations: .read
         ) { _ in
             .object(Self.describe(context.settings.settings))
@@ -92,21 +93,26 @@ struct MCPAppTools {
                 "followRedirects": MCPSchema.boolean("Whether HTTP requests follow redirects by default."),
                 "verifyTLS": MCPSchema.boolean("Whether requests verify servers' TLS certificates by default."),
                 "grpcDeadlineSeconds": MCPSchema.number("The default gRPC deadline.", minimum: 1, maximum: 600),
-                "protocPath": MCPSchema.string("A protoc to compile with instead of searching for one. Empty clears it.")
+                "protocPath": MCPSchema.string("A protoc to compile with instead of searching for one. Empty clears it."),
+                "historyRetention": MCPSchema.enumeration(
+                    HistoryRetention.allCases.map(\.rawValue),
+                    "How long runs stay in history; each request's latest stays until the size limit needs its space."
+                ),
+                "historySizeLimit": MCPSchema.enumeration(
+                    HistorySizeLimit.allCases.map(\.rawValue),
+                    "The most space every request's runs may take together; the oldest go first."
+                )
             ],
             annotations: .edit
         ) { arguments in
-            let theme = try arguments.optionalString("theme").map { name in
-                guard let theme = AppTheme(rawValue: name) else {
-                    throw MCPToolError("`theme` must be one of \(AppTheme.allCases.map(\.rawValue).joined(separator: ", ")).")
-                }
-                return theme
-            }
+            let theme = try Self.choice(arguments, "theme", AppTheme.self)
             let timeout = try arguments.optionalNumber("requestTimeoutSeconds", in: AppSettings.timeoutRange)
             let deadline = try arguments.optionalNumber("grpcDeadlineSeconds", in: AppSettings.timeoutRange)
             let followRedirects = try arguments.optionalBool("followRedirects")
             let verifyTLS = try arguments.optionalBool("verifyTLS")
             let protocPath = try arguments.optionalRawString("protocPath")
+            let retention = try Self.choice(arguments, "historyRetention", HistoryRetention.self)
+            let sizeLimit = try Self.choice(arguments, "historySizeLimit", HistorySizeLimit.self)
             context.settings.update { settings in
                 settings.theme = theme ?? settings.theme
                 settings.requestTimeoutSeconds = timeout ?? settings.requestTimeoutSeconds
@@ -116,6 +122,11 @@ struct MCPAppTools {
                 if let protocPath {
                     settings.protocPath = protocPath
                 }
+                settings.historyRetention = retention ?? settings.historyRetention
+                settings.historySizeLimit = sizeLimit ?? settings.historySizeLimit
+            }
+            if retention != nil || sizeLimit != nil {
+                context.runner.history.prune()
             }
             if protocPath != nil {
                 // A changed override reaches no file watcher, so every workspace recompiles with the protoc it now finds.
@@ -194,7 +205,23 @@ struct MCPAppTools {
             "followRedirects": .bool(settings.followRedirects),
             "verifyTLS": .bool(settings.verifyTLS),
             "grpcDeadlineSeconds": .double(settings.grpcDeadlineSeconds),
-            "protocPath": settings.protocPath.map(Value.string) ?? .null
+            "protocPath": settings.protocPath.map(Value.string) ?? .null,
+            "historyRetention": .string(settings.historyRetention.rawValue),
+            "historySizeLimit": .string(settings.historySizeLimit.rawValue)
         ]
+    }
+
+    /// A string argument naming one of `Choice`'s cases.
+    private static func choice<Choice: RawRepresentable & CaseIterable>(
+        _ arguments: MCPArguments,
+        _ key: String,
+        _ type: Choice.Type
+    ) throws -> Choice? where Choice.RawValue == String {
+        try arguments.optionalString(key).map { name in
+            guard let choice = Choice(rawValue: name) else {
+                throw MCPToolError("`\(key)` must be one of \(Choice.allCases.map(\.rawValue).joined(separator: ", ")).")
+            }
+            return choice
+        }
     }
 }

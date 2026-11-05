@@ -64,7 +64,7 @@ extension MCPRequestTools {
         return MCPTool(
             name,
             title: title,
-            description: "Moves a \(target.noun) to the Trash, where Finder's Put Back restores it.",
+            description: "Moves a \(target.noun) to the Trash, where Finder's Put Back restores it, and clears its run history.",
             properties: ["project": MCPSchema.project, argument: target.schema],
             required: ["project", argument],
             annotations: .edit
