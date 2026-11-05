@@ -7,7 +7,7 @@
 
 <h1 align="center">Reqling</h1>
 
-<p align="center">A minimal, fully native macOS client for HTTP and gRPC APIs, with a built-in MCP server for AI agents.</p>
+<p align="center">A minimal, fully native macOS client for HTTP, GraphQL, and gRPC APIs, with a built-in MCP server for AI agents.</p>
 
 <p align="center">
   <a href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
