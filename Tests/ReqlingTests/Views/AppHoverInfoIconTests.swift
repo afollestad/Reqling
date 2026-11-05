@@ -25,6 +25,25 @@ final class AppHoverInfoIconTests: XCTestCase {
         XCTAssertEqual(icon.accessibilityLabel(), "More information")
     }
 
+    /// A richer popover, such as an example, still tells VoiceOver what it says, under the icon's own name.
+    func testAnIconWithContentNamesItselfAndReadsItsSummary() throws {
+        let icon = AppHoverInfoIcon(systemImage: "questionmark.circle", accessibilityLabel: "How it works", summary: "Use it like this.") {
+            Text("An example")
+        }
+        let hosting = NSHostingView(rootView: icon)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+
+        let button = try XCTUnwrap(Self.infoButton(in: hosting))
+
+        XCTAssertEqual(button.accessibilityLabel(), "How it works")
+        XCTAssertEqual(button.accessibilityValue() as? String, "Use it like this.")
+        XCTAssertNotNil(button.image)
+    }
+
     /// It explains disabled settings too, so a disabled row leaves it working.
     func testADisabledRowLeavesTheIconEnabled() {
         let icon = AppKitHoverInfoButton()

@@ -27,10 +27,19 @@ struct GraphQLBodyEditor: View {
                     .padding(.trailing, AppMetrics.splitPaneGap)
                     .frame(minWidth: 200)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Variables")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(height: GraphQLQueryPane.headerHeight)
+                    HStack(spacing: 4) {
+                        Text("Variables")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        AppHoverInfoIcon(
+                            systemImage: "questionmark.circle",
+                            accessibilityLabel: "How GraphQL variables work",
+                            summary: GraphQLVariablesHelp.summary
+                        ) {
+                            GraphQLVariablesHelp()
+                        }
+                    }
+                    .frame(height: GraphQLQueryPane.headerHeight)
                     CodeEditor(
                         text: $editor.spec.body.graphQL.variables,
                         language: .json,
@@ -81,6 +90,52 @@ struct GraphQLQueryPane: View {
                 assistant: model
             )
                 .editorChrome()
+        }
+    }
+}
+
+/// The Variables caption's help: how a query declares and uses a variable, and how this pane gives its value.
+struct GraphQLVariablesHelp: View {
+    static let summary = """
+        Declare a variable after the operation name, as in query Book($id: ID!), use it in the query as $id, and give \
+        its value here as JSON, as in { "id": "{{bookId}}" }. Values can use the environment's {{variables}}.
+        """
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Declare a variable after the operation name, use it in the query as `$name`, and give its value here as JSON.")
+                .fixedSize(horizontal: false, vertical: true)
+            GraphQLHelpSample(title: "Query", code: "query Book($id: ID!) {\n  book(id: $id) { title }\n}")
+            GraphQLHelpSample(title: "Variables", code: #"{ "id": "{{bookId}}" }"#)
+            Text("Values can use the environment's `{{variables}}`.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.callout)
+        .frame(width: 300, alignment: .leading)
+        .padding(14)
+    }
+}
+
+/// A captioned, fixed code sample. Static text, not a `CodeViewerPane`: it is three lines that never change.
+private struct GraphQLHelpSample: View {
+    let title: String
+    let code: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(code)
+                .font(.system(.callout, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: AppMetrics.inputCornerRadius, style: .continuous)
+                        .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.4))
+                )
         }
     }
 }

@@ -1,19 +1,38 @@
 @preconcurrency import AppKit
 import SwiftUI
 
-/// An `info.circle` whose explanation opens in a popover on hover or click, ported from Alveary.
+/// An `info.circle` whose explanation opens in a popover on hover or click, ported from Alveary; or another glyph,
+/// such as `questionmark.circle`, whose popover shows richer content, like a short example.
 ///
 /// Plain `.help(...)` on a glyph is easy to miss: the system tooltip waits out a long hover delay, a click does
 /// nothing, and inside a toggle row's button the click flips the setting instead. This AppKit button takes its own
 /// mouse events, so it never reaches an enclosing SwiftUI button, and it stays enabled under a disabled row because it
 /// explains disabled settings too.
 struct AppHoverInfoIcon: View {
-    let text: String
+    private let info: AppHoverInfo
+
+    init(text: String) {
+        info = AppHoverInfo(systemImage: "info.circle", accessibilityLabel: "More information", summary: text, content: nil)
+    }
+
+    /// `summary` says in plain text what `content` shows: VoiceOver reads it, and only a change to it rebuilds an open
+    /// popover, since `content` cannot be compared.
+    init(systemImage: String, accessibilityLabel: String, summary: String, @ViewBuilder content: () -> some View) {
+        info = AppHoverInfo(systemImage: systemImage, accessibilityLabel: accessibilityLabel, summary: summary, content: AnyView(content()))
+    }
 
     var body: some View {
-        AppHoverInfoIconRepresentable(text: text)
+        AppHoverInfoIconRepresentable(info: info)
             .frame(width: 14, height: 14)
     }
+}
+
+/// What an `AppHoverInfoIcon` draws and explains; `content` nil shows `summary` as the popover's text.
+struct AppHoverInfo {
+    let systemImage: String
+    let accessibilityLabel: String
+    let summary: String
+    let content: AnyView?
 }
 
 @MainActor
@@ -22,7 +41,7 @@ final class AppKitHoverInfoButton: NSButton {
 
     private var trackingArea: NSTrackingArea?
     private let hoverTooltip = AppKitHoverTooltipController()
-    private var helpText: String?
+    private var info: AppHoverInfo?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -49,15 +68,19 @@ final class AppKitHoverInfoButton: NSButton {
         }
     }
 
-    func configure(helpText: String) {
-        let changed = self.helpText != helpText
-        self.helpText = helpText
+    func configure(_ info: AppHoverInfo) {
+        let changed = self.info?.summary != info.summary
+        let glyphChanged = self.info?.systemImage != info.systemImage
+        self.info = info
         toolTip = nil
-        setAccessibilityLabel("More information")
-        setAccessibilityValue(helpText)
-        setAccessibilityHelp(helpText)
-        // Rebuild an open popover only when its text changes; hover-driven parent updates would otherwise collapse its
-        // measured wrapped height.
+        setAccessibilityLabel(info.accessibilityLabel)
+        setAccessibilityValue(info.summary)
+        setAccessibilityHelp(info.summary)
+        if glyphChanged {
+            refreshIconImage()
+        }
+        // Rebuild an open popover only when its summary changes; hover-driven parent updates would otherwise collapse
+        // its measured wrapped height.
         if changed, hoverTooltip.isShown {
             showHoverTooltip()
         }
@@ -136,7 +159,8 @@ final class AppKitHoverInfoButton: NSButton {
         appearance.performAsCurrentDrawingAppearance {
             color = NSColor.secondaryLabelColor.usingColorSpace(.sRGB) ?? NSColor.secondaryLabelColor
         }
-        guard let symbol = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "More information")?
+        let systemImage = info?.systemImage ?? "info.circle"
+        guard let symbol = NSImage(systemSymbolName: systemImage, accessibilityDescription: info?.accessibilityLabel)?
             .withSymbolConfiguration(Self.iconConfiguration) else {
             image = nil
             return
@@ -153,22 +177,22 @@ final class AppKitHoverInfoButton: NSButton {
     }
 
     private func showHoverTooltip() {
-        guard let helpText, !helpText.isEmpty, window != nil else {
+        guard let info, !info.summary.isEmpty, window != nil else {
             return
         }
-        hoverTooltip.show(text: helpText, relativeTo: self)
+        hoverTooltip.show(info.content ?? AnyView(AppHoverTooltipContent(text: info.summary)), relativeTo: self)
     }
 }
 
 private struct AppHoverInfoIconRepresentable: NSViewRepresentable {
-    let text: String
+    let info: AppHoverInfo
 
     func makeNSView(context: Context) -> AppKitHoverInfoButton {
         AppKitHoverInfoButton()
     }
 
     func updateNSView(_ nsView: AppKitHoverInfoButton, context: Context) {
-        nsView.configure(helpText: text)
+        nsView.configure(info)
     }
 
     static func dismantleNSView(_ nsView: AppKitHoverInfoButton, coordinator: ()) {
@@ -186,12 +210,12 @@ final class AppKitHoverTooltipController {
         popover?.isShown == true
     }
 
-    func show(text: String, relativeTo sourceView: AppKitHoverInfoButton) {
+    func show(_ content: AnyView, relativeTo sourceView: AppKitHoverInfoButton) {
         close()
         guard sourceView.window != nil else {
             return
         }
-        let controller = NSHostingController(rootView: AppHoverTooltipContent(text: text))
+        let controller = NSHostingController(rootView: content)
         let size = controller.view.fittingSize
         controller.preferredContentSize = size
         let popover = NSPopover()

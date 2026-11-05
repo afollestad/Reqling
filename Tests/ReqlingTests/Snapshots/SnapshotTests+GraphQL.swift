@@ -41,6 +41,11 @@ extension SnapshotTests {
         assertBothAppearances(GraphQLSchemaBrowser(editor: editor, model: model), size: CGSize(width: 300, height: 300))
     }
 
+    /// The Variables caption's help popover, rendered as its popover holds it.
+    func testGraphQLVariablesHelp() {
+        assertBothAppearances(GraphQLVariablesHelp(), size: CGSize(width: 328, height: 250))
+    }
+
     func testSchemaStatusLabelStates() {
         let states: [SchemaStatusLabel.State] = [
             .loading,
