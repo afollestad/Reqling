@@ -4,6 +4,9 @@ import SwiftUI
 
 /// A multi-line code editor for request bodies. Read-only text, such as a response, goes in `CodeViewer`.
 ///
+/// AppKit underneath (`CodeTextView`, an `NSTextView`): SwiftUI's `TextEditor` can neither color ranges as they are
+/// typed nor draw `{{variable}}` pills with their tooltips and completion.
+///
 /// Text is re-highlighted as it changes; outside changes to it land through `CodeTextView.replaceText(with:)`, never as
 /// undo steps.
 ///
@@ -83,7 +86,8 @@ struct CodeEditor: NSViewRepresentable {
     }
 }
 
-/// A single-line field for URLs, header values, and other template text, with the editor's variable pills.
+/// A single-line field for URLs, header values, and other template text, with the editor's variable pills. AppKit
+/// underneath (`SingleLineTextView`) for the same reason as `CodeEditor`: a SwiftUI `TextField` cannot draw the pills.
 struct TemplateField: View {
     @Binding var text: String
     var placeholder = ""

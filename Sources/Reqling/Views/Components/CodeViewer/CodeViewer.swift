@@ -3,7 +3,8 @@ import ReqlingKit
 import SwiftUI
 
 /// Shows a read-only body of any size; see `CodeViewerView` for how. Pair it with `CodeViewerPane`, which adds the
-/// in-place search.
+/// in-place search. AppKit because SwiftUI's text views lay out the whole text at once, which stalls on a multi-megabyte
+/// body.
 struct CodeViewer: NSViewRepresentable {
     let document: TextDocument
     /// Each line's style when `document` is a `DiffDocument`'s text.

@@ -3,7 +3,8 @@ import CoreText
 import ReqlingKit
 
 /// Drawing a `DiffDocument` in the viewer, after Alveary's diff rows: a gutter of old and new line numbers and a `+` or
-/// `−`, a hairline, then the text. Added and removed lines wash the whole row green or red, a little stronger behind
+/// `−`, a hairline, then the text. Here rather than as SwiftUI rows, so a diff of a multi-megabyte body scrolls as the
+/// body itself does. Added and removed lines wash the whole row green or red, a little stronger behind
 /// the gutter, and an omitted-lines row reads as a muted note. The gutter is drawn, not text, so selecting and copying
 /// see only the lines themselves.
 extension CodeViewerView {

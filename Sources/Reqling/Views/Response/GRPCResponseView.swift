@@ -8,10 +8,13 @@ struct GRPCResponseView: View {
 
     var body: some View {
         let history = response.history
-        if let pair = history.comparing {
-            RunComparisonView(history: history, pair: pair)
-        } else {
-            callView(history)
+        // One root whichever shows, as in `ResponseView`.
+        VStack(spacing: 0) {
+            if let pair = history.comparing {
+                RunComparisonView(history: history, pair: pair)
+            } else {
+                callView(history)
+            }
         }
     }
 

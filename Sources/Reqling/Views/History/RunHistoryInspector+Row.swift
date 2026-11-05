@@ -11,13 +11,16 @@ struct RunHistoryRow: View, Equatable {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 RunStatusBadge(status: run.status)
-                Text(time)
-                    .monospacedDigit()
-                Spacer(minLength: 4)
-                if isLatest {
-                    Text("Latest")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                // On the time's baseline: centered, the smaller caption sits above it.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(time)
+                        .monospacedDigit()
+                    Spacer(minLength: 4)
+                    if isLatest {
+                        Text("Latest")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             HStack(spacing: 8) {
@@ -36,7 +39,7 @@ struct RunHistoryRow: View, Equatable {
             .foregroundStyle(.secondary)
             .monospacedDigit()
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
     }
 }

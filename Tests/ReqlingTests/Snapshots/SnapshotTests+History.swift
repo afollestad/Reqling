@@ -8,7 +8,8 @@ extension SnapshotTests {
     private static let inspectorSize = CGSize(width: 280, height: 420)
 
     /// Runs over two days, newest first: HTTP statuses by class, a failure that never got a response, and another
-    /// environment.
+    /// environment. The history is built without an editor, which would load the latest exchange and so highlight the run
+    /// the pane follows; an offscreen capture draws that selection as a solid bar.
     func testRunHistoryInspector() throws {
         let project = try SnapshotProject.make(in: fixture)
         let day: TimeInterval = 24 * 60 * 60
@@ -17,9 +18,9 @@ extension SnapshotTests {
         project.storeRun(.failure(RunFailure(kind: .timedOut, message: "Timed out")), for: project.listUsers, at: base - day, in: fixture)
         storeResponse(404, at: base - 300, duration: 0.088, bytes: 64, environment: "Staging", in: project)
         storeResponse(200, at: base, duration: 0.142, bytes: 18_432, in: project)
-        let editor = try project.editor(project.listUsers, in: fixture)
+        let history = RunHistoryViewModel(projectID: project.id, requestID: project.listUsers, app: fixture.model)
 
-        assertBothAppearances(RunHistoryInspector(history: editor.history), size: Self.inspectorSize)
+        assertBothAppearances(RunHistoryInspector(history: history), size: Self.inspectorSize)
     }
 
     func testRunHistoryInspectorEmpty() throws {

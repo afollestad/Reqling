@@ -22,7 +22,8 @@ struct RunHistoryInspector: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                RunHistoryList(history: history, days: history.days(formats: formats), latest: runs.first?.id)
+                // AppKit, not a SwiftUI `List`, to keep the selection neutral while the list has focus; see `RunHistoryTable`.
+                RunHistoryTable(history: history, days: history.days(formats: formats), latest: runs.first?.id, selection: history.displayedSelection)
                 RunHistoryFooter(history: history)
             }
         }
@@ -33,56 +34,6 @@ struct RunHistoryInspector: View {
 
     private var formats: RunDateFormats {
         RunDateFormats(locale: locale, calendar: calendar, timeZone: timeZone)
-    }
-}
-
-private struct RunHistoryList: View {
-    @Bindable var history: RunHistoryViewModel
-    let days: [RunHistoryDay]
-    let latest: RunID?
-
-    var body: some View {
-        List(selection: $history.selection) {
-            ForEach(days) { day in
-                Section(day.title) {
-                    ForEach(day.runs) { row in
-                        RunHistoryRow(run: row.run, time: row.time, isLatest: row.run.id == latest)
-                            .equatable()
-                            .tag(row.run.id)
-                    }
-                }
-            }
-        }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        .contextMenu(forSelectionType: RunID.self) { runs in
-            RunHistoryMenu(history: history, selected: runs)
-        }
-        .accessibilityLabel("Run history")
-    }
-}
-
-/// What can be done with the runs a context menu was opened on.
-private struct RunHistoryMenu: View {
-    let history: RunHistoryViewModel
-    let selected: Set<RunID>
-
-    var body: some View {
-        let runs = history.runs.filter { selected.contains($0.id) }
-        if runs.count == 1, let run = runs.first {
-            Button("Re-run") { history.rerun(run) }
-                .disabled(!history.canReplay(run))
-            Button("Restore Request…") { history.requestRestore(run) }
-                .disabled(!history.canRestore(run))
-            Divider()
-            Button("Compare with Latest") { history.compareWithLatest(run.id) }
-                .disabled(run.id == history.runs.first?.id)
-        } else if runs.count == 2 {
-            Button("Compare") {
-                history.selection = selected
-                history.compare()
-            }
-        }
     }
 }
 

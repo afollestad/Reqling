@@ -8,10 +8,14 @@ struct ResponseView: View {
 
     var body: some View {
         let history = response.history
-        if let pair = history.comparing {
-            RunComparisonView(history: history, pair: pair)
-        } else {
-            exchangeView(history)
+        // One root whichever shows: the split view above sees through a bare `if`, and would size the pane anew each
+        // time a comparison opens or closes.
+        VStack(spacing: 0) {
+            if let pair = history.comparing {
+                RunComparisonView(history: history, pair: pair)
+            } else {
+                exchangeView(history)
+            }
         }
     }
 
