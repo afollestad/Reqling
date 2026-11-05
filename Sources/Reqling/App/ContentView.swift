@@ -155,18 +155,19 @@ private struct DetailView: View {
         // and a rebuilt column comes back at its minimum width, dropping the width the person dragged it to.
         ZStack { content }
             .inspector(isPresented: Binding(
-                get: { model.showsRunHistory && model.editor != nil },
+                get: { model.isInspectorShown && model.editor != nil },
                 // Only the person hides it; the inspector going with its editor must not forget that it was open.
                 set: { isPresented in
                     if model.editor != nil {
-                        model.showsRunHistory = isPresented
+                        model.isInspectorShown = isPresented
                     }
                 }
             )) {
                 if let editor = model.editor {
-                    RunHistoryInspector(history: editor.history)
+                    InspectorContent(model: model, editor: editor)
                         .id(editor.identity)
-                        .inspectorColumnWidth(min: 220, ideal: 260, max: 380)
+                        // One range for both panels, so switching between them keeps the width the person chose.
+                        .inspectorColumnWidth(min: 220, ideal: 260, max: 480)
                 }
             }
     }
@@ -211,6 +212,41 @@ private struct DetailView: View {
             return nil
         }
         return selection.nodeID == nil || project.document == nil ? project : nil
+    }
+}
+
+/// The inspector's panel: the run history, or beside a GraphQL request, its schema, with a picker between the two.
+struct InspectorContent: View {
+    let model: AppModel
+    let editor: RequestEditor
+
+    var body: some View {
+        let graphQL = editor.asHTTP.flatMap { http in http.graphQL.map { (http, $0) } }
+        VStack(spacing: 0) {
+            if graphQL != nil {
+                SectionPicker(
+                    "Inspector",
+                    selection: Binding(get: { model.shownInspectorPanel }, set: { model.inspectorPanel = $0 }),
+                    options: InspectorPanel.allCases,
+                    label: Self.title(for:)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+            }
+            if let (http, schema) = graphQL, model.shownInspectorPanel == .graphQLSchema {
+                GraphQLSchemaBrowser(editor: http, model: schema)
+            } else {
+                RunHistoryInspector(history: editor.history)
+            }
+        }
+    }
+
+    static func title(for panel: InspectorPanel) -> String {
+        switch panel {
+        case .history: "History"
+        case .graphQLSchema: "Schema"
+        }
     }
 }
 

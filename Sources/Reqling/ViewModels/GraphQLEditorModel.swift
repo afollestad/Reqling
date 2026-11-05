@@ -14,6 +14,8 @@ final class GraphQLEditorModel {
     static let validationDelay: Duration = .milliseconds(300)
 
     let schema: GraphQLSchemaLoader
+    /// The schema browser's place, kept per request.
+    let browser = GraphQLSchemaBrowserModel()
     private(set) var diagnostics: CodeDiagnosticSet = .none
 
     @ObservationIgnored private unowned let app: AppModel

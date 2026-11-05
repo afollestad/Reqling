@@ -55,6 +55,9 @@ struct ReqlingCommands: Commands {
             Button(model.showsRunHistory ? "Hide Run History" : "Show Run History") { model.toggleRunHistory() }
                 .keyboardShortcut("y", modifiers: .command)
                 .disabled(model.editor == nil)
+            Button(model.showsGraphQLSchema ? "Hide GraphQL Schema" : "Show GraphQL Schema") { model.toggleGraphQLSchema() }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+                .disabled(model.editor?.asHTTP?.graphQL == nil)
             Divider()
             Button("Environments…") {
                 if let project = model.activeProjectID {

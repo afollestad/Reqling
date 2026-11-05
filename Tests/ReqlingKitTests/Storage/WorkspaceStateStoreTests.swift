@@ -60,6 +60,21 @@ final class WorkspaceStateStoreTests: XCTestCase {
         XCTAssertNil(store.state.projects[project.description])
     }
 
+    /// A state file from before the inspector had panels shows the run history, as it did then.
+    func testTheInspectorPanelDefaultsToHistoryAndRoundTrips() throws {
+        let old = try JSONDecoder().decode(WorkspaceState.self, from: Data(#"{"showsRunHistory": true}"#.utf8))
+        var state = WorkspaceState()
+        state.inspectorPanel = .graphQLSchema
+
+        let decoded = try JSONDecoder().decode(WorkspaceState.self, from: JSONEncoder().encode(state))
+        let unknown = try JSONDecoder().decode(WorkspaceState.self, from: Data(#"{"inspectorPanel": "timeline"}"#.utf8))
+
+        XCTAssertTrue(old.showsRunHistory)
+        XCTAssertEqual(old.inspectorPanel, .history)
+        XCTAssertEqual(decoded.inspectorPanel, .graphQLSchema)
+        XCTAssertEqual(unknown.inspectorPanel, .history)
+    }
+
     func testEveryFieldHoldingAReferenceCountsAsUsed() throws {
         let ids = (0..<9).map { _ in LocalPathID() }
         var http = HTTPRequestSpec()

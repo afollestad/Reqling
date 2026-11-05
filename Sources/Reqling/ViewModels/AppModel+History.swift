@@ -24,17 +24,51 @@ enum HistoryClearScope: Identifiable, Equatable {
     }
 }
 
-/// The run history's window-wide state and commands: the inspector beside a request, clearing, and the History
-/// settings.
+/// The run history's window-wide state and commands: the inspector beside a request (which also holds the GraphQL
+/// schema browser), clearing, and the History settings.
 extension AppModel {
-    /// Remembered on this Mac, so the inspector stays open or closed across requests and launches.
-    var showsRunHistory: Bool {
+    /// Whether the inspector shows beside the editor; remembered on this Mac, so it stays open or closed across requests
+    /// and launches.
+    var isInspectorShown: Bool {
         get { workspace.state.showsRunHistory }
         set { workspace.update { $0.showsRunHistory = newValue } }
     }
 
+    /// The panel last chosen, remembered like `isInspectorShown`.
+    var inspectorPanel: InspectorPanel {
+        get { workspace.state.inspectorPanel }
+        set { workspace.update { $0.inspectorPanel = newValue } }
+    }
+
+    /// What the inspector shows: the GraphQL schema only beside a request that has one, else the run history.
+    var shownInspectorPanel: InspectorPanel {
+        inspectorPanel == .graphQLSchema && editor?.asHTTP?.graphQL != nil ? .graphQLSchema : .history
+    }
+
+    var showsRunHistory: Bool {
+        isInspectorShown && shownInspectorPanel == .history
+    }
+
+    var showsGraphQLSchema: Bool {
+        isInspectorShown && shownInspectorPanel == .graphQLSchema
+    }
+
     func toggleRunHistory() {
-        showsRunHistory.toggle()
+        toggleInspector(.history)
+    }
+
+    func toggleGraphQLSchema() {
+        toggleInspector(.graphQLSchema)
+    }
+
+    /// Closes the inspector when it already shows `panel`, and otherwise opens it on `panel`.
+    private func toggleInspector(_ panel: InspectorPanel) {
+        if isInspectorShown, shownInspectorPanel == panel {
+            isInspectorShown = false
+        } else {
+            inspectorPanel = panel
+            isInspectorShown = true
+        }
     }
 
     func requestClearHistory(of project: ProjectID) {

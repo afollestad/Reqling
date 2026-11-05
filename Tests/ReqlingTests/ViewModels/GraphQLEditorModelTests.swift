@@ -221,6 +221,45 @@ final class GraphQLEditorModelTests: XCTestCase {
         XCTAssertEqual(editor.graphQLSchemaSourceTitle, "api.graphql")
     }
 
+    // MARK: - Inspector
+
+    func testTheSchemaAndTheHistoryShareTheInspector() {
+        let app = fixture.model
+
+        app.toggleGraphQLSchema()
+        XCTAssertTrue(app.showsGraphQLSchema)
+        XCTAssertTrue(editor.isShowingGraphQLSchema)
+        app.toggleRunHistory()
+        XCTAssertTrue(app.showsRunHistory, "the history takes the open inspector")
+        XCTAssertFalse(app.showsGraphQLSchema)
+        app.toggleRunHistory()
+        XCTAssertFalse(app.isInspectorShown, "asking for what already shows closes it")
+
+        editor.isShowingGraphQLSchema = true
+        editor.spec.body.mode = .raw
+        XCTAssertTrue(app.showsRunHistory, "a request with no GraphQL body shows its history")
+        editor.spec.body.mode = .graphQL
+        XCTAssertTrue(app.showsGraphQLSchema, "and the schema again once it has one")
+    }
+
+    func testTheBrowserListsRootsFirstThenKindsAndFollowsTypes() throws {
+        let snapshot = try XCTUnwrap(model.schema.snapshot)
+        let browser = model.browser
+
+        XCTAssertEqual(browser.sections(in: snapshot).map(\.title), ["Roots", "Objects", "Scalars"])
+        XCTAssertEqual(browser.sections(in: snapshot).first?.entries.map(\.type), ["Query"])
+        browser.filter = "nick"
+        XCTAssertEqual(browser.sections(in: snapshot).map(\.title), ["Fields"])
+        XCTAssertEqual(browser.sections(in: snapshot).first?.entries.first?.id, "Author.nickname")
+
+        browser.show("Author")
+        XCTAssertEqual(browser.filter, "", "opening a type clears the filter")
+        browser.show("String")
+        XCTAssertEqual(browser.path, ["Author", "String"])
+        browser.back()
+        XCTAssertEqual(browser.currentType, "Author")
+    }
+
     // MARK: - Support
 
     /// Whether sleeps wait for the gate; off, the pauses pass at once.

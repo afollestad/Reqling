@@ -128,6 +128,12 @@ private struct GraphQLSchemaRow: View {
                 .buttonStyle(IconButtonStyle())
                 .help(Self.reloadHelp(source))
                 .accessibilityLabel("Reload the schema")
+                Toggle(isOn: Binding(get: { editor.isShowingGraphQLSchema }, set: { editor.isShowingGraphQLSchema = $0 })) {
+                    Image(systemName: "sidebar.trailing")
+                }
+                .toggleStyle(IconToggleStyle())
+                .help("Browse the schema in the inspector (⌥⌘0)")
+                .accessibilityLabel("Browse the schema")
             }
         }
     }

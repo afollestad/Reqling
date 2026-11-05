@@ -11,8 +11,12 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
     public var unclaimedLocalPaths: [String: String] = [:]
     public var keychainIdentities: [String: Data] = [:]
     public var selection: WorkspaceSelection?
-    /// Whether the window shows the selected request's run history beside its editor.
+    /// Whether the window shows the inspector beside the selected request's editor. Named for the run history, which
+    /// was its only panel; `inspectorPanel` says which shows.
     public var showsRunHistory = false
+    /// The inspector panel last chosen. The GraphQL schema shows only beside a GraphQL request; elsewhere the run
+    /// history does, and this choice waits for the next GraphQL request.
+    public var inspectorPanel: InspectorPanel = .history
 
     public init() {}
 
@@ -23,6 +27,7 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
         keychainIdentities = try container.decodeIfPresent([String: Data].self, forKey: .keychainIdentities) ?? [:]
         selection = try container.decodeIfPresent(WorkspaceSelection.self, forKey: .selection)
         showsRunHistory = try container.decodeIfPresent(Bool.self, forKey: .showsRunHistory) ?? false
+        inspectorPanel = (try? container.decodeIfPresent(InspectorPanel.self, forKey: .inspectorPanel)) ?? .history
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -31,7 +36,14 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
         case keychainIdentities
         case selection
         case showsRunHistory
+        case inspectorPanel
     }
+}
+
+/// What the inspector beside a request shows.
+public enum InspectorPanel: String, Codable, Hashable, Sendable, CaseIterable {
+    case history
+    case graphQLSchema
 }
 
 public struct ProjectWorkspaceState: Codable, Equatable, Sendable {

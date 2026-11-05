@@ -69,6 +69,16 @@ extension RequestEditorViewModel {
         spec.body.graphQL.schema = .file(reference)
     }
 
+    /// Whether the inspector shows this request's schema; setting it opens the inspector on the schema or closes it.
+    var isShowingGraphQLSchema: Bool {
+        get { app.showsGraphQLSchema }
+        set {
+            if newValue != app.showsGraphQLSchema {
+                app.toggleGraphQLSchema()
+            }
+        }
+    }
+
     /// Asks the server again; the cached schema stays until a new one arrives.
     func refreshGraphQLSchema() {
         graphQL?.schema.refresh()

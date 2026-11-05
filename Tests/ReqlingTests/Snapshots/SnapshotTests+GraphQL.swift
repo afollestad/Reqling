@@ -14,6 +14,33 @@ extension SnapshotTests {
         assertBothAppearances(RequestEditorPane(editor: editor, model: fixture.model), size: CGSize(width: 920, height: 380))
     }
 
+    /// The inspector beside a GraphQL request: the History | Schema picker over the schema's types.
+    func testSchemaBrowserListsTheTypes() async throws {
+        let editor = try await graphQLEditor(query: "{ user(id: \"1\") { name } }")
+        fixture.model.toggleGraphQLSchema()
+
+        assertBothAppearances(InspectorContent(model: fixture.model, editor: .http(editor)), size: CGSize(width: 300, height: 360))
+    }
+
+    func testSchemaBrowserShowsATypeWithLinksToTheTypesItNames() async throws {
+        let editor = try await graphQLEditor(query: "{ user(id: \"1\") { name } }")
+        let model = try XCTUnwrap(editor.graphQL)
+        model.browser.show("Query")
+        model.browser.show("User")
+
+        assertBothAppearances(GraphQLSchemaBrowser(editor: editor, model: model), size: CGSize(width: 300, height: 360))
+    }
+
+    func testSchemaBrowserWithoutASchema() async throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let body = HTTPBody(mode: .graphQL, graphQL: GraphQLBody(query: "{ ping }"))
+        let editor = try project.editor(project.createUser, in: fixture, spec: HTTPRequestSpec(method: .post, url: "", body: body))
+        await editor.graphQL?.settled()
+        let model = try XCTUnwrap(editor.graphQL)
+
+        assertBothAppearances(GraphQLSchemaBrowser(editor: editor, model: model), size: CGSize(width: 300, height: 300))
+    }
+
     func testSchemaStatusLabelStates() {
         let states: [SchemaStatusLabel.State] = [
             .loading,
