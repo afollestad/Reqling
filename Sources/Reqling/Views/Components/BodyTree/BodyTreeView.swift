@@ -54,6 +54,8 @@ struct BodyTreeView: NSViewRepresentable {
         outline.coordinator = coordinator
         outline.dataSource = coordinator
         outline.delegate = coordinator
+        outline.target = coordinator
+        outline.doubleAction = #selector(BodyTreeCoordinator.toggleClickedRow(_:))
         let menu = NSMenu()
         menu.delegate = coordinator
         outline.menu = menu
@@ -251,33 +253,7 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         }
     }
 
-    // MARK: - Expanding
-
-    /// Opens rows breadth-first from `start` (or the top) until the tree shows about `budget` rows.
-    func expand(from start: BodyTreeItem?, budget: Int) {
-        guard let outline else {
-            return
-        }
-        var queue = start.map { [$0] } ?? roots
-        var rows = outline.numberOfRows
-        var index = 0
-        // One batch: expanding item by item makes the outline redo its row bookkeeping after each.
-        outline.beginUpdates()
-        defer { outline.endUpdates() }
-        while index < queue.count, rows < budget {
-            let item = queue[index]
-            index += 1
-            guard isExpandable(item) else {
-                continue
-            }
-            let children = displayChildren(of: item)
-            if !outline.isItemExpanded(item) {
-                outline.expandOne(item)
-                rows += children.count
-            }
-            queue.append(contentsOf: children)
-        }
-    }
+    // MARK: - Collapsing and revealing
 
     /// Closes everything below the top level.
     func collapseAll() {

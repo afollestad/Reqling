@@ -55,6 +55,24 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertEqual(coordinator.rowText(for: items()[1]).accessibilityLabel, "name, string, Ada↵Lovelace")
     }
 
+    /// A real double-click sets the row it landed on, which a test cannot; `toggle(row:)` is what it then runs.
+    func testDoubleClickingAContainerTogglesIt() throws {
+        try showJSON(#"{"data": {"user": {"name": "Ada"}}, "ok": true}"#)
+        XCTAssertEqual(outline.doubleAction, #selector(BodyTreeCoordinator.toggleClickedRow(_:)))
+        XCTAssertTrue(outline.target === coordinator)
+        let data = try XCTUnwrap(items().first { label($0) == #""data": { 1 key }"# })
+        let flag = try XCTUnwrap(items().first { label($0) == #""ok": true"# })
+
+        coordinator.toggle(row: outline.row(forItem: data))
+        XCTAssertTrue(outline.isItemExpanded(data))
+        XCTAssertEqual(items().count, 4, "only one level opens")
+        coordinator.toggle(row: outline.row(forItem: data))
+        XCTAssertFalse(outline.isItemExpanded(data))
+        coordinator.toggle(row: outline.row(forItem: flag))
+        coordinator.toggle(row: -1)
+        XCTAssertEqual(items().count, 3, "a value, and no row, change nothing")
+    }
+
     func testCopiesValuesKeysAndPaths() throws {
         try showJSON(#"{"users": [{"id": 1, "first name": "Ada"}]}"#)
         coordinator.expand(from: nil, budget: BodyTreeView.expandBudget)
