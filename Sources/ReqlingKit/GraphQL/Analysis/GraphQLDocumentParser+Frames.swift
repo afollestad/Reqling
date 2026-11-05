@@ -101,14 +101,14 @@ extension GraphQLDocumentParser {
 
     private mutating func document(_ token: GraphQLToken) -> Outcome {
         if token.isPunctuator("{") {
-            beginOperation(.query)
+            beginOperation(.query, at: token.range)
             return push(.selectionSet(parent: rootType(.query)))
         }
         guard token.kind == .name else {
             return .consumed(nil)
         }
         if let operation = GraphQLTypeSystem.OperationType(rawValue: token.text) {
-            beginOperation(operation)
+            beginOperation(operation, at: token.range)
             let location: GraphQLTypeSystem.DirectiveLocation = switch operation {
             case .query: .query
             case .mutation: .mutation

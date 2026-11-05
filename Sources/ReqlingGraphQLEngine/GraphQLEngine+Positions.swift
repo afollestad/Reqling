@@ -46,3 +46,12 @@ extension GraphQLEngine {
         return line
     }
 }
+
+extension GraphQLEngine {
+    /// The UTF-16 offset of a UTF-8 offset, clamped to the text.
+    static func utf16Offset(ofUTF8Offset offset: Int, in text: String) -> Int {
+        let utf8 = text.utf8
+        let index = utf8.index(utf8.startIndex, offsetBy: max(0, offset), limitedBy: utf8.endIndex) ?? utf8.endIndex
+        return text.utf16.distance(from: text.utf16.startIndex, to: index)
+    }
+}

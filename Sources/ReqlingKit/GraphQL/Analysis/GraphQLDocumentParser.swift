@@ -51,6 +51,8 @@ struct GraphQLDocumentParser: Sendable {
     struct Operation: Sendable {
         var type: GraphQLTypeSystem.OperationType
         var name: String?
+        /// Its `query`, `mutation`, or `subscription`, or the `{` of a shorthand query.
+        var keywordRange: NSRange
         var variables: [Variable] = []
     }
 
@@ -65,6 +67,8 @@ struct GraphQLDocumentParser: Sendable {
     private(set) var outline = Outline()
     /// The operation being read, as an index into `outline.operations`; nil outside one, as in a fragment.
     private(set) var currentOperation: Int?
+    /// The construct that consumed the last token, so a template can be told apart as a value or a name.
+    private(set) var consumer: Frame?
 
     init(typeSystem: GraphQLTypeSystem) {
         self.typeSystem = typeSystem
@@ -76,8 +80,10 @@ struct GraphQLDocumentParser: Sendable {
             return nil
         }
         while true {
-            switch handle(token, in: stack.last ?? .document) {
+            let frame = stack.last ?? .document
+            switch handle(token, in: frame) {
             case .consumed(let role):
+                consumer = frame
                 return role
             case .ends:
                 finishTop()
@@ -105,8 +111,8 @@ struct GraphQLDocumentParser: Sendable {
 
     // MARK: - Outline
 
-    mutating func beginOperation(_ type: GraphQLTypeSystem.OperationType) {
-        outline.operations.append(Operation(type: type))
+    mutating func beginOperation(_ type: GraphQLTypeSystem.OperationType, at keywordRange: NSRange) {
+        outline.operations.append(Operation(type: type, keywordRange: keywordRange))
         currentOperation = outline.operations.count - 1
     }
 
