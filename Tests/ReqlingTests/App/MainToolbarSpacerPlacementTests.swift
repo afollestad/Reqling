@@ -12,15 +12,24 @@ final class MainToolbarSpacerPlacementTests: XCTestCase {
     func testInsertsASpacerBeforeTheTrailingItemsAndLeavesTheSidebarsOwn() {
         let identifiers: [NSToolbarItem.Identifier] = [.flexibleSpace, sidebarToggle, title, trailing, .init(MainToolbarItemID.settings)]
 
-        XCTAssertEqual(MainToolbarSpacerPlacement.insertionIndex(in: identifiers), 3)
+        XCTAssertEqual(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: identifiers), 3)
     }
 
     func testLeavesASpacerAlreadyInPlace() {
-        XCTAssertNil(MainToolbarSpacerPlacement.insertionIndex(in: [.flexibleSpace, sidebarToggle, title, .flexibleSpace, trailing]))
+        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title, .flexibleSpace, trailing]))
     }
 
     func testNeedsBothAppItems() {
-        XCTAssertNil(MainToolbarSpacerPlacement.insertionIndex(in: [.flexibleSpace, sidebarToggle, title]))
-        XCTAssertNil(MainToolbarSpacerPlacement.insertionIndex(in: [.flexibleSpace, sidebarToggle, trailing]))
+        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title]))
+        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, trailing]))
+    }
+
+    func testSpacesThePickerFromTheButtonsAfterItOnce() {
+        let settings = NSToolbarItem.Identifier(MainToolbarItemID.settings)
+
+        XCTAssertEqual(MainToolbarSpacerPlacement.pickerSpaceIndex(in: [title, .flexibleSpace, trailing, settings]), 3)
+        XCTAssertNil(MainToolbarSpacerPlacement.pickerSpaceIndex(in: [title, .flexibleSpace, trailing, .space, settings]))
+        XCTAssertNil(MainToolbarSpacerPlacement.pickerSpaceIndex(in: [title, .flexibleSpace, trailing]))
+        XCTAssertNil(MainToolbarSpacerPlacement.pickerSpaceIndex(in: [title, .flexibleSpace, settings]))
     }
 }

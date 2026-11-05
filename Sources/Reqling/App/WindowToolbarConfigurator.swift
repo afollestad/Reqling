@@ -5,7 +5,7 @@ import SwiftUI
 /// finds them by.
 enum MainToolbarItemID {
     static let title = "detail-title"
-    /// The first trailing item; the flexible space goes just before it.
+    /// The first trailing item, the environment picker; the flexible space goes just before it and the fixed one after.
     static let trailing = "environment"
     /// Still "history", the inspector's only panel when it was added, so a toolbar layout saved then keeps the item.
     static let inspector = "history"
@@ -13,14 +13,14 @@ enum MainToolbarItemID {
     static let addProject = "add-project"
 }
 
-/// Where the window toolbar needs a flexible space: between the title and the trailing items. The removed system title
-/// was what filled that gap, and SwiftUI offers no replacement there: `NavigationSplitView` drops a `ToolbarSpacer` and
-/// ignores a flexible frame, packing the trailing items against the title. The flexible space it already has, before
-/// the sidebar toggle, holds the toggle at the sidebar's trailing edge and must stay.
+/// Where the window toolbar needs spaces SwiftUI can't place: `NavigationSplitView` drops a `ToolbarSpacer` and ignores
+/// a flexible frame. A flexible space goes between the title and the trailing items, a gap the removed system title used
+/// to fill, and a fixed one after the environment picker. The flexible space the toolbar already has, before the sidebar
+/// toggle, holds the toggle at the sidebar's trailing edge and must stay.
 enum MainToolbarSpacerPlacement {
     /// The index to insert a flexible space at, or `nil` when one already sits between the title and the trailing items
     /// or either is missing.
-    static func insertionIndex(in identifiers: [NSToolbarItem.Identifier]) -> Int? {
+    static func flexibleSpaceIndex(in identifiers: [NSToolbarItem.Identifier]) -> Int? {
         guard let titleIndex = identifiers.firstIndex(of: .init(MainToolbarItemID.title)),
               let trailingIndex = identifiers.firstIndex(of: .init(MainToolbarItemID.trailing)),
               titleIndex < trailingIndex,
@@ -29,11 +29,22 @@ enum MainToolbarSpacerPlacement {
         }
         return trailingIndex
     }
+
+    /// The index to insert a fixed space at, just after the environment picker, or `nil` when one is already there or
+    /// nothing follows the picker. The space gives the picker its own glass: adjacent items share one capsule, which
+    /// made its two-line label read as part of the buttons beside it.
+    static func pickerSpaceIndex(in identifiers: [NSToolbarItem.Identifier]) -> Int? {
+        guard let trailingIndex = identifiers.firstIndex(of: .init(MainToolbarItemID.trailing)),
+              trailingIndex + 1 < identifiers.count,
+              identifiers[trailingIndex + 1] != .space else {
+            return nil
+        }
+        return trailingIndex + 1
+    }
 }
 
-/// Keeps a flexible space where `MainToolbarSpacerPlacement` says, re-checking whenever SwiftUI adds or removes an
-/// item, and keeps the toolbar uncustomizable: item IDs make it customizable, and a user's arrangement would undo the
-/// placement.
+/// Keeps the spaces where `MainToolbarSpacerPlacement` says, re-checking whenever SwiftUI adds or removes an item, and
+/// keeps the toolbar uncustomizable: item IDs make it customizable, and a user's arrangement would undo the placement.
 struct WindowToolbarConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> WindowToolbarAnchorView {
         WindowToolbarAnchorView()
@@ -84,8 +95,11 @@ final class WindowToolbarAnchorView: NSView {
         }
         toolbar.allowsUserCustomization = false
         toolbar.allowsDisplayModeCustomization = false
-        if let index = MainToolbarSpacerPlacement.insertionIndex(in: toolbar.items.map(\.itemIdentifier)) {
+        if let index = MainToolbarSpacerPlacement.flexibleSpaceIndex(in: toolbar.items.map(\.itemIdentifier)) {
             toolbar.insertItem(withItemIdentifier: .flexibleSpace, at: index)
+        }
+        if let index = MainToolbarSpacerPlacement.pickerSpaceIndex(in: toolbar.items.map(\.itemIdentifier)) {
+            toolbar.insertItem(withItemIdentifier: .space, at: index)
         }
     }
 

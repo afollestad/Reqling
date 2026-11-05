@@ -274,6 +274,11 @@ private struct MainToolbar: ToolbarContent {
     }
 }
 
+/// The active environment of the project the toolbar acts on, with that project's name beneath it, since every project
+/// has its own Default and, with nothing selected, the toolbar falls back to the first project.
+///
+/// A toolbar `Menu` with the system button style becomes a native item that keeps only its label's first line of text;
+/// one with its own button style (`EnvironmentPickerButtonStyle`) is drawn by SwiftUI, both lines included.
 private struct EnvironmentPicker: View {
     let document: ProjectDocument
     let active: EnvironmentID?
@@ -281,30 +286,90 @@ private struct EnvironmentPicker: View {
 
     var body: some View {
         Menu {
-            ForEach(document.allEnvironments) { environment in
-                Button {
-                    model.setActiveEnvironment(environment.id, for: document.id)
-                } label: {
-                    if environment.id == active {
-                        Label(environment.name, systemImage: "checkmark")
-                    } else {
-                        Text(environment.name)
-                    }
+            // Inline, so the active environment gets the menu's own checkmark; a `Label`'s image isn't drawn in a menu.
+            Picker(document.name, selection: activeSelection) {
+                ForEach(document.allEnvironments) { environment in
+                    Text(environment.name).tag(environment.id)
                 }
             }
+            .pickerStyle(.inline)
             Divider()
             Button("Edit Environments…") { model.sheet = .environments(document.id) }
         } label: {
-            Label(activeName, systemImage: "square.stack.3d.up")
-                .labelStyle(.titleAndIcon)
+            HStack(spacing: 6) {
+                Image(systemName: "square.stack.3d.up")
+                HuggingCenteredStack(maxWidth: Self.maxNameWidth) {
+                    Text(activeName)
+                    Text(document.name)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                // The middle, so a long name keeps both its start and its end readable.
+                .lineLimit(1)
+                .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            // One element, or the icon, each line, and the chevron each read as an Environment button of their own.
+            .accessibilityElement(children: .combine)
         }
+        .menuStyle(.button)
+        .buttonStyle(EnvironmentPickerButtonStyle())
+        .menuIndicator(.hidden)
         .help("The environment \(document.name)'s requests resolve variables against")
         .accessibilityLabel("Environment")
-        .accessibilityValue(activeName)
+        .accessibilityValue("\(activeName), in \(document.name)")
+    }
+
+    /// Past this, a name's middle is elided rather than the label crowding the title. The menu's section header and the
+    /// tooltip show the project's whole name.
+    private static let maxNameWidth: CGFloat = 120
+
+    /// The active environment, or Default when none is chosen or the chosen one is gone.
+    private var activeID: EnvironmentID {
+        active.flatMap { document.environment($0)?.id } ?? document.defaultEnvironment.id
     }
 
     private var activeName: String {
-        document.environment(active ?? document.defaultEnvironment.id)?.name ?? RequestEnvironment.defaultName
+        document.environment(activeID)?.name ?? RequestEnvironment.defaultName
+    }
+
+    private var activeSelection: Binding<EnvironmentID> {
+        Binding {
+            activeID
+        } set: { id in
+            model.setActiveEnvironment(id, for: document.id)
+        }
+    }
+}
+
+/// The environment picker's label chrome: the hover and press tint the toolbar's own buttons show, and their dimming in
+/// an inactive window, neither of which a `.plain` label gets.
+private struct EnvironmentPickerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        EnvironmentPickerLabel(isPressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+/// Tracks the pointer for `EnvironmentPickerButtonStyle`, since `@State` can't live in a `ButtonStyle`.
+private struct EnvironmentPickerLabel<Content: View>: View {
+    let isPressed: Bool
+    @ViewBuilder let content: Content
+
+    @State private var isHovered = false
+    @Environment(\.controlActiveState) private var activeState
+
+    var body: some View {
+        content
+            .padding(.horizontal, 10)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.primary.opacity(isPressed ? 0.16 : isHovered ? 0.08 : 0)))
+            .contentShape(Capsule())
+            .opacity(activeState == .inactive ? 0.5 : 1)
+            .onHover { isHovered = $0 }
     }
 }
 
