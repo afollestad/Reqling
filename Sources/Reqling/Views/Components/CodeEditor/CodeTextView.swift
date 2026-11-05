@@ -326,10 +326,13 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     }
 
     /// Return submits a single-line field. Without a submit action it goes to the window's key equivalents, which is
-    /// how a sheet's `.defaultAction` button fires: a text view that is not a field editor claims Return first.
+    /// how a sheet's `.defaultAction` button fires: a text view that is not a field editor claims Return first. In a
+    /// JSON or GraphQL editor it indents and closes brackets (`CodeTextView+AutoIndent`).
     override func insertNewline(_ sender: Any?) {
         guard isSingleLine else {
-            super.insertNewline(sender)
+            if !insertIndentedNewline() {
+                super.insertNewline(sender)
+            }
             return
         }
         if let onSubmit {
@@ -358,7 +361,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         if isSingleLine {
             window?.selectNextKeyView(sender)
         } else {
-            insertText("  ", replacementRange: selectedRange())
+            insertText(CodeIndent.indentUnit, replacementRange: selectedRange())
         }
     }
 

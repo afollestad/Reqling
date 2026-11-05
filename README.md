@@ -43,6 +43,7 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Any method, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
 - Bodies: **raw** with any Content-Type, **form-data**, **x-www-form-urlencoded**, **binary**, and **GraphQL** (a query and its variables, sent as the JSON body GraphQL servers expect; see [GraphQL](#graphql)).
 - Auth: Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
+- JSON editors and the GraphQL query editor indent as you press Return: a new line keeps the one above's indentation, goes a level deeper after `{` or `[`, and a bracket left open gets its closer on the line after, with the cursor between. A `}` or `]` typed at the start of a line moves back to its opener's indentation.
 - Untick a parameter, header, form field, or variable to keep it but leave it out. Shift-click a checkbox to set every row between it and the last one you clicked, or use **Select All** and **Select None** above the rows.
 - Automatic headers are listed alongside your own, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`). Add a header with the same name to replace one; switching off `User-Agent`, `Accept`, or `Content-Type` stops Reqling setting it, and macOS then sends its own default.
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
