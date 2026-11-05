@@ -15,7 +15,8 @@ final class GRPCResponseViewModelTests: XCTestCase {
         fixture = AppFixture()
         project = try fixture.library.createProject(named: "Streams")
         request = try GRPCFixtures.addRequest(named: "Chat", spec: GRPCFixtures.descriptorSetSpec(method: "Chat"), to: project, in: fixture)
-        response = GRPCResponseViewModel(requestID: request, projectID: project, runner: fixture.component.requestRunner)
+        let history = RunHistoryViewModel(projectID: project, requestID: request, app: fixture.model)
+        response = GRPCResponseViewModel(requestID: request, projectID: project, runner: fixture.component.requestRunner, history: history)
     }
 
     override func tearDown() async throws {

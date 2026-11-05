@@ -12,6 +12,8 @@ public final class RunHistory {
     /// Bumped whenever any request's runs or outcome change; `runs(for:in:)` and `outcome(for:in:)` read it, so views
     /// showing either follow along.
     public private(set) var revision = 0
+    /// Bytes every request's runs take on disk; `nil` until pruning first weighs them, as it does at launch.
+    public private(set) var storedBytes: Int?
 
     @ObservationIgnored private let writer: RunHistoryWriter
     @ObservationIgnored private let settings: SettingsStore
@@ -19,11 +21,20 @@ public final class RunHistory {
     /// Lists read so far; a request missing here is read from disk on first use.
     @ObservationIgnored private var lists: [RunKey: [RunSummary]] = [:]
     @ObservationIgnored private var outcomes: [ProjectID: [RequestNodeID: RunOutcomeKind]] = [:]
+    /// Told what pruning took, after the lists catch up; `RequestRunner` drops those runs from its `latest`.
+    @ObservationIgnored var onPrune: ((RunHistoryWriter.Removal) -> Void)?
 
     public init(directory: URL, settings: SettingsStore, now: @escaping @Sendable () -> Date = { Date() }) {
         writer = RunHistoryWriter(store: RunHistoryStore(directory: directory))
         self.settings = settings
         self.now = now
+        // Ends with the writer, which finishes the stream when this history goes.
+        let sizes = writer.sizes
+        Task { [weak self] in
+            for await size in sizes {
+                self?.storedBytes = size
+            }
+        }
     }
 
     /// The request's runs, newest first.
@@ -52,11 +63,6 @@ public final class RunHistory {
     /// Prunes under the current settings, as at launch and after they change; a recorded run prunes on its own.
     public func prune() {
         writer.prune(policy: policy, now: now(), onRemove: removalHandler)
-    }
-
-    /// Bytes every request's runs take on disk.
-    public func totalSize() async -> Int {
-        await writer.totalSize()
     }
 
     /// Waits for every run still being written. Call it before quitting, and in tests that read a run's files.
@@ -141,6 +147,7 @@ public final class RunHistory {
             // Pruning takes a request's newest run only with all the rest, so its outcome may be gone; reread it.
             outcomes[key.projectID] = nil
         }
+        onPrune?(removal)
         revision += 1
     }
 }

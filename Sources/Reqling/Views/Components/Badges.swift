@@ -46,11 +46,12 @@ struct StatusBadge: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(color))
+            .background(Capsule().fill(Self.color(for: statusCode)))
             .accessibilityLabel("Status \(statusCode) \(reason)")
     }
 
-    private var color: Color {
+    /// Tinted by class, which the run history's compact badges share.
+    static func color(for statusCode: Int) -> Color {
         switch statusCode {
         case 200..<300: .green
         case 300..<400: .blue
@@ -86,13 +87,14 @@ struct GRPCStatusBadge: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(color))
+            .background(Capsule().fill(Self.color(for: status.name)))
             .help("Status \(status.code)")
             .accessibilityLabel("Status \(status.name)")
     }
 
-    private var color: Color {
-        switch status.name {
+    /// Tinted by outcome, which the run history's compact badges share.
+    static func color(for name: String) -> Color {
+        switch name {
         case "OK": .green
         case "CANCELLED": .gray
         case "DEADLINE_EXCEEDED", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "ABORTED": .orange

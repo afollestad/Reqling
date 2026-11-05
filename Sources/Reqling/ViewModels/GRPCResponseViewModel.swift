@@ -47,19 +47,22 @@ final class GRPCResponseViewModel {
 
     let requestID: RequestNodeID
     let projectID: ProjectID
+    /// Which run shows: the latest, or one picked in the inspector.
+    let history: RunHistoryViewModel
     @ObservationIgnored private let runner: RequestRunner
     @ObservationIgnored private var cache = GRPCTimelineCache()
     @ObservationIgnored private var treeCache = GRPCMessageTreeCache()
 
-    init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner) {
+    init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner, history: RunHistoryViewModel) {
         self.requestID = requestID
         self.projectID = projectID
         self.runner = runner
+        self.history = history
         _ = runner.exchange(for: requestID, in: projectID)
     }
 
     var exchange: RequestExchange? {
-        runner.latest[RunKey(requestID, in: projectID)]
+        history.shownExchange
     }
 
     var isSending: Bool {

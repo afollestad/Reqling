@@ -1,7 +1,7 @@
 import ReqlingKit
 import SwiftUI
 
-/// The selected gRPC request: its editor above its latest call.
+/// The selected gRPC request: its editor above its latest call, or the run picked in its history.
 struct GRPCEditorView: View {
     let editor: GRPCEditorViewModel
     let model: AppModel
@@ -13,6 +13,7 @@ struct GRPCEditorView: View {
             GRPCResponseView(response: editor.response)
                 .frame(minHeight: 180)
         }
+        .modifier(RunHistoryPresentations(history: editor.history))
     }
 }
 
@@ -29,6 +30,9 @@ struct GRPCEditorPane: View {
                 .disabled(editor.isReadOnly)
             if let note = editor.unavailableNote {
                 RequestEditorNotice(text: note, systemImage: "exclamationmark.triangle", onDismiss: nil)
+            }
+            if let notice = editor.notice {
+                RequestEditorNotice(text: notice, systemImage: "info.circle") { editor.notice = nil }
             }
             VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 // Left enabled, so a read-only request's sections stay browsable.

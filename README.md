@@ -48,6 +48,7 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
 - Responses show status, timing per phase, headers, and the body. JSON and XML open as collapsible trees, with any value, key, or path a right-click away; Pretty re-indents JSON without reordering keys, and Raw shows the body as sent. Bodies of any size stay highlighted and scroll smoothly, and images preview.
 - ⌘F finds within the focused body editor, and searches a response's text or tree in place.
+- Every run is kept in the request's history (**Request ▸ Show Run History**, ⌘Y): pick one to see its response again, re-run it, or restore its request into the editor. History stays on this Mac, never in the project; **Settings ▸ History** sets how long and how much is kept, and **Clear Run History…** in the sidebar's menus clears a request's or a project's.
 
 ## gRPC
 

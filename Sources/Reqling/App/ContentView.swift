@@ -68,8 +68,8 @@ struct ContentView: View {
                 Button("Change to \(change.kind.title)", role: .destructive) { model.applyKindChange(change) }
             } message: { change in
                 Text(change.kind == .grpc
-                    ? "Its auth, headers, host, and timeout carry over. Its method, query, and body are discarded."
-                    : "Its auth, metadata, target, and deadline carry over. Its service, method, and messages are discarded.")
+                    ? "Its auth, headers, host, and timeout carry over. Its method, query, body, and run history are discarded."
+                    : "Its auth, metadata, target, and deadline carry over. Its service, method, messages, and run history are discarded.")
             }
             .confirmationDialog(
                 "Move this project to the Trash?",
@@ -82,6 +82,7 @@ struct ContentView: View {
             } message: { _ in
                 Text("Its folder goes to the Trash, where Finder can put it back. Its secret values are removed from your Keychain.")
             }
+            .modifier(HistoryClearConfirmation(model: model))
     }
 
     static func colorScheme(for theme: AppTheme) -> ColorScheme? {
@@ -89,6 +90,25 @@ struct ContentView: View {
         case .system: nil
         case .light: .light
         case .dark: .dark
+        }
+    }
+}
+
+/// Asks before run history is cleared; it lives only on this Mac, so nothing can bring it back.
+private struct HistoryClearConfirmation: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            model.historyClearPending?.title ?? "",
+            isPresented: Binding(get: { model.historyClearPending != nil }, set: { if !$0 { model.historyClearPending = nil } }),
+            titleVisibility: .visible,
+            // The action takes the scope from here: dismissal may clear `historyClearPending` first.
+            presenting: model.historyClearPending
+        ) { scope in
+            Button("Clear History", role: .destructive) { model.clearHistory(scope) }
+        } message: { _ in
+            Text("Past runs and their responses are deleted from this Mac. This can't be undone.")
         }
     }
 }
@@ -130,6 +150,26 @@ private struct DetailView: View {
     let model: AppModel
 
     var body: some View {
+        content
+            .inspector(isPresented: Binding(
+                get: { model.showsRunHistory && model.editor != nil },
+                // Only the person hides it; the inspector going with its editor must not forget that it was open.
+                set: { isPresented in
+                    if model.editor != nil {
+                        model.showsRunHistory = isPresented
+                    }
+                }
+            )) {
+                if let editor = model.editor {
+                    RunHistoryInspector(history: editor.history)
+                        .id(editor.identity)
+                        .inspectorColumnWidth(min: 220, ideal: 260, max: 380)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if model.isShowingSettings {
             SettingsScreen(model: model)
         } else if let editor = model.editor {
@@ -184,6 +224,11 @@ private struct MainToolbar: ToolbarContent {
                 EnvironmentPicker(document: document, active: model.activeEnvironmentID(for: project), model: model)
             }
         }
+        ToolbarItem(id: MainToolbarItemID.history, placement: .primaryAction) {
+            if model.editor != nil {
+                RunHistoryToolbarButton(isShown: model.showsRunHistory) { model.toggleRunHistory() }
+            }
+        }
         ToolbarItem(id: MainToolbarItemID.settings, placement: .primaryAction) {
             SettingsToolbarButton(badge: model.updates.badgeState) { model.openSettingsFromToolbar() }
         }
@@ -221,6 +266,21 @@ private struct EnvironmentPicker: View {
 
     private var activeName: String {
         document.environment(active ?? document.defaultEnvironment.id)?.name ?? RequestEnvironment.defaultName
+    }
+}
+
+/// Shows or hides the selected request's run history beside its editor.
+private struct RunHistoryToolbarButton: View {
+    let isShown: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "clock.arrow.circlepath")
+        }
+        .help(isShown ? "Hide Run History (⌘Y)" : "Show Run History (⌘Y)")
+        .accessibilityLabel("Run History")
+        .accessibilityValue(isShown ? "Shown" : "Hidden")
     }
 }
 

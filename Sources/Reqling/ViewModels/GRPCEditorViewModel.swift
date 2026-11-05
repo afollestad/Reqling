@@ -39,6 +39,9 @@ final class GRPCEditorViewModel {
     var liveMessage = "{}"
     /// Why the last live send failed; the next send clears it.
     private(set) var liveError: String?
+    /// A non-blocking note, such as which run a restore put back.
+    var notice: String?
+    let history: RunHistoryViewModel
     let response: GRPCResponseViewModel
     let schema: GRPCSchemaLoader
 
@@ -52,7 +55,8 @@ final class GRPCEditorViewModel {
         let draft = RequestDraft(projectID: projectID, requestID: requestID, app: app, coding: Self.coding, fallback: GRPCRequestSpec())
         self.draft = draft
         spec = draft.saved
-        response = GRPCResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner)
+        history = RunHistoryViewModel(projectID: projectID, requestID: requestID, app: app)
+        response = GRPCResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner, history: history)
         schema = GRPCSchemaLoader(projectID: projectID, requestID: requestID, app: app)
         draft.onAutosave = { [weak self] in
             guard let self else {
@@ -64,6 +68,16 @@ final class GRPCEditorViewModel {
             self?.flush()
         }
         schema.start()
+        history.editor = self
+    }
+
+    /// Puts a past run's template back; autosave stores it, and the schema reloads if its source changed.
+    func restore(_ spec: RequestKind, from date: Date) {
+        guard !isReadOnly, let restored = spec.grpcSpec else {
+            return
+        }
+        self.spec = restored
+        notice = RunHistoryViewModel.restoredNotice(sentAt: date)
     }
 
     // MARK: - Derived state
@@ -233,6 +247,8 @@ final class GRPCEditorViewModel {
     /// and ⌘Return (the menu's Send) is also how the composer sends. It shows the Messages tab first, where the
     /// composer and any error it reports are.
     func send() {
+        // Either way the latest call is where the message goes.
+        history.showLatest()
         guard !isStreamOpen else {
             tab = .messages
             sendLiveMessage()

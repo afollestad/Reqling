@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// What this Mac remembers about the workspace that does not belong in project files: the active environment,
-/// sidebar expansion, the selection, absolute paths behind `ProjectPathReference.local`, and Keychain identity
+/// sidebar expansion, the selection, whether run history shows, absolute paths behind `ProjectPathReference.local`, and Keychain identity
 /// references. Keeping these out of the project means switching environments never shows up in `git status`.
 public struct WorkspaceState: Codable, Equatable, Sendable {
     public var projects: [String: ProjectWorkspaceState] = [:]
@@ -11,6 +11,8 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
     public var unclaimedLocalPaths: [String: String] = [:]
     public var keychainIdentities: [String: Data] = [:]
     public var selection: WorkspaceSelection?
+    /// Whether the window shows the selected request's run history beside its editor.
+    public var showsRunHistory = false
 
     public init() {}
 
@@ -20,6 +22,7 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
         unclaimedLocalPaths = try container.decodeIfPresent([String: String].self, forKey: .unclaimedLocalPaths) ?? [:]
         keychainIdentities = try container.decodeIfPresent([String: Data].self, forKey: .keychainIdentities) ?? [:]
         selection = try container.decodeIfPresent(WorkspaceSelection.self, forKey: .selection)
+        showsRunHistory = try container.decodeIfPresent(Bool.self, forKey: .showsRunHistory) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -27,6 +30,7 @@ public struct WorkspaceState: Codable, Equatable, Sendable {
         case unclaimedLocalPaths = "localPaths"
         case keychainIdentities
         case selection
+        case showsRunHistory
     }
 }
 

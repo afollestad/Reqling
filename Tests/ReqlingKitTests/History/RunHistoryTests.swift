@@ -37,6 +37,7 @@ final class RunHistoryTests: XCTestCase {
         XCTAssertEqual(history.outcome(for: key.requestID, in: key.projectID), .succeeded)
         await waitUntil("pruned") { history.runs(for: key.requestID, in: key.projectID).count == 1 }
         XCTAssertEqual(history.runs(for: key.requestID, in: key.projectID).map(\.id), [new.id])
+        await waitUntil("weighed") { (history.storedBytes ?? 0) > 0 }
         let pruned = await history.exchange(old.id, for: key.requestID, in: key.projectID)
         XCTAssertNil(pruned)
     }

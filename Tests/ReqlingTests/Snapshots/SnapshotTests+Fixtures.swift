@@ -77,4 +77,26 @@ struct SnapshotProject {
             outcome: outcome
         ))
     }
+
+    /// Stores one of several runs, newest last, as earlier sessions would have.
+    @discardableResult
+    func storeRun(
+        _ outcome: RequestExchange.Outcome,
+        for request: RequestNodeID,
+        at seconds: TimeInterval,
+        environment: String = "Default",
+        in fixture: AppFixture
+    ) -> RequestExchange {
+        let exchange = RequestExchange(
+            projectID: id,
+            requestID: request,
+            startedAt: Date(timeIntervalSince1970: seconds),
+            environmentName: environment,
+            spec: .http(HTTPRequestSpec(url: "https://api.example.com/users")),
+            request: nil,
+            outcome: outcome
+        )
+        RunHistoryStore(directory: fixture.profile.historyDirectory).save(exchange)
+        return exchange
+    }
 }

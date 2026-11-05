@@ -14,14 +14,24 @@ final class RunHistoryWriter: Sendable {
     /// Runs pruning took, by request.
     typealias Removal = [RunKey: Set<RunID>]
 
+    /// Bytes every request's runs take on disk, after each change once pruning has first weighed them; only the newest
+    /// matters, so older ones are dropped unread.
+    let sizes: AsyncStream<Int>
+
     private let store: RunHistoryStore
     private let queue = DispatchQueue(label: "com.afollestad.reqling.run-history", qos: .utility)
     /// Every request's entries, newest first: read from disk the first time pruning weighs them, then kept in step with
     /// each change. Only `queue` touches it; the lock only makes that checkable.
     private let catalog = Mutex<[RunKey: [RunHistoryStore.Entry]]?>(nil)
+    private let sizeContinuation: AsyncStream<Int>.Continuation
 
     init(store: RunHistoryStore) {
         self.store = store
+        (sizes, sizeContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+    }
+
+    deinit {
+        sizeContinuation.finish()
     }
 
     /// Writes the run, then prunes under `policy`, reporting any runs that took.
@@ -71,22 +81,11 @@ final class RunHistoryWriter: Sendable {
         queue.sync { store.outcomes(in: project) }
     }
 
-    /// Bytes every request's runs take on disk.
-    func totalSize() async -> Int {
-        await withCheckedContinuation { continuation in
-            queue.async { [self] in
-                let size = catalog.withLock { catalog in
-                    loaded(&catalog).values.joined().reduce(0) { $0 + $1.storedByteCount }
-                }
-                continuation.resume(returning: size)
-            }
-        }
-    }
-
     func removeAll(for request: RequestNodeID, in project: ProjectID) {
         queue.sync {
             store.removeAll(for: request, in: project)
             _ = catalog.withLock { $0?.removeValue(forKey: RunKey(request, in: project)) }
+            reportSize()
         }
     }
 
@@ -96,6 +95,7 @@ final class RunHistoryWriter: Sendable {
             catalog.withLock { catalog in
                 catalog = catalog?.filter { $0.key.projectID != project }
             }
+            reportSize()
         }
     }
 
@@ -103,18 +103,16 @@ final class RunHistoryWriter: Sendable {
         queue.sync {
             store.removeEverything()
             catalog.withLock { $0 = [:] }
+            reportSize()
         }
     }
 
+    /// Read back from disk at the next prune rather than re-keyed: a request with no runs, or one whose folder could not
+    /// move and was dropped, would leave the catalog counting runs that are not where it says.
     func move(_ requests: [RequestNodeID], from source: ProjectID, to destination: ProjectID) {
         queue.sync {
             store.move(requests, from: source, to: destination)
-            catalog.withLock { catalog in
-                for request in requests {
-                    let entries = catalog?.removeValue(forKey: RunKey(request, in: source))
-                    catalog?[RunKey(request, in: destination)] = entries
-                }
-            }
+            catalog.withLock { $0 = nil }
         }
     }
 
@@ -179,7 +177,18 @@ final class RunHistoryWriter: Sendable {
         for (key, runs) in removal {
             store.remove(runs, for: key.requestID, in: key.projectID)
         }
+        reportSize()
         return removal
+    }
+
+    /// Publishes the catalog's total, once pruning has loaded it.
+    private func reportSize() {
+        let total = catalog.withLock { catalog in
+            catalog.map { $0.values.joined().reduce(0) { $0 + $1.storedByteCount } }
+        }
+        if let total {
+            sizeContinuation.yield(total)
+        }
     }
 
     private func loaded(_ catalog: inout [RunKey: [RunHistoryStore.Entry]]?) -> [RunKey: [RunHistoryStore.Entry]] {

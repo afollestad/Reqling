@@ -96,8 +96,9 @@ final class RunHistoryWriterTests: XCTestCase {
         await fulfillment(of: [reported], timeout: 10)
 
         XCTAssertEqual(writer.summaries(for: key.requestID, in: key.projectID).map(\.id), [new.id])
-        let size = await writer.totalSize()
-        XCTAssertEqual(size, store.entries(for: key.requestID, in: key.projectID).first?.storedByteCount)
+        var sizes = writer.sizes.makeAsyncIterator()
+        let size = await sizes.next()
+        XCTAssertEqual(size, store.entries(for: key.requestID, in: key.projectID).first?.storedByteCount, "the newest total only")
     }
 
     private func entry(_ key: RunKey, at date: Date) -> RunHistoryStore.Entry {

@@ -1,17 +1,22 @@
 import ReqlingKit
 import SwiftUI
 
-/// The latest exchange of the selected request.
+/// The selected request's latest exchange, or the past run picked in its history.
 struct ResponseView: View {
     @Bindable var response: ResponseViewModel
     let model: AppModel
 
     var body: some View {
+        let history = response.history
         VStack(spacing: 0) {
             ResponseStatusBar(exchange: response.exchange, isSending: response.isSending)
+            PinnedRunBar(history: history)
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: history.pinnedRunID) {
+            await history.loadPinned()
         }
     }
 
@@ -35,6 +40,8 @@ struct ResponseView: View {
                     response.startShaping(pendingShape)
                 }
             }
+        } else if let status = response.history.pinnedStatus {
+            PinnedRunPlaceholder(status: status, history: response.history)
         } else if response.isSending {
             ProgressView("Sending…")
         } else {

@@ -103,6 +103,9 @@ public final class RequestRunner {
         self.dynamic = dynamic
         self.grpcSchemas = grpcSchemas
         self.makeExecutor = makeExecutor
+        history.onPrune = { [weak self] removal in
+            self?.dropPruned(removal)
+        }
     }
 
     /// The latest exchange: from this session, or else the newest in the history.
@@ -273,41 +276,8 @@ public final class RequestRunner {
         latest[key] = nil
     }
 
-    /// Clears one request's history, leaving a run in flight to record when it finishes; an open gRPC call keeps
-    /// showing as it goes.
-    public func clearHistory(for request: RequestNodeID, in project: ProjectID) {
-        let key = RunKey(request, in: project)
-        history.clear(for: request, in: project)
-        if liveCalls[key] == nil {
-            latest[key] = nil
-        }
-    }
-
-    /// Clears every request's history in a project, as `clearHistory(for:in:)` does one's.
-    public func clearHistory(in project: ProjectID) {
-        history.clear(in: project)
-        latest = latest.filter { $0.key.projectID != project || liveCalls[$0.key] != nil }
-    }
-
-    /// Clears every project's history, as `clearHistory(for:in:)` does one request's.
-    public func clearAllHistory() {
-        history.clearAll()
-        latest = latest.filter { liveCalls[$0.key] != nil }
-    }
-
-    /// Carries requests' history into another project, as when they move there keeping their IDs. Their runs in flight
-    /// are cancelled and detached, since they resolve against the project being left.
-    public func moveHistory(of requests: [RequestNodeID], from source: ProjectID, to destination: ProjectID) {
-        for request in requests {
-            let key = RunKey(request, in: source)
-            detach(key)
-            latest[key] = nil
-        }
-        history.move(requests, from: source, to: destination)
-    }
-
     /// Cancels a run and forgets it is running, so it can never publish or record.
-    private func detach(_ key: RunKey) {
+    func detach(_ key: RunKey) {
         tasks.removeValue(forKey: key)?.cancel()
         inFlight.remove(key)
         liveCalls[key] = nil

@@ -35,6 +35,7 @@ final class RequestEditorViewModel {
     var tab: RequestEditorTab = .params
     /// A non-blocking note, such as what a cURL import could not carry over.
     var notice: String?
+    let history: RunHistoryViewModel
     let response: ResponseViewModel
 
     /// The URL bar's text exactly as typed. `HTTPRequestSpec.displayURL` cannot show a trailing `?`, `=`, or `&`, so a
@@ -55,13 +56,15 @@ final class RequestEditorViewModel {
         self.draft = draft
         spec = draft.saved
         typedURL = draft.saved.displayURL
-        response = ResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner)
+        history = RunHistoryViewModel(projectID: projectID, requestID: requestID, app: app)
+        response = ResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner, history: history)
         draft.onAutosave = { [weak self] in
             guard let self else {
                 return
             }
             show(self.draft.autosave(spec))
         }
+        history.editor = self
     }
 
     // MARK: - Derived state
@@ -156,6 +159,15 @@ final class RequestEditorViewModel {
         return true
     }
 
+    /// Puts a past run's template back, as `importCurl` replaces the request; autosave stores it.
+    func restore(_ spec: RequestKind, from date: Date) {
+        guard !isReadOnly, let restored = spec.httpSpec else {
+            return
+        }
+        self.spec = restored
+        notice = RunHistoryViewModel.restoredNotice(sentAt: date)
+    }
+
     /// Picks a file for a binary body or a form-data part.
     func chooseFile() -> ProjectPathReference? {
         guard let url = app.system.chooseFile(prompt: "Choose", allowedTypes: []) else {
@@ -175,6 +187,7 @@ final class RequestEditorViewModel {
 
     func send() {
         flush()
+        history.showLatest()
         Task {
             await app.runner.run(requestID, in: projectID)
         }

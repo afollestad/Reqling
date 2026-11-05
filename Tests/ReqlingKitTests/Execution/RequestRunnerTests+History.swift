@@ -1,5 +1,5 @@
 import Foundation
-import ReqlingKit
+@testable import ReqlingKit
 import XCTest
 
 /// What the runner records into the history, and how clearing, deleting, and moving requests keep it in step.
@@ -127,6 +127,20 @@ extension RequestRunnerTests {
         XCTAssertEqual(runner.history.runs(for: request.id, in: destination), [])
         XCTAssertEqual(runner.history.runs(for: copied.nodeID, in: taken), [])
         XCTAssertEqual(runner.history.runs(for: request.id, in: taken), [], "the request already there keeps its own (empty) history")
+    }
+
+    /// A run pruned from the history leaves `latest` too, so the response pane never shows a run its history dropped.
+    func testAPrunedRunLeavesTheLatestExchange() throws {
+        let project = try fixture.library.createProject(named: "Pruned")
+        let request = RequestItem.http("Pruned")
+        try fixture.library.mutate(project) { try $0.insert(.request(request), into: nil) }
+        let run = seedRun(for: request.id, in: project)
+        let runner = makeRunner()
+        XCTAssertEqual(runner.exchange(for: request.id, in: project)?.id, run.id)
+
+        runner.history.onPrune?([RunKey(request.id, in: project): [run.id]])
+
+        XCTAssertNil(runner.latest[RunKey(request.id, in: project)])
     }
 
     /// Stored the way a recorded run is, before any runner reads the history.

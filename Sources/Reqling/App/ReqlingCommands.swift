@@ -52,6 +52,10 @@ struct ReqlingCommands: Commands {
                 .keyboardShortcut("c", modifiers: [.command, .option])
                 .disabled(model.editor?.asHTTP == nil)
             Divider()
+            Button(model.showsRunHistory ? "Hide Run History" : "Show Run History") { model.toggleRunHistory() }
+                .keyboardShortcut("y", modifiers: .command)
+                .disabled(model.editor == nil)
+            Divider()
             Button("Environments…") {
                 if let project = model.activeProjectID {
                     model.sheet = .environments(project)

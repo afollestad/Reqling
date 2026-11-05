@@ -89,6 +89,8 @@ final class AppModel {
     var projectPendingDeletion: ProjectID?
     /// A protocol switch awaiting confirmation because it would discard part of the request.
     var kindChangePending: RequestKindChange?
+    /// Run history awaiting confirmation before it is cleared, which cannot be undone.
+    var historyClearPending: HistoryClearScope?
     /// The project or item being renamed, with the name typed so far. Dismissing the dialog clears only `isRenaming`,
     /// never this, so its Rename action reads the typed name whichever order SwiftUI runs the dismissal and action in.
     var renaming: RenameTarget?
@@ -425,6 +427,7 @@ final class AppModel {
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case updates
     case grpc
+    case history
     case interface
     case mcp
     case requests
@@ -437,6 +440,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .updates: "App Updates"
         case .grpc: "gRPC"
+        case .history: "History"
         case .interface: "Interface"
         case .mcp: "MCP"
         case .requests: "Requests"
@@ -447,6 +451,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .updates: "arrow.down.circle"
         case .grpc: "point.3.connected.trianglepath.dotted"
+        case .history: "clock.arrow.circlepath"
         case .interface: "paintbrush"
         case .mcp: "sparkles"
         case .requests: "arrow.up.arrow.down"
@@ -457,6 +462,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .updates: "New versions of Reqling, downloaded and verified before they install."
         case .grpc: "The protoc that compiles project protos, and defaults for gRPC calls."
+        case .history: "Each request's past runs, kept on this Mac and never in the project."
         case .interface: "How Reqling looks."
         case .mcp: "A local server that lets AI agents on this Mac use your projects and send requests."
         case .requests: "Defaults for every request; a request's own options override them."

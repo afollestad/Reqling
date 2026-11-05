@@ -97,6 +97,7 @@ private struct SidebarProjectMenu: View {
             Button("Environments…") { model.sheet = .environments(project.id) }
             Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
             Button("Rename…") { model.beginRename(nil, in: project.id) }
+            Button("Clear Run History…") { model.requestClearHistory(of: project.id) }
             Divider()
         }
         Button("Reveal in Finder") { model.revealProject(project.id) }
@@ -215,6 +216,9 @@ private struct SidebarItemMenu: View {
                 model.selection = .node(projectID, nodeID)
                 model.editor?.asHTTP?.copyAsCurl()
             }
+        }
+        if request != nil {
+            Button("Clear Run History…") { model.requestClearHistory(of: nodeID, in: projectID) }
         }
         Divider()
         Button("Move to Trash", role: .destructive) { model.delete(nodeID, in: projectID) }

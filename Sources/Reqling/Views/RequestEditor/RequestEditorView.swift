@@ -1,7 +1,7 @@
 import ReqlingKit
 import SwiftUI
 
-/// The selected request: its editor above its latest response.
+/// The selected request: its editor above its latest response, or the run picked in its history.
 struct RequestEditorView: View {
     let editor: RequestEditorViewModel
     let model: AppModel
@@ -13,6 +13,7 @@ struct RequestEditorView: View {
             ResponseView(response: editor.response, model: model)
                 .frame(minHeight: 180)
         }
+        .modifier(RunHistoryPresentations(history: editor.history))
     }
 }
 

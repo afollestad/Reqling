@@ -67,6 +67,8 @@ private struct SettingsDetail: View {
                     AppUpdatesSettingsPage(model: model)
                 case .grpc:
                     GRPCSettingsPage(settings: model.settings, tooling: model.protocTooling)
+                case .history:
+                    HistorySettingsPage(model: model)
                 case .interface:
                     InterfaceSettingsPage(settings: model.settings)
                 case .mcp:

@@ -49,7 +49,8 @@ struct ResponseBodyPresentation {
     static let empty = ResponseBodyPresentation(content: .empty, availableModes: [], mode: nil, pendingShape: nil)
 }
 
-/// The latest exchange for one request, shaped for display.
+/// The exchange the response pane shows for one request, the latest or a run picked from its history, shaped for
+/// display.
 ///
 /// Shaping a body (decoding it, pretty-printing a large JSON payload) runs once per exchange and mode: small bodies
 /// inline, larger ones off the main actor through `ResponseViewModel+Shaping`, which the view starts from its
@@ -63,6 +64,8 @@ final class ResponseViewModel {
 
     let requestID: RequestNodeID
     let projectID: ProjectID
+    /// Which run shows: the latest, or one picked in the inspector.
+    let history: RunHistoryViewModel
     /// Searching the body, whichever format shows it; the query carries over between formats.
     let search = BodySearchModel()
     /// The section bar's Expand All and Collapse All, reaching the tree on screen.
@@ -76,15 +79,16 @@ final class ResponseViewModel {
     @ObservationIgnored var shapingTask: Task<ShapedBody, any Error>?
     @ObservationIgnored private var sentBodyCache: (startedAt: Date, document: TextDocument?)?
 
-    init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner) {
+    init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner, history: RunHistoryViewModel) {
         self.requestID = requestID
         self.projectID = projectID
         self.runner = runner
+        self.history = history
         _ = runner.exchange(for: requestID, in: projectID)
     }
 
     var exchange: RequestExchange? {
-        runner.latest[RunKey(requestID, in: projectID)]
+        history.shownExchange
     }
 
     var isSending: Bool {

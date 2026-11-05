@@ -1,3 +1,4 @@
+import Foundation
 import ReqlingKit
 
 /// What every request editor offers whatever protocol its request speaks, so `AppModel`'s selection, flushing, quit
@@ -22,6 +23,12 @@ protocol RequestEditing: AnyObject {
     func adoptExternalChange()
     func send()
     func cancel()
+    /// The request's runs beside the editor, which also decide which run the response pane shows.
+    var history: RunHistoryViewModel { get }
+    /// The draft, as a past run's template compares with it.
+    var currentSpec: RequestKind { get }
+    /// Replaces the draft with a past run's template, sent at `date`; a spec of the other protocol is ignored.
+    func restore(_ spec: RequestKind, from date: Date)
 }
 
 extension RequestEditing {
@@ -44,11 +51,19 @@ extension RequestEditorViewModel: RequestEditing {
     var kind: RequestKind.Name {
         .http
     }
+
+    var currentSpec: RequestKind {
+        .http(spec)
+    }
 }
 
 extension GRPCEditorViewModel: RequestEditing {
     var kind: RequestKind.Name {
         .grpc
+    }
+
+    var currentSpec: RequestKind {
+        .grpc(spec)
     }
 }
 
@@ -123,6 +138,10 @@ enum RequestEditor: Equatable {
 
     var hasUnsavedChanges: Bool {
         editing.hasUnsavedChanges
+    }
+
+    var history: RunHistoryViewModel {
+        editing.history
     }
 
     func flush() {
