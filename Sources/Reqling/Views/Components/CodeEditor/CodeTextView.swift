@@ -49,7 +49,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// Set when a width change may have re-wrapped the pills, so `layout()` rebuilds the tooltip rectangles.
     private var needsToolTipRefresh = false
     /// True while the completion list is open: AppKit inserts each highlighted name provisionally, then once finally.
-    private var isCompleting = false
+    private(set) var isCompleting = false
     /// An outside change that arrived while an input method was composing; see `replaceText(with:)`.
     var textWaitingOnComposition: String?
     /// Problems to underline, from `CodeEditor`; see `CodeTextView+Diagnostics`.
@@ -61,6 +61,8 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         }
     }
     var shownDiagnostics = ShownDiagnostics()
+    /// The assistant's completion list and hover card; see `CodeTextView+Completion` and `+Hover`.
+    let assistance = CodeEditorAssistance()
 
     static func make(isSingleLine: Bool) -> CodeTextView {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -137,6 +139,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
             return
         }
         textWaitingOnComposition = nil
+        dismissCompletions()
         guard string != newText, let storage = textStorage else {
             return
         }
@@ -275,6 +278,9 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = newSize.width != frame.width
         super.setFrameSize(newSize)
+        if widthChanged {
+            dismissCompletions()
+        }
         if widthChanged, !templateTokens.isEmpty {
             needsToolTipRefresh = true
             needsLayout = true
@@ -311,6 +317,8 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     override func didChangeText() {
         super.didChangeText()
         refreshHighlighting()
+        hideHover()
+        updateAssistantCompletion()
         offerCompletionAfterOpeningBraces()
     }
 
@@ -333,6 +341,9 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// `.cancelAction` answers; Option-Escape and F5 still invoke `complete(_:)`. During a session AppKit keeps it, so
     /// Escape still dismisses the list.
     override func doCommand(by selector: Selector) {
+        if handleCompletionCommand(selector) {
+            return
+        }
         if selector == #selector(cancelOperation(_:)), !isCompleting {
             _ = nextResponder?.tryToPerform(selector, with: self)
             return
@@ -398,6 +409,8 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         let accepted = super.resignFirstResponder()
         if accepted {
             isCompleting = false
+            dismissCompletions()
+            hideHover()
             onFocusChange?(false)
         }
         return accepted

@@ -23,6 +23,8 @@ struct CodeEditor: NSViewRepresentable {
     var handle: CodeEditorHandle?
     /// Problems to underline; a set found in an older version of the text waits until it matches again.
     var diagnostics: CodeDiagnosticSet = .none
+    /// Suggests completions and describes names under the pointer; held weakly, so its owner keeps it.
+    var assistant: (any CodeEditorAssistant)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -69,6 +71,12 @@ struct CodeEditor: NSViewRepresentable {
         textView.replaceText(with: text)
         // After the text, which the set is stamped against.
         textView.diagnostics = diagnostics
+        if textView.assistance.assistant !== assistant {
+            textView.assistance.assistant = assistant
+            textView.dismissCompletions()
+            textView.hideHover()
+            textView.updateHoverTracking()
+        }
     }
 
     @MainActor

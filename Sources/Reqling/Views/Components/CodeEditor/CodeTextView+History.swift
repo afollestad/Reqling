@@ -36,6 +36,8 @@ extension CodeTextView {
     /// reaches the window's manager.
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window {
+            dismissCompletions()
+            hideHover()
             dropHistory()
             if let manager = undoManager, Self.historyOwners.object(forKey: manager) === self {
                 Self.historyOwners.removeObject(forKey: manager)
@@ -49,6 +51,7 @@ extension CodeTextView {
     /// A cancelled composition (marked text set to nothing) left the text as it was before, so the outside change
     /// that waited for it can apply now.
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        dismissCompletions()
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         if !hasMarkedText(), let waiting = textWaitingOnComposition {
             replaceText(with: waiting)
@@ -65,8 +68,11 @@ extension CodeTextView {
     }
 
     /// An input method commits by inserting over its marked text; that edit is newer than any waiting change.
+    /// Also marks the change as typed, which is what lets it open or narrow the assistant's completion list.
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let wasComposing = hasMarkedText()
+        assistance.typing = (string as? String) ?? (string as? NSAttributedString)?.string
+        defer { assistance.typing = nil }
         super.insertText(string, replacementRange: replacementRange)
         if wasComposing, !hasMarkedText() {
             textWaitingOnComposition = nil

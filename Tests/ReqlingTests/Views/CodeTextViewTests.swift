@@ -8,6 +8,8 @@ import XCTest
 @MainActor
 final class CodeTextViewTests: XCTestCase {
     let tokenContext = TemplateTokenContext(entries: ["token": .init(displayValue: "t", sourceName: "Default")])
+    /// Keeps what a text view holds weakly, such as its assistant, alive for the test.
+    var retained: [AnyObject] = []
 
     // MARK: - Completion
 
