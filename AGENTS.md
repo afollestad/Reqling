@@ -28,13 +28,14 @@ Read the nearest `AGENTS.md` before editing; every scoped folder pairs it with a
 - Pin dependencies exactly (`exact:` or `revision:`) and commit `Package.resolved`.
 - After changing a pin, run `swift package resolve` and confirm `.build/checkouts/<dep>` moved to the new revision before trusting a green build.
 - Never edit dependency sources under `.build/`; change the pin or the upstream package.
+- **`Tools/GraphQLFixtureServer` is a separate package**, used only by `ReqlingKitTests` and `scripts/graphql-server.sh`, so `scripts/build.sh` never builds it. Keep the pins it shares with the root identical and commit its own `Package.resolved`; a mismatched exact pin fails the root's resolution.
 - Debug builds are `com.afollestad.reqling.debug` ("Reqling Dev"). `scripts/build.sh` rewrites that identity and signs against `Config/CodeSigning/ReqlingDebugTCC.requirements`, so change both together.
 
 ## Build And Test
 
 - First-time setup: `./scripts/setup.sh`. It installs `xcsift`, `swiftlint`, `needle`, and `protobuf`, resolves packages, and installs the pre-commit hook.
 - DI generation needs `needle 0.25.1`, matching the pinned NeedleFoundation; see `Sources/Reqling/DI/AGENTS.md`.
-- Build: `./scripts/build.sh [--release]`. Run: `./scripts/run.sh [-b]`. Test: `./scripts/test.sh [filter ...]`. Snapshots: `./scripts/snapshots.sh <verify|record> [filter ...]`. Website screenshots: `./scripts/screenshots.sh [-b] [scene ...]`.
+- Build: `./scripts/build.sh [--release]`. Run: `./scripts/run.sh [-b]`. Test: `./scripts/test.sh [filter ...]`. Snapshots: `./scripts/snapshots.sh <verify|record> [filter ...]`. Website screenshots: `./scripts/screenshots.sh [-b] [scene ...]`. GraphQL server to try against: `./scripts/graphql-server.sh [--token T] [--no-introspection]`.
 - Run ordered workflows serially, never in parallel: build-then-run, build-then-test, record-then-verify.
 - There is no CI yet. Keep every test CI-safe anyway (`Tests/AGENTS.md`).
 - `TYPECHECK_BUDGET_MS=3000 TYPECHECK_TEST_BUDGET_MS=7000` fails a build or test run when any function body or expression in this repo's sources exceeds that type-check time. `scripts/lib/typecheck-budget.sh` owns the mechanism and the exemption procedure.

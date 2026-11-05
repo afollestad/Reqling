@@ -4,6 +4,8 @@ included:
   - Sources
   - Tests
   - Package.swift
+  - Tools/GraphQLFixtureServer/Sources
+  - Tools/GraphQLFixtureServer/Package.swift
 excluded:
   - Sources/Reqling/DI/Generated
   - Sources/ReqlingKit/GRPC/Reflection/Generated

@@ -97,6 +97,7 @@ Reqling checks this repository's GitHub Releases when it opens and every 6 hours
 ./scripts/test.sh [filter ...]   # run the tests; filters are `swift test --filter` patterns
 ./scripts/snapshots.sh verify    # verify snapshot baselines; `record` re-records them
 ./scripts/screenshots.sh -b      # capture the website's screenshots of a demo project, in light and dark
+./scripts/graphql-server.sh      # serve a GraphQL schema on 127.0.0.1:4000 to try GraphQL requests against
 ./scripts/lint.sh                # run SwiftLint (--fix to autocorrect)
 ./scripts/generate-protos.sh     # regenerate protobuf code and descriptor sets after changing a .proto
 ```
@@ -107,7 +108,7 @@ Debug builds use the `com.afollestad.reqling.debug` identity and appear as **Req
 
 Dependency injection uses [Needle](https://github.com/uber/needle). The build and test scripts regenerate its providers before compiling, which is why `setup.sh` installs the matching `needle` CLI.
 
-`ReqlingKit` holds everything that is not UI — the project format, templating, HTTP, gRPC, TLS, the request runner, and the MCP server — and is tested without the app. The tests are written to run unattended: servers bind loopback on ephemeral ports, and nothing touches your Keychain, Trash, or real Application Support. TLS certificates and keys are minted per run, never committed.
+`ReqlingKit` holds everything that is not UI — the project format, templating, HTTP, gRPC, TLS, the request runner, and the MCP server — and is tested without the app. The tests are written to run unattended: servers bind loopback on ephemeral ports, and nothing touches your Keychain, Trash, or real Application Support. GraphQL suites talk to `Tools/GraphQLFixtureServer`, a separate package that executes a real schema through [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL); `scripts/graphql-server.sh` runs it by hand, optionally requiring a bearer token or refusing introspection. TLS certificates and keys are minted per run, never committed.
 
 ## Building a release
 

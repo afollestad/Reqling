@@ -36,7 +36,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.0.3"),
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3"),
         // The built-in MCP server: protocol types, the server, and a stateless Streamable HTTP transport.
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1")
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
+        // Test-only: a loopback GraphQL server. A separate package, so `scripts/build.sh`, which builds every root
+        // product, never builds its executable; its pins must match these.
+        .package(path: "Tools/GraphQLFixtureServer")
     ],
     targets: [
         .target(
@@ -81,7 +84,8 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-                .product(name: "MCP", package: "swift-sdk")
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "GraphQLFixtureServer", package: "GraphQLFixtureServer")
             ],
             resources: [.copy("GRPC/Fixtures")]
         ),
