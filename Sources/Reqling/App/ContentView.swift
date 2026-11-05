@@ -263,9 +263,9 @@ private struct MainToolbar: ToolbarContent {
                 EnvironmentPicker(document: document, active: model.activeEnvironmentID(for: project), model: model)
             }
         }
-        ToolbarItem(id: MainToolbarItemID.history, placement: .primaryAction) {
+        ToolbarItem(id: MainToolbarItemID.inspector, placement: .primaryAction) {
             if model.editor != nil {
-                RunHistoryToolbarButton(isShown: model.showsRunHistory) { model.toggleRunHistory() }
+                InspectorToolbarButton(isShown: model.isInspectorShown) { model.toggleInspector() }
             }
         }
         ToolbarItem(id: MainToolbarItemID.settings, placement: .primaryAction) {
@@ -308,17 +308,17 @@ private struct EnvironmentPicker: View {
     }
 }
 
-/// Shows or hides the selected request's run history beside its editor.
-private struct RunHistoryToolbarButton: View {
+/// Shows or hides the inspector beside the selected request, on whichever panel it last showed.
+private struct InspectorToolbarButton: View {
     let isShown: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "clock.arrow.circlepath")
+            Image(systemName: "sidebar.trailing")
         }
-        .help(isShown ? "Hide Run History (⌘Y)" : "Show Run History (⌘Y)")
-        .accessibilityLabel("Run History")
+        .help(isShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
+        .accessibilityLabel("Inspector")
         .accessibilityValue(isShown ? "Shown" : "Hidden")
     }
 }

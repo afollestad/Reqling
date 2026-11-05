@@ -131,7 +131,8 @@ private struct GraphQLSchemaRow: View {
                 .help(Self.reloadHelp(source))
                 .accessibilityLabel("Reload the schema")
                 Toggle(isOn: Binding(get: { editor.isShowingGraphQLSchema }, set: { editor.isShowingGraphQLSchema = $0 })) {
-                    Image(systemName: "sidebar.trailing")
+                    // Not `sidebar.trailing`: that is the toolbar's inspector toggle, which keeps the open panel.
+                    Image(systemName: "list.bullet.rectangle")
                 }
                 .toggleStyle(IconToggleStyle())
                 .help("Browse the schema in the inspector (⌥⌘0)")

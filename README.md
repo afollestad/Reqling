@@ -48,7 +48,7 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
 - Responses show status, timing per phase, headers, and the body. JSON and XML open as collapsible trees, with any value, key, or path a right-click away; Pretty re-indents JSON without reordering keys, and Raw shows the body as sent. Bodies of any size stay highlighted and scroll smoothly, and images preview.
 - ⌘F finds within the focused body editor, and searches a response's text or tree in place.
-- Every run is kept in the request's history (**Request ▸ Show Run History**, ⌘Y): pick one to see its response again, re-run it, or restore its request into the editor, or select two and **Compare** them line by line, with JSON re-indented first so only real changes show. History stays on this Mac, never in the project; **Settings ▸ History** sets how long and how much is kept, and **Clear Run History…** in the sidebar's menus clears a request's or a project's.
+- Every run is kept in the request's history (**Request ▸ Show Run History**, ⌘Y, or the toolbar's inspector button): pick one to see its response again, re-run it, or restore its request into the editor, or select two and **Compare** them line by line, with JSON re-indented first so only real changes show. History stays on this Mac, never in the project; **Settings ▸ History** sets how long and how much is kept, and **Clear Run History…** in the sidebar's menus clears a request's or a project's.
 
 ## gRPC
 
@@ -71,7 +71,7 @@ The schema comes from one of two places, chosen in the **Schema** row:
 - **Introspection**, sent to the request's URL with its own headers, auth, and TLS settings as soon as the request opens, and cached on this Mac per endpoint, so the schema is there at once next time. The row says how old it is; reload to ask the server again.
 - **A schema file**, for servers that turn introspection off: SDL (`.graphql`, `.graphqls`, `.gql`) or a saved introspection result (`.json`). A file inside the project's folder or repository is stored relative to it; for one elsewhere, Reqling asks whether to share its path or remember it on this Mac only.
 
-**Request ▸ Show GraphQL Schema** (⌥⌘0) browses the schema in the inspector beside the request: the root types, then every type by kind, a filter over every type and field, and each type's fields, arguments, defaults, deprecations, and where it is used, with every type a click away.
+**Request ▸ Show GraphQL Schema** (⌥⌘0) browses the schema in the inspector beside the request: the root types, then every type by kind, a filter over every type and field, and each type's fields, arguments, defaults, deprecations, and where it is used, with every type a click away. The toolbar's inspector button and **View ▸ Show Inspector** (⌥⌘I) show or hide the inspector without switching between History and Schema.
 
 ## MCP server
 

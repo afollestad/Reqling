@@ -242,6 +242,26 @@ final class GraphQLEditorModelTests: XCTestCase {
         XCTAssertTrue(app.showsGraphQLSchema, "and the schema again once it has one")
     }
 
+    /// The toolbar's inspector toggle keeps whichever panel is open; the commands that name a panel switch to it.
+    func testTheInspectorToggleKeepsItsPanel() {
+        let app = fixture.model
+
+        app.toggleGraphQLSchema()
+        app.toggleInspector()
+        XCTAssertFalse(app.isInspectorShown, "it closes from the schema")
+        app.toggleInspector()
+        XCTAssertTrue(app.showsGraphQLSchema, "and reopens on it")
+        app.toggleRunHistory()
+        XCTAssertTrue(app.showsRunHistory, "⌘Y still switches to the history")
+
+        editor.isShowingGraphQLSchema = true
+        editor.spec.body.mode = .raw
+        app.toggleInspector()
+        XCTAssertFalse(app.isInspectorShown)
+        app.toggleInspector()
+        XCTAssertTrue(app.showsRunHistory, "a request with no schema opens on its history")
+    }
+
     func testTheBrowserListsRootsFirstThenKindsAndFollowsTypes() throws {
         let snapshot = try XCTUnwrap(model.schema.snapshot)
         let browser = model.browser

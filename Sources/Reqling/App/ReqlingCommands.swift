@@ -37,6 +37,9 @@ struct ReqlingCommands: Commands {
             // Not ⌘F: that stays with the editors' own Find.
             Button("Filter Sidebar") { model.sidebar.requestFocus() }
                 .keyboardShortcut("f", modifiers: [.command, .option])
+            Button(model.isInspectorShown && model.editor != nil ? "Hide Inspector" : "Show Inspector") { model.toggleInspector() }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                .disabled(model.editor == nil)
         }
         CommandMenu("Request") {
             // An open gRPC stream takes ⌘Return as its next message rather than a restarted call.

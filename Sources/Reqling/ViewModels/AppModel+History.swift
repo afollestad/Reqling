@@ -53,16 +53,22 @@ extension AppModel {
         isInspectorShown && shownInspectorPanel == .graphQLSchema
     }
 
+    /// The toolbar button and View ▸ Show Inspector: shows or hides the inspector on whichever panel was last chosen,
+    /// never switching it, unlike the commands that name a panel.
+    func toggleInspector() {
+        isInspectorShown.toggle()
+    }
+
     func toggleRunHistory() {
-        toggleInspector(.history)
+        toggle(.history)
     }
 
     func toggleGraphQLSchema() {
-        toggleInspector(.graphQLSchema)
+        toggle(.graphQLSchema)
     }
 
     /// Closes the inspector when it already shows `panel`, and otherwise opens it on `panel`.
-    private func toggleInspector(_ panel: InspectorPanel) {
+    private func toggle(_ panel: InspectorPanel) {
         if isInspectorShown, shownInspectorPanel == panel {
             isInspectorShown = false
         } else {

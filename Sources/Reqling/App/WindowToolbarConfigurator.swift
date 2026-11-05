@@ -7,7 +7,8 @@ enum MainToolbarItemID {
     static let title = "detail-title"
     /// The first trailing item; the flexible space goes just before it.
     static let trailing = "environment"
-    static let history = "history"
+    /// Still "history", the inspector's only panel when it was added, so a toolbar layout saved then keeps the item.
+    static let inspector = "history"
     static let settings = "settings"
     static let addProject = "add-project"
 }
