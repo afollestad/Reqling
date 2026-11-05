@@ -30,7 +30,7 @@ extension ProjectLifecycle {
         guard !origin.isReadOnly, !target.isReadOnly else {
             throw ProjectStorageError.readOnly
         }
-        let fresh = Self.ids(in: node).contains { document.node($0) != nil } ? node.copy() : node
+        let fresh = node.subtreeIDs.contains { document.node($0) != nil } ? node.copy() : node
         var localized: [String] = []
         let moved = fresh.mappingPathReferences { reference in
             rebased(reference, from: origin, to: target, localized: &localized)
@@ -69,13 +69,6 @@ extension ProjectLifecycle {
             return .local(existing.key)
         }
         return workspace.addLocalPath(url.path, in: destination.id)
-    }
-
-    private static func ids(in node: RequestNode) -> [RequestNodeID] {
-        guard case .folder(let folder) = node else {
-            return [node.id]
-        }
-        return [folder.id] + folder.children.flatMap { ids(in: $0) }
     }
 }
 

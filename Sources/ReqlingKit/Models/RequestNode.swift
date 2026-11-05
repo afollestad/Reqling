@@ -130,4 +130,12 @@ public enum RequestNode: Hashable, Sendable, Identifiable {
         }
         return false
     }
+
+    /// This node's ID followed by every descendant's.
+    var subtreeIDs: [RequestNodeID] {
+        guard case .folder(let folder) = self else {
+            return [id]
+        }
+        return [id] + folder.children.flatMap(\.subtreeIDs)
+    }
 }

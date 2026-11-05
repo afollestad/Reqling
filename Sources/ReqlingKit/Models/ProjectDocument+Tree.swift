@@ -53,9 +53,12 @@ extension ProjectDocument {
         return result
     }
 
-    /// Inserts `node` into `parentID` at `index` (clamped; `nil` appends).
+    /// Inserts `node` into `parentID` at `index` (clamped; `nil` appends). Refuses a node with any ID, its own or a
+    /// descendant's, that is already in the tree or repeats within it: saves place files by ID, so the two items would
+    /// share one file and only the last written would survive.
     public mutating func insert(_ node: RequestNode, into parentID: RequestNodeID?, at index: Int? = nil) throws(ProjectTreeError) {
-        guard self.node(node.id) == nil else {
+        let incoming = node.subtreeIDs
+        guard Set(incoming).count == incoming.count, Set(items.flatMap(\.subtreeIDs)).isDisjoint(with: incoming) else {
             throw .duplicateID
         }
         try Self.modifyChildren(of: parentID, in: &items) { children in

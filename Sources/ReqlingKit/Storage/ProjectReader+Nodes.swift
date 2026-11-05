@@ -115,39 +115,39 @@ extension ProjectReader {
     /// Gives every node its ID, considering the whole tree (and anything recovered from scratch) at once.
     ///
     /// A folder that loses its ID is a copy, so the children its copied `_folder.json` lists stop counting as listed.
-    /// Settling again until no further folder loses carries that down one level per round, so the rounds are bounded by
-    /// the tree's depth.
+    /// Settling again until no further folder loses carries that down one level per round. A folder stays demoted once
+    /// it has lost, even if it wins a later round: otherwise two folders that each hold a copy of the other trade the
+    /// win every round, and whichever round came last would decide. The demoted set only grows, so the rounds are
+    /// bounded by the number of folders.
     func settleNodes(_ nodes: [LoadedNode], state: inout ReadState) -> [RequestNode] {
         let folders = Self.folderPaths(in: nodes)
-        var replacedFolders: Set<String> = []
-        var settled = SettledIDs<RequestNodeTag>()
-        for _ in 0...(Self.depth(of: nodes) + 1) {
-            settled = Self.settle(Self.claims(for: nodes, replacedFolders: replacedFolders)) { state.derivedID(for: $0) }
-            let replaced = folders.intersection(settled.replaced)
-            if replaced == replacedFolders {
-                break
+        var demotedFolders: Set<String> = []
+        while true {
+            let settled = Self.settle(Self.claims(for: nodes, demotedFolders: demotedFolders)) { state.derivedID(for: $0) }
+            let demoted = demotedFolders.union(folders.intersection(settled.replaced))
+            if demoted == demotedFolders {
+                return build(nodes, settled: settled, state: &state)
             }
-            replacedFolders = replaced
+            demotedFolders = demoted
         }
-        return build(nodes, settled: settled, state: &state)
     }
 
     private static func claims(
         for nodes: [LoadedNode],
-        replacedFolders: Set<String>,
-        underReplacedFolder: Bool = false
+        demotedFolders: Set<String>,
+        underDemotedFolder: Bool = false
     ) -> [IDClaim<RequestNodeTag>] {
         var claims: [IDClaim<RequestNodeTag>] = []
         for node in nodes {
             switch node {
             case .request(let request):
-                let preference = request.rank.preference(underReplacedFolder: underReplacedFolder)
+                let preference = request.rank.preference(underDemotedFolder: underDemotedFolder)
                 claims.append(IDClaim(path: request.path, stated: request.statedID, preference: preference))
             case .folder(let folder):
-                let preference = folder.rank.preference(underReplacedFolder: underReplacedFolder)
+                let preference = folder.rank.preference(underDemotedFolder: underDemotedFolder)
                 claims.append(IDClaim(path: folder.path, stated: folder.statedID, preference: preference))
-                let isReplaced = underReplacedFolder || replacedFolders.contains(folder.path)
-                claims += Self.claims(for: folder.children, replacedFolders: replacedFolders, underReplacedFolder: isReplaced)
+                let isDemoted = underDemotedFolder || demotedFolders.contains(folder.path)
+                claims += Self.claims(for: folder.children, demotedFolders: demotedFolders, underDemotedFolder: isDemoted)
             }
         }
         return claims
@@ -160,15 +160,6 @@ extension ProjectReader {
             paths.formUnion(folderPaths(in: folder.children))
         }
         return paths
-    }
-
-    private static func depth(of nodes: [LoadedNode]) -> Int {
-        nodes.reduce(0) { deepest, node in
-            guard case .folder(let folder) = node else {
-                return deepest
-            }
-            return max(deepest, 1 + depth(of: folder.children))
-        }
     }
 
     private func build(_ nodes: [LoadedNode], settled: SettledIDs<RequestNodeTag>, state: inout ReadState) -> [RequestNode] {

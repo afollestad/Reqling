@@ -119,6 +119,29 @@ final class ProjectLibraryTests: XCTestCase {
         XCTAssertEqual(fixture.relaunched().document(id), fixture.library.document(id))
     }
 
+    func testMovingAnItemInNeverRenamesASiblingWithTheSameName() throws {
+        let id = try fixture.library.createProject(named: "Move in")
+        let users = RequestFolder(name: "Users")
+        let admins = RequestFolder(name: "Admins")
+        let resident = RequestItem.http("Get user", url: "https://users")
+        let mover = RequestItem.http("Get user", url: "https://admins")
+        try fixture.library.mutate(id) { document in
+            try document.insert(.folder(users), into: nil)
+            try document.insert(.folder(admins), into: nil)
+            try document.insert(.request(resident), into: users.id)
+            try document.insert(.request(mover), into: admins.id)
+        }
+        let residentPath = fixture.projectURL(id).appendingPathComponent("requests/users/get-user.json").path
+        let residentDate = try FileManager.default.attributesOfItem(atPath: residentPath)[.modificationDate] as? Date
+
+        try fixture.library.mutate(id) { try $0.moveNode(mover.id, to: users.id, at: 0) }
+
+        XCTAssertTrue(try fixture.contents("requests/users/get-user.json", in: id).contains("https://users"))
+        XCTAssertTrue(try fixture.contents("requests/users/get-user-2.json", in: id).contains("https://admins"))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: residentPath)[.modificationDate] as? Date, residentDate)
+        XCTAssertEqual(fixture.relaunched().document(id), fixture.library.document(id))
+    }
+
     func testMovingARequestOutOfAFolderDeletedInTheSameSaveKeepsTheRequest() throws {
         let id = try fixture.library.createProject(named: "Rescue")
         let folder = RequestFolder(name: "Doomed")

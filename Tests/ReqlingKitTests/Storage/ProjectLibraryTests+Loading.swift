@@ -199,6 +199,59 @@ extension ProjectLibraryTests {
         XCTAssertEqual(relaunched.document(id)?.ancestors(of: login.id).map(\.id), [late.id, auth.id])
     }
 
+    func testFoldersThatEachHoldACopyOfTheOtherKeepTheirIDsAtAnyTreeDepth() throws {
+        let id = try fixture.library.createProject(named: "Cross copies")
+        let (firstX, secondX) = (RequestFolder(name: "X"), RequestFolder(name: "X"))
+        let (firstY, secondY) = (RequestFolder(name: "Y"), RequestFolder(name: "Y"))
+        try fixture.library.mutate(id) { document in
+            for folder in [firstX, secondX, firstY, secondY] {
+                try document.insert(.folder(folder), into: nil)
+            }
+            try document.insert(.folder(RequestFolder(name: "Y")), into: secondX.id)
+            try document.insert(.folder(RequestFolder(name: "X")), into: secondY.id)
+        }
+        // Leaves `x-2` and `y-2` under numbered names, each listing the child that becomes a copy of the other.
+        try fixture.library.mutate(id) { document in
+            try document.removeNode(firstX.id)
+            try document.removeNode(firstY.id)
+        }
+        let xFolderFile = try fixture.contents("requests/x-2/_folder.json", in: id)
+        let yFolderFile = try fixture.contents("requests/y-2/_folder.json", in: id)
+        try fixture.write(yFolderFile, to: "requests/x-2/y/_folder.json", in: id)
+        try fixture.write(xFolderFile, to: "requests/y-2/x/_folder.json", in: id)
+        let topLevelIDs = { Set(self.fixture.relaunched().document(id)?.items.map(\.id) ?? []) }
+
+        XCTAssertTrue(topLevelIDs().isSuperset(of: [secondX.id, secondY.id]))
+        // One adopted folder per level deepens the tree, which handed both IDs to the copies before.
+        let request = try XCTUnwrap(String(bytes: try JSONEncoder().encode(RequestItem.http("Deep")), encoding: .utf8))
+        try fixture.write(request, to: "requests/z/a/b/deep.json", in: id)
+        XCTAssertTrue(topLevelIDs().isSuperset(of: [secondX.id, secondY.id]))
+    }
+
+    func testARenamedItemTakesItsExactNameSoACopyCannotOutrankIt() throws {
+        let id = try fixture.library.createProject(named: "Rename then copy")
+        let staging = RequestEnvironment(name: "Staging 2", variables: [Variable(key: "token", value: "s3cr3t", isSecret: true)])
+        let request = RequestItem.http("Get user 2")
+        try fixture.library.mutate(id) { document in
+            document.environments.append(staging)
+            try document.insert(.request(request), into: nil)
+        }
+        try fixture.library.mutate(id) { document in
+            document.updateEnvironment(staging.id) { $0.name = "Staging" }
+            try document.updateRequest(request.id) { $0.name = "Get user" }
+        }
+        XCTAssertTrue(fixture.exists("environments/staging.json", in: id))
+        XCTAssertTrue(fixture.exists("requests/get-user.json", in: id))
+        // A `cp` to the numbered name, marked for the asserts.
+        let copy = try fixture.contents("environments/staging.json", in: id)
+            .replacingOccurrences(of: #""name" : "Staging""#, with: #""name" : "STAGING""#)
+        try fixture.write(copy, to: "environments/staging-2.json", in: id)
+
+        let relaunched = fixture.relaunched()
+        XCTAssertEqual(relaunched.document(id)?.environment(staging.id)?.name, "Staging")
+        XCTAssertEqual(relaunched.document(id)?.environment(staging.id)?.variables.first?.value, "s3cr3t")
+    }
+
     func testAnUndecodableRegistryIsBackedUpBeforeBeingReplaced() throws {
         try FileManager.default.createDirectory(at: fixture.registryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "not json".write(to: fixture.registryURL, atomically: true, encoding: .utf8)

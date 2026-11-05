@@ -43,10 +43,10 @@ extension ProjectReader {
         let isListed: Bool
         let slugRank: Int
 
-        /// `isListed` counts only while every enclosing folder kept its own ID, because a copied folder's
-        /// `_folder.json` lists its copied children just as the original's does.
-        func preference(underReplacedFolder: Bool) -> [Int] {
-            [isPreviousPath ? 0 : 1, slugRank == Int.max ? 1 : 0, isListed && !underReplacedFolder ? 0 : 1, slugRank]
+        /// `isListed` counts only while no enclosing folder has lost its own ID in any round of settling, because a
+        /// copied folder's `_folder.json` lists its copied children just as the original's does.
+        func preference(underDemotedFolder: Bool) -> [Int] {
+            [isPreviousPath ? 0 : 1, slugRank == Int.max ? 1 : 0, isListed && !underDemotedFolder ? 0 : 1, slugRank]
         }
     }
 

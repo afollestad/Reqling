@@ -1,7 +1,9 @@
 import Foundation
 
-/// Chooses each item's file name for a save. An item keeps its current name while that still fits its own name
-/// (`get-user` or `get-user-2` for "Get user"), so editing one item never renames its siblings.
+/// Chooses each item's file name for a save. An item that stays in its folder keeps its current name while that still
+/// fits its own name (`get-user` or `get-user-2` for "Get user"), so editing one item never renames its siblings;
+/// `keptSlug` makes the one exception, for renames. An item moving in takes its base name or the first free numbered
+/// variant, so it never takes a name from an item already there.
 ///
 /// Names are reserved case-insensitively, as the default APFS volume compares them, so a new `health.json` can never
 /// land on an unreadable `Health.json`.
@@ -21,9 +23,15 @@ struct ProjectSaveLayout {
         var used = previousPath.map(untrackedNames(in:)) ?? []
         var slugs: [RequestNodeID: String] = [:]
         for node in nodes {
-            guard let existing = previous.nodePaths[node.id].map(Self.slug(ofPath:)),
-                  Slug.isVariant(existing, of: Self.baseSlug(for: node)),
-                  !used.contains(existing.lowercased()) else {
+            guard let path = previous.nodePaths[node.id],
+                  (path as NSString).deletingLastPathComponent == previousPath,
+                  let existing = keptSlug(
+                      at: path,
+                      file: node.isFolder ? ProjectLayout.join(path, ProjectLayout.folderFile) : path,
+                      base: Self.baseSlug(for: node),
+                      name: node.name,
+                      used: used
+                  ) else {
                 continue
             }
             slugs[node.id] = existing
@@ -69,9 +77,14 @@ struct ProjectSaveLayout {
         used.insert(ProjectLayout.defaultEnvironmentSlug)
         var slugs: [EnvironmentID: String] = [:]
         for environment in environments {
-            guard let existing = previous.environmentPaths[environment.id].map(Self.slug(ofPath:)),
-                  Slug.isVariant(existing, of: Slug.make(environment.name, fallback: "environment")),
-                  !used.contains(existing.lowercased()) else {
+            guard let path = previous.environmentPaths[environment.id],
+                  let existing = keptSlug(
+                      at: path,
+                      file: path,
+                      base: Slug.make(environment.name, fallback: "environment"),
+                      name: environment.name,
+                      used: used
+                  ) else {
                 continue
             }
             slugs[environment.id] = existing
@@ -107,6 +120,27 @@ struct ProjectSaveLayout {
         return projected
     }
 
+    /// The slug at `path` if its item may keep it: one that still fits `base` and is free, where a numbered variant
+    /// counts only while the item's name is unchanged. Otherwise renaming "Staging 2" to "Staging" would stay on
+    /// `staging-2.json`, and a copy at `staging.json` would take its ID and secrets on the next launch
+    /// (`ProjectReader.slugRank`). A twin whose exact name frees up later stays put, so it keeps that exposure.
+    private func keptSlug(at path: String, file: String, base: String, name: String, used: Set<String>) -> String? {
+        let existing = Self.slug(ofPath: path)
+        guard Slug.isVariant(existing, of: base), !used.contains(existing.lowercased()) else {
+            return nil
+        }
+        guard existing == base || previousName(in: file).map({ $0 == name }) ?? true else {
+            return nil
+        }
+        return existing
+    }
+
+    /// The name `file` stated when last read or written; `nil` when nothing was recorded, as for a folder adopted
+    /// without a `_folder.json`.
+    private func previousName(in file: String) -> String? {
+        previous.contents[file].flatMap { try? ProjectJSON.decode(NameProbe.self, from: $0) }?.name
+    }
+
     private static func baseSlug(for node: RequestNode) -> String {
         Slug.make(node.name, fallback: node.isFolder ? "folder" : "request")
     }
@@ -135,4 +169,8 @@ struct ProjectSaveLayout {
                 return name.hasSuffix(jsonSuffix) ? String(name.dropLast(jsonSuffix.count)) : name
             })
     }
+}
+
+private struct NameProbe: Decodable {
+    let name: String?
 }
