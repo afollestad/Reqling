@@ -23,7 +23,7 @@ struct RunHistoryTable: NSViewRepresentable {
         let coordinator = context.coordinator
         let column = NSTableColumn(identifier: RunHistoryTableCoordinator.columnID)
         column.resizingMask = .autoresizingMask
-        let table = NSTableView()
+        let table = RunHistoryTableView()
         table.addTableColumn(column)
         table.style = .sourceList
         table.headerView = nil
@@ -76,7 +76,7 @@ final class RunHistoryTableCoordinator: NSObject, NSTableViewDataSource, NSTable
         }
     }
 
-    weak var table: NSTableView?
+    weak var table: RunHistoryTableView?
     private var history: RunHistoryViewModel?
     private var items: [Item] = []
     private var isApplyingSelection = false
@@ -178,13 +178,13 @@ final class RunHistoryTableCoordinator: NSObject, NSTableViewDataSource, NSTable
 
     // MARK: - Menu
 
-    /// The right-clicked run's actions, or Compare for two runs when the click lands in a selection of two.
+    /// One run's actions, or Compare for two runs.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let table, let history, items.indices.contains(table.clickedRow), let clicked = items[table.clickedRow].runID else {
+        guard let table, let history else {
             return
         }
-        let selected = table.selectedRowIndexes.contains(table.clickedRow) ? runIDs(at: table.selectedRowIndexes) : [clicked]
+        let selected = menuRuns(in: table)
         let runs = history.runs.filter { selected.contains($0.id) }
         if runs.count == 1, let run = runs.first {
             menu.addItem(menuItem("Re-run", #selector(rerun(_:)), run, enabled: history.canReplay(run)))
@@ -194,6 +194,17 @@ final class RunHistoryTableCoordinator: NSObject, NSTableViewDataSource, NSTable
         } else if runs.count == 2 {
             menu.addItem(menuItem("Compare", #selector(compare(_:)), Array(selected), enabled: true))
         }
+    }
+
+    /// The selected runs when VoiceOver opened the menu; else the right-clicked run, or the selection the click landed in.
+    private func menuRuns(in table: RunHistoryTableView) -> Set<RunID> {
+        if table.isMenuForSelection {
+            return runIDs(at: table.selectedRowIndexes)
+        }
+        guard items.indices.contains(table.clickedRow), let clicked = items[table.clickedRow].runID else {
+            return []
+        }
+        return table.selectedRowIndexes.contains(table.clickedRow) ? runIDs(at: table.selectedRowIndexes) : [clicked]
     }
 
     private func menuItem(_ title: String, _ action: Selector, _ object: Any, enabled: Bool) -> NSMenuItem {
@@ -228,6 +239,35 @@ final class RunHistoryTableCoordinator: NSObject, NSTableViewDataSource, NSTable
         }
         history.selection = Set(runs)
         history.compare()
+    }
+}
+
+/// `RunHistoryTable`'s table, whose menu opened without a click (VoiceOver's VO-Shift-M) acts on the selected runs.
+/// AppKit's own opens it for the row that last had keyboard focus, which a selection made through accessibility never
+/// moves, so Re-run or Restore would act on a run other than the selected one.
+final class RunHistoryTableView: NSTableView {
+    /// True while a menu opened that way is up; `RunHistoryTableCoordinator.menuNeedsUpdate(_:)` reads it.
+    var isMenuForSelection = false
+
+    /// No menu without a selection: AppKit's would act on the focused row, which VoiceOver may never have spoken.
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard menu != nil, selectedRow >= 0 else {
+            return false
+        }
+        // A run-loop turn later, so the accessibility call returns while the menu tracks. Not a main-actor `Task`: tracking
+        // inside one holds the main queue, stalling every other main-actor task until the menu closes.
+        perform(#selector(showMenuForSelection), with: nil, afterDelay: 0)
+        return true
+    }
+
+    @objc private func showMenuForSelection() {
+        guard let menu, selectedRow >= 0 else {
+            return
+        }
+        let row = rect(ofRow: selectedRow)
+        isMenuForSelection = true
+        defer { isMenuForSelection = false }
+        menu.popUp(positioning: nil, at: NSPoint(x: row.minX, y: row.maxY), in: self)
     }
 }
 

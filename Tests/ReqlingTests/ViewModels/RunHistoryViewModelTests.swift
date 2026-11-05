@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ReqlingKit
 import XCTest
@@ -213,6 +214,34 @@ final class RunHistoryViewModelTests: XCTestCase {
 
         XCTAssertTrue(fixture.model.showsRunHistory)
         XCTAssertTrue(WorkspaceStateStore(fileURL: fixture.profile.workspaceStateURL).state.showsRunHistory)
+    }
+
+    /// The inspector's run menu opened without a click, as VoiceOver opens it, acts on the selected run, not the row
+    /// AppKit last focused.
+    func testTheRunMenuOpenedWithoutAClickActsOnTheSelection() throws {
+        let older = seed(status: 500, at: 1, url: "https://example.com/old")
+        seed(status: 200, at: 2, url: "https://example.com/new")
+        let history = open().history
+        let coordinator = RunHistoryTableCoordinator()
+        let table = RunHistoryTableView()
+        table.addTableColumn(NSTableColumn(identifier: RunHistoryTableCoordinator.columnID))
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        coordinator.table = table
+        history.selection = [older.id]
+        let formats = RunDateFormats(locale: Locale(identifier: "en_US"), calendar: Calendar(identifier: .gregorian), timeZone: .gmt)
+        let days = history.days(formats: formats)
+        coordinator.update(history: history, days: days, latest: history.runs.first?.id, selection: history.displayedSelection)
+        let menu = NSMenu()
+
+        coordinator.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.items, [], "neither clicked nor opened for the selection")
+
+        table.isMenuForSelection = true
+        coordinator.menuNeedsUpdate(menu)
+        let compare = try XCTUnwrap(menu.items.first { $0.title == "Compare with Latest" })
+        XCTAssertTrue(compare.isEnabled)
+        XCTAssertEqual((compare.representedObject as? RunSummary)?.id, older.id)
     }
 
     private func open() -> RequestEditorViewModel {
