@@ -41,7 +41,7 @@ struct GRPCMethodRows: View {
             LabeledRow("Schema") {
                 HStack(spacing: 8) {
                     GRPCSchemaSourceMenu(editor: editor)
-                    GRPCSchemaStatusLabel(status: schema.status, serviceCount: schema.services.count)
+                    SchemaStatusLabel(state: GRPCSchemaStatus.state(schema.status, serviceCount: schema.services.count))
                     Spacer(minLength: 0)
                     Button {
                         editor.refreshSchema()
@@ -99,47 +99,18 @@ private struct GRPCSchemaSourceMenu: View {
     }
 }
 
-/// How the last schema load went, on one line; the full text is the tooltip.
-private struct GRPCSchemaStatusLabel: View {
-    let status: GRPCSchemaLoader.Status
-    let serviceCount: Int
-
-    var body: some View {
+/// The gRPC schema loader's status as the Schema row shows it.
+private enum GRPCSchemaStatus {
+    static func state(_ status: GRPCSchemaLoader.Status, serviceCount: Int) -> SchemaStatusLabel.State {
         switch status {
-        case .loading:
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading the schema…")
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        case .idle(let message):
-            line(message, systemImage: "info.circle", tint: .secondary)
-        case .ready(let source, let issue?):
-            line("\(summary(source)). \(issue)", systemImage: "exclamationmark.triangle.fill", tint: .orange)
-        case .ready(let source, nil):
-            line(summary(source), systemImage: "checkmark.circle.fill", tint: .green)
-        case .failed(let message):
-            line(message, systemImage: "xmark.octagon.fill", tint: .red)
+        case .loading: .loading
+        case .idle(let message): .idle(message)
+        case .ready(let source, let issue): .ready(summary(source, serviceCount: serviceCount), issue: issue)
+        case .failed(let message): .failed(message)
         }
     }
 
-    private func line(_ text: String, systemImage: String, tint: Color) -> some View {
-        Label {
-            Text(text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        } icon: {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .help(text)
-    }
-
-    private func summary(_ source: GRPCSchema.Source) -> String {
+    private static func summary(_ source: GRPCSchema.Source, serviceCount: Int) -> String {
         let services = "\(serviceCount) service\(serviceCount == 1 ? "" : "s")"
         return switch source {
         case .projectProtos: "\(services) from the project's protos"

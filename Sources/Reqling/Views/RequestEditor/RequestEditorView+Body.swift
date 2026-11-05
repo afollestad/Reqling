@@ -53,7 +53,7 @@ struct RequestBodyEditor: View {
         case .binary:
             BinaryBodyEditor(binary: $editor.spec.body.binary, editor: editor)
         case .graphQL:
-            GraphQLBodyEditor(graphQL: $editor.spec.body.graphQL, tokenContext: editor.tokenContext)
+            GraphQLBodyEditor(editor: editor)
         }
     }
 
@@ -231,48 +231,6 @@ private struct BinaryBodyEditor: View {
 
     private var contentType: Binding<String> {
         Binding(get: { binary.contentType ?? "" }, set: { binary.contentType = $0.isEmpty ? nil : $0 })
-    }
-}
-
-/// A GraphQL operation: the query and its variables, sent together as the JSON body GraphQL servers expect.
-private struct GraphQLBodyEditor: View {
-    @Binding var graphQL: GraphQLBody
-    let tokenContext: TemplateTokenContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // "Operation name" would wrap in the label column; the field keeps the full name for VoiceOver.
-            LabeledRow("Operation") {
-                TemplateField(text: $graphQL.operationName, placeholder: "Optional", tokenContext: tokenContext, accessibilityLabel: "Operation name")
-                    .frame(maxWidth: 260)
-            }
-            HSplitView {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Query").font(.caption).foregroundStyle(.secondary)
-                    CodeEditor(
-                        text: $graphQL.query,
-                        language: .graphQL,
-                        placeholder: "query { viewer { login } }",
-                        tokenContext: tokenContext,
-                        accessibilityLabel: "GraphQL query"
-                    )
-                        .editorChrome()
-                }
-                .frame(minWidth: 200)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Variables").font(.caption).foregroundStyle(.secondary)
-                    CodeEditor(
-                        text: $graphQL.variables,
-                        language: .json,
-                        placeholder: #"{ "id": "{{id}}" }"#,
-                        tokenContext: tokenContext,
-                        accessibilityLabel: "GraphQL variables"
-                    )
-                        .editorChrome()
-                }
-                .frame(minWidth: 160)
-            }
-        }
     }
 }
 

@@ -30,6 +30,7 @@ final class RequestEditorViewModel {
                 typedURL = spec.displayURL
             }
             draft.draftDidChange(spec)
+            syncGraphQL(from: oldValue)
         }
     }
     var tab: RequestEditorTab = .params
@@ -37,13 +38,15 @@ final class RequestEditorViewModel {
     var notice: String?
     let history: RunHistoryViewModel
     let response: ResponseViewModel
+    /// The GraphQL body's schema and checking, while the request sends one (`RequestEditorViewModel+GraphQL`).
+    var graphQL: GraphQLEditorModel?
 
     /// The URL bar's text exactly as typed. `HTTPRequestSpec.displayURL` cannot show a trailing `?`, `=`, or `&`, so a
     /// bar derived from `spec` on every render erases them mid-typing and jumps the caret. `spec`'s observer re-derives
     /// this only when a change elsewhere (the params table, an adopted external edit, a cURL import) leaves it stale.
     private var typedURL: String
 
-    @ObservationIgnored private unowned let app: AppModel
+    @ObservationIgnored unowned let app: AppModel
     @ObservationIgnored private let draft: RequestDraft<HTTPRequestSpec>
     /// `autoHeaders`' memo, keyed on the only parts of the spec it reads; the user agent is fixed for the app's life.
     @ObservationIgnored private var autoHeadersCache: (key: AutoHeadersKey, value: [AutoHeader])?
@@ -65,6 +68,7 @@ final class RequestEditorViewModel {
             show(self.draft.autosave(spec))
         }
         history.editor = self
+        syncGraphQL(from: nil)
     }
 
     // MARK: - Derived state
@@ -230,10 +234,11 @@ final class RequestEditorViewModel {
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. The body and
-    /// options merge per subfield (switching body mode keeps a raw text edited elsewhere), and each list (query rows,
+    /// options merge per subfield (switching body mode keeps a raw text edited elsewhere; editing a GraphQL query keeps
+    /// a schema source chosen elsewhere), and each list (query rows,
     /// headers, form fields) row by row by ID (`ListMerge`), so a header removed elsewhere stays removed unless the
     /// draft edited it. The auth is one field. A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions`
-    /// must be listed here, or the draft wins it unconditionally.
+    /// (or `GraphQLBody`) must be listed here, or the draft wins it unconditionally.
     private nonisolated static func merge(base: HTTPRequestSpec, draft: HTTPRequestSpec, stored: HTTPRequestSpec) -> HTTPRequestSpec {
         var merged = draft
         func takeStored<Value: Equatable>(_ field: WritableKeyPath<HTTPRequestSpec, Value>) {
@@ -254,7 +259,10 @@ final class RequestEditorViewModel {
         mergeRows(\.body.formData)
         mergeRows(\.body.urlEncoded)
         takeStored(\.body.binary)
-        takeStored(\.body.graphQL)
+        takeStored(\.body.graphQL.query)
+        takeStored(\.body.graphQL.variables)
+        takeStored(\.body.graphQL.operationName)
+        takeStored(\.body.graphQL.schema)
         takeStored(\.auth)
         takeStored(\.options.timeoutSeconds)
         takeStored(\.options.followRedirects)

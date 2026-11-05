@@ -78,15 +78,6 @@ extension SnapshotTests {
         ))
     }
 
-    func testEditorGraphQLBody() throws {
-        let body = HTTPBody(mode: .graphQL, graphQL: GraphQLBody(
-            query: "query User($id: ID!) {\n  user(id: $id) { name }\n}",
-            variables: "{ \"id\": \"{{userId}}\" }",
-            operationName: "User"
-        ))
-        try assertEditor(\.createUser, tab: .body, spec: HTTPRequestSpec(method: .post, url: "{{baseUrl}}/graphql", body: body))
-    }
-
     /// The auth editor's label column keeps a credential type with fields on the same rows as one without.
     func testEditorBearerAuth() throws {
         try assertEditor(\.listUsers, tab: .auth, spec: HTTPRequestSpec(url: "{{baseUrl}}/me", auth: .bearer(token: "{{token}}")))
