@@ -1,14 +1,23 @@
 import ReqlingKit
 import SwiftUI
 
-/// The selected gRPC request's latest call, live while it streams, or the past run picked in its history.
+/// The selected gRPC request's latest call, live while it streams, the past run picked in its history, or two runs
+/// compared.
 struct GRPCResponseView: View {
     @Bindable var response: GRPCResponseViewModel
 
     var body: some View {
-        let exchange = response.exchange
         let history = response.history
-        VStack(spacing: 0) {
+        if let pair = history.comparing {
+            RunComparisonView(history: history, pair: pair)
+        } else {
+            callView(history)
+        }
+    }
+
+    private func callView(_ history: RunHistoryViewModel) -> some View {
+        let exchange = response.exchange
+        return VStack(spacing: 0) {
             GRPCResponseStatusBar(exchange: exchange, isSending: response.isSending)
             PinnedRunBar(history: history)
             Divider()

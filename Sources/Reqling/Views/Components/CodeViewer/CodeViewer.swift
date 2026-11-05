@@ -6,6 +6,8 @@ import SwiftUI
 /// in-place search.
 struct CodeViewer: NSViewRepresentable {
     let document: TextDocument
+    /// Each line's style when `document` is a `DiffDocument`'s text.
+    var diff: [DiffLineStyle]?
     var matches: [Range<Int>] = []
     var currentMatch: Range<Int>?
     var accessibilityLabel: String
@@ -20,7 +22,7 @@ struct CodeViewer: NSViewRepresentable {
         view.accent = context.environment.appAccent
         view.onFind = onFind
         view.documentView.label = accessibilityLabel
-        view.setDocument(document)
+        view.setDocument(document, diff: diff)
         view.setMatches(matches, current: currentMatch)
     }
 }
@@ -28,6 +30,8 @@ struct CodeViewer: NSViewRepresentable {
 /// A `CodeViewer` on the editors' surface, with `BodySearchBar` above it while searching.
 struct CodeViewerPane: View {
     let document: TextDocument
+    /// Each line's style when `document` is a `DiffDocument`'s text, which draws the diff's gutter and colors.
+    var diff: [DiffLineStyle]?
     @Bindable var search: BodySearchModel
     let accessibilityLabel: String
 
@@ -38,6 +42,7 @@ struct CodeViewerPane: View {
             }
             CodeViewer(
                 document: document,
+                diff: diff,
                 matches: search.isPresented ? search.result.textMatches : [],
                 currentMatch: search.isPresented ? search.currentTextMatch : nil,
                 accessibilityLabel: accessibilityLabel,

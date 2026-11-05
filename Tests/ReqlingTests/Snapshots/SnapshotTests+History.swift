@@ -42,10 +42,45 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: CGSize(width: 820, height: 340))
     }
 
+    /// Two runs' JSON bodies as a unified diff: a gutter of old and new line numbers, and changed lines washed.
+    func testRunComparison() async throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let base: TimeInterval = 1_700_000_000
+        let older = storeJSON(#"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":false}],"next":null}"#,
+                              status: 200, at: base - 300, duration: 0.31, in: project)
+        storeJSON(#"{"users":[{"id":1,"name":"Ada","active":true},{"id":2,"name":"Grace","active":true}],"next":"page2"}"#,
+                  status: 200, at: base, duration: 0.142, environment: "Staging", in: project)
+        let editor = try project.editor(project.listUsers, in: fixture)
+        editor.history.compareWithLatest(older.id)
+        await editor.history.loadComparison()
+
+        assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: CGSize(width: 820, height: 420))
+    }
+
     func testSettingsHistory() {
         fixture.model.showSettings(.history)
 
         assertBothAppearances(SettingsScreen(model: fixture.model), size: CGSize(width: 1000, height: 460))
+    }
+
+    @discardableResult
+    private func storeJSON(
+        _ body: String,
+        status: Int,
+        at seconds: TimeInterval,
+        duration: TimeInterval,
+        environment: String = "Default",
+        in project: SnapshotProject
+    ) -> RequestExchange {
+        let response = HTTPResponseRecord(
+            statusCode: status,
+            headers: [KeyValuePair(key: "Content-Type", value: "application/json")],
+            body: Data(body.utf8),
+            url: "https://api.example.com/users",
+            startedAt: Date(timeIntervalSince1970: seconds),
+            duration: duration
+        )
+        return project.storeRun(.response(response), for: project.listUsers, at: seconds, environment: environment, in: fixture)
     }
 
     /// A run of "List users" with a JSON body of about `bytes`, so rows show realistic sizes and a shown run parses.

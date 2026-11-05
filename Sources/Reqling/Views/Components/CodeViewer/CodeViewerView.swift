@@ -21,6 +21,9 @@ final class CodeViewerView: NSView {
     let metrics = CodeViewerMetrics.standard
 
     private(set) var document: TextDocument?
+    /// Each line's diff style when `document` is a diff's text (`CodeViewerView+Diff`), which adds the gutter.
+    private(set) var diff: [DiffLineStyle]?
+    private(set) var diffGutter: DiffGutterLayout?
     private(set) var highlighter: TextHighlighter?
     private(set) var wrapLayout: WrapLayout?
     /// The selected bytes; `selectionAnchor` is the end a shift-click or drag extends from.
@@ -46,6 +49,8 @@ final class CodeViewerView: NSView {
     var rowCache: [Int: CodeViewerRow] = [:]
     /// The syntax palette resolved for the current appearance.
     var resolvedPalette: CodeViewerPalette?
+    /// The diff colors resolved for the current appearance.
+    var resolvedDiffPalette: DiffPalette?
     /// A new width arrived during a live resize while re-wrapping was too slow to repeat every frame.
     private var needsRewrap = false
     /// A byte to scroll into view once the view has a size; asked for before the first layout, it would scroll
@@ -115,18 +120,22 @@ final class CodeViewerView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         resolvedPalette = nil
+        resolvedDiffPalette = nil
         rowCache = [:]
         canvas.needsDisplay = true
     }
 
     // MARK: - Content
 
-    /// Shows `document`, from the top; the same document again changes nothing.
-    func setDocument(_ document: TextDocument) {
+    /// Shows `document`, from the top, with `diff`'s gutter and colors when it is a diff's text; the same document
+    /// again changes nothing, as its diff comes with it.
+    func setDocument(_ document: TextDocument, diff: [DiffLineStyle]? = nil) {
         guard document.id != self.document?.id else {
             return
         }
         self.document = document
+        self.diff = diff
+        diffGutter = diff.map(DiffGutterLayout.init(lines:))
         highlighter = TextHighlighter(document: document)
         wrapLayout = nil
         pendingReveal = nil
@@ -158,9 +167,14 @@ final class CodeViewerView: NSView {
 
     // MARK: - Geometry
 
+    /// Where each row's text starts: past the diff gutter, when there is one.
+    var textInset: CGFloat {
+        CodeViewerMetrics.horizontalInset + (diffGutter?.width ?? 0)
+    }
+
     /// The columns that fit the visible width.
     private var fittingColumns: Int {
-        let width = scrollView.contentView.bounds.width - 2 * CodeViewerMetrics.horizontalInset
+        let width = scrollView.contentView.bounds.width - textInset - CodeViewerMetrics.horizontalInset
         return max(Int(width / metrics.characterWidth), 1)
     }
 

@@ -2,7 +2,7 @@ import ReqlingKit
 import SwiftUI
 
 /// The selected request's runs, newest first and grouped by day, in the window's inspector column. Selecting one shows
-/// it in the response pane.
+/// it in the response pane; selecting two and choosing Compare compares them there.
 struct RunHistoryInspector: View {
     @Bindable var history: RunHistoryViewModel
     @Environment(\.calendar) private var calendar
@@ -74,6 +74,14 @@ private struct RunHistoryMenu: View {
                 .disabled(!history.canReplay(run))
             Button("Restore Request…") { history.requestRestore(run) }
                 .disabled(!history.canRestore(run))
+            Divider()
+            Button("Compare with Latest") { history.compareWithLatest(run.id) }
+                .disabled(run.id == history.runs.first?.id)
+        } else if runs.count == 2 {
+            Button("Compare") {
+                history.selection = selected
+                history.compare()
+            }
         }
     }
 }
@@ -83,6 +91,14 @@ private struct RunHistoryFooter: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            Button {
+                history.compare()
+            } label: {
+                Label("Compare", systemImage: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!history.canCompare)
+            .help("Compare the two selected runs")
             Spacer()
             Menu {
                 Button("Clear History…", role: .destructive) { history.requestClear() }

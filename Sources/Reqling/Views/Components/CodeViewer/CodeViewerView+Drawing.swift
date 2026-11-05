@@ -78,10 +78,18 @@ extension CodeViewerView {
         for row in first...last {
             let rendered = renderedRow(row, in: layout)
             let top = top(ofRow: row) - visible.minY
+            let position = layout.position(ofRow: row)
+            let style = diffStyle(ofLine: position.line)
+            if let style {
+                drawDiffBackground(style, top: top, width: size.width, in: context)
+            }
             drawHighlights(for: rendered, top: top, width: size.width, in: context)
-            context.textPosition = CGPoint(x: CodeViewerMetrics.horizontalInset, y: top + metrics.baseline)
+            context.textPosition = CGPoint(x: textInset, y: top + metrics.baseline)
             CTLineDraw(rendered.line, context)
             drawCurrentMatchText(in: rendered, top: top, in: context)
+            if let style, position.chunk == 0 {
+                drawDiffGutter(style, top: top, in: context)
+            }
         }
     }
 
@@ -104,8 +112,11 @@ extension CodeViewerView {
         let (text, map) = Self.displayText(of: document, range: range, line: position.line)
         let palette = palette()
         let colorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
-        let attributed = NSMutableAttributedString(string: text, attributes: [.font: metrics.font, colorKey: palette.base])
-        for token in highlighter.tokens(in: range, line: position.line) {
+        // An omitted-lines row is a note, not text the body holds, so it takes no syntax colors.
+        let isNote = diffStyle(ofLine: position.line)?.isOmitted == true
+        let base = isNote ? diffPalette().note : palette.base
+        let attributed = NSMutableAttributedString(string: text, attributes: [.font: metrics.font, colorKey: base])
+        for token in highlighter.tokens(in: range, line: position.line) where !isNote {
             let start = map.utf16Index(ofByte: token.range.lowerBound)
             let end = map.utf16Index(ofByte: token.range.upperBound)
             if end > start, let color = palette.roles[token.role] {
@@ -184,15 +195,15 @@ extension CodeViewerView {
         }
         let start = row.map.utf16Index(ofByte: max(currentMatch.lowerBound, row.bytes.lowerBound))
         let end = row.map.utf16Index(ofByte: min(currentMatch.upperBound, row.bytes.upperBound))
-        let startX = CodeViewerMetrics.horizontalInset + CTLineGetOffsetForStringIndex(row.line, start, nil)
-        let endX = CodeViewerMetrics.horizontalInset + CTLineGetOffsetForStringIndex(row.line, end, nil)
+        let startX = textInset + CTLineGetOffsetForStringIndex(row.line, start, nil)
+        let endX = textInset + CTLineGetOffsetForStringIndex(row.line, end, nil)
         let black = NSAttributedString(string: row.text, attributes: [
             .font: metrics.font,
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1)
         ])
         context.saveGState()
         context.clip(to: CGRect(x: startX, y: top, width: endX - startX, height: metrics.rowHeight))
-        context.textPosition = CGPoint(x: CodeViewerMetrics.horizontalInset, y: top + metrics.baseline)
+        context.textPosition = CGPoint(x: textInset, y: top + metrics.baseline)
         CTLineDraw(CTLineCreateWithAttributedString(black), context)
         context.restoreGState()
     }
@@ -224,8 +235,8 @@ extension CodeViewerView {
         in context: CGContext
     ) {
         let start = row.map.utf16Index(ofByte: max(span.lowerBound, row.bytes.lowerBound))
-        let startX = CodeViewerMetrics.horizontalInset + CTLineGetOffsetForStringIndex(row.line, start, nil)
-        let endX = edge ?? CodeViewerMetrics.horizontalInset
+        let startX = textInset + CTLineGetOffsetForStringIndex(row.line, start, nil)
+        let endX = edge ?? textInset
             + CTLineGetOffsetForStringIndex(row.line, row.map.utf16Index(ofByte: min(span.upperBound, row.bytes.upperBound)), nil)
         guard endX > startX else {
             return

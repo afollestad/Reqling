@@ -1,13 +1,21 @@
 import ReqlingKit
 import SwiftUI
 
-/// The selected request's latest exchange, or the past run picked in its history.
+/// The selected request's latest exchange, the past run picked in its history, or two runs compared.
 struct ResponseView: View {
     @Bindable var response: ResponseViewModel
     let model: AppModel
 
     var body: some View {
         let history = response.history
+        if let pair = history.comparing {
+            RunComparisonView(history: history, pair: pair)
+        } else {
+            exchangeView(history)
+        }
+    }
+
+    private func exchangeView(_ history: RunHistoryViewModel) -> some View {
         VStack(spacing: 0) {
             ResponseStatusBar(exchange: response.exchange, isSending: response.isSending)
             PinnedRunBar(history: history)

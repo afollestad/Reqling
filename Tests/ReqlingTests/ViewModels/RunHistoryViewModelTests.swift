@@ -53,18 +53,51 @@ final class RunHistoryViewModelTests: XCTestCase {
 
         history.showLatest()
         XCTAssertEqual(editor.response.exchange?.id, newer.id)
+        XCTAssertEqual(history.displayedSelection, [newer.id], "the inspector highlights the run the pane follows")
     }
 
-    func testARunClearedWhileSelectedReadsAsMissing() async {
+    /// Picking the latest run follows the latest, so a run arriving later shows rather than leaving the pane on an
+    /// older one.
+    func testPickingTheLatestRunFollowsTheLatest() async {
         let older = seed(status: 500, at: 1, url: "https://example.com/old")
-        seed(status: 200, at: 2, url: "https://example.com/new")
-        let history = open().history
+        let newer = seed(status: 200, at: 2, url: "https://example.com/new")
+        let editor = open()
+        let history = editor.history
 
+        history.select([newer.id])
+        XCTAssertEqual(history.selection, [])
+        history.select([older.id, newer.id])
+        XCTAssertEqual(history.selection, [older.id, newer.id])
+
+        history.select([newer.id])
+        editor.send()
+        await waitUntilObserved("recorded") { history.runs.count == 3 }
+        XCTAssertEqual(history.displayedSelection, [history.runs[0].id])
+        XCTAssertEqual(editor.response.exchange?.id, history.runs[0].id)
+    }
+
+    /// Runs cleared from the history stop showing even with the inspector, which drops them from the selection, hidden:
+    /// a comparison of them, and a run shown before.
+    func testRunsClearedWhileShownReadAsMissing() async {
+        let older = seed(status: 500, at: 1, url: "https://example.com/old")
+        let newer = seed(status: 200, at: 2, url: "https://example.com/new")
+        let editor = open()
+        let history = editor.history
         history.selection = [older.id]
-        fixture.model.runner.clearHistory(for: request, in: project)
         await history.loadPinned()
+        XCTAssertEqual(editor.response.exchange?.id, older.id)
+        history.selection = [older.id, newer.id]
+        history.compare()
 
-        XCTAssertEqual(history.pinnedStatus, .missing)
+        fixture.model.runner.clearHistory(for: request, in: project)
+
+        guard case .missing = history.comparisonState else {
+            return XCTFail("a comparison of cleared runs reads as missing")
+        }
+        history.endComparison()
+        history.selection = [older.id]
+        XCTAssertEqual(history.pinnedStatus, .missing, "the run loaded before is gone")
+        XCTAssertNil(editor.response.exchange)
         history.retainSelection(in: history.runs.map(\.id))
         XCTAssertEqual(history.selection, [])
     }
@@ -115,6 +148,25 @@ final class RunHistoryViewModelTests: XCTestCase {
 
         await editor.history.prepareRestore(run)
         XCTAssertNil(editor.history.restorePending, "the editor already holds it")
+    }
+
+    func testCompareTakesTwoRunsOlderFirstUntilTheSelectionChanges() async throws {
+        let older = seed(status: 500, at: 1, url: "https://example.com/old")
+        let newer = seed(status: 200, at: 2, url: "https://example.com/new")
+        let history = open().history
+
+        history.compareWithLatest(older.id)
+        XCTAssertEqual(history.comparing, RunPair(older: older.id, newer: newer.id))
+        XCTAssertNil(history.pinnedRunID)
+        await history.loadComparison()
+
+        guard case .ready(let comparison) = history.comparisonState else {
+            return XCTFail("the comparison loads")
+        }
+        XCTAssertEqual(comparison.sections.first?.hasChanges, true, "500 and 200 bodies differ")
+        history.selection = [older.id]
+        XCTAssertNil(history.comparing)
+        XCTAssertNil(history.comparisonState)
     }
 
     func testClearingAsksFirstThenEmptiesTheHistory() throws {

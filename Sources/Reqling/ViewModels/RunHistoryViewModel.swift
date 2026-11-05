@@ -2,6 +2,29 @@ import Foundation
 import Observation
 import ReqlingKit
 
+/// Two runs being compared, older first.
+struct RunPair: Hashable {
+    let older: RunID
+    let newer: RunID
+}
+
+/// Where comparing two runs has got to.
+enum RunComparisonState {
+    case loading
+    case ready(RunComparison)
+    /// Pruned or cleared since it was listed.
+    case missing
+}
+
+extension RunComparisonState {
+    var isLoading: Bool {
+        if case .loading = self {
+            return true
+        }
+        return false
+    }
+}
+
 /// A selected run the response pane cannot show yet, or ever.
 enum PinnedRunStatus: Equatable {
     case loading
@@ -20,17 +43,31 @@ struct PendingRestore: Identifiable, Equatable {
 }
 
 /// One request's run history beside its editor: the runs selected in the inspector, which run the response pane shows,
-/// and re-running, restoring, and clearing runs.
+/// and re-running, restoring, comparing, and clearing runs.
 ///
 /// One selected run pins the response pane to it, loaded off the main actor from the view's `.task(id: pinnedRunID)`;
 /// no selection, or the latest run alone, follows the latest exchange as before. Sending clears the selection, so a new
-/// run always shows.
+/// run always shows. Compare replaces the pane with the two selected runs' differences until the selection changes;
+/// they are computed off the main actor from the comparison view's `.task(id: comparing)`.
 @MainActor
 @Observable
 final class RunHistoryViewModel {
     let projectID: ProjectID
     let requestID: RequestNodeID
-    var selection: Set<RunID> = []
+    var selection: Set<RunID> = [] {
+        didSet {
+            if let comparing, selection != [comparing.older, comparing.newer] {
+                self.comparing = nil
+            }
+        }
+    }
+    /// Set by Compare; selecting anything else ends it.
+    private(set) var comparing: RunPair?
+    private(set) var comparison: (pair: RunPair, state: RunComparisonState)?
+    /// The comparison's section shown, by title; `nil` shows the first.
+    var comparisonSection: String?
+    /// Searching the comparison's text, whichever section shows.
+    let comparisonSearch = BodySearchModel()
     var restorePending: PendingRestore?
     private var pinned: (id: RunID, exchange: RequestExchange?)?
 
@@ -66,7 +103,7 @@ final class RunHistoryViewModel {
 
     /// The single selected run, unless it is the latest exchange, which the pane shows anyway.
     var pinnedRunID: RunID? {
-        guard selection.count == 1, let run = selection.first else {
+        guard comparing == nil, selection.count == 1, let run = selection.first else {
             return nil
         }
         return run == latest?.id ? nil : run
@@ -83,7 +120,7 @@ final class RunHistoryViewModel {
         guard let run = pinnedRunID else {
             return latest
         }
-        return pinned?.id == run ? pinned?.exchange : nil
+        return pinned?.id == run && isListed(run) ? pinned?.exchange : nil
     }
 
     /// Why the pinned run is not showing; `nil` once it is, or when none is pinned.
@@ -91,10 +128,31 @@ final class RunHistoryViewModel {
         guard let run = pinnedRunID else {
             return nil
         }
+        guard isListed(run) else {
+            return .missing
+        }
         guard let pinned, pinned.id == run else {
             return .loading
         }
         return pinned.exchange == nil ? .missing : nil
+    }
+
+    var canCompare: Bool {
+        selection.count == 2
+    }
+
+    /// The state of the comparison under way; `nil` when none is, or it is of other runs.
+    var comparisonState: RunComparisonState? {
+        guard let comparing else {
+            return nil
+        }
+        guard isListed(comparing.older), isListed(comparing.newer) else {
+            return .missing
+        }
+        guard let comparison, comparison.pair == comparing else {
+            return .loading
+        }
+        return comparison.state
     }
 
     /// Whether `run` can be sent again or put back in the editor: it kept its template, and in this request's protocol.
@@ -120,6 +178,76 @@ final class RunHistoryViewModel {
 
     func showLatest() {
         selection = []
+    }
+
+    /// The runs the inspector shows selected: the selection, or the latest run while the pane follows it, so Show Latest
+    /// and Send leave the newest row highlighted and the highlight moves on as runs arrive.
+    var displayedSelection: Set<RunID> {
+        guard selection.isEmpty, let latest = latest?.id, runs.first?.id == latest else {
+            return selection
+        }
+        return [latest]
+    }
+
+    /// Selects as the inspector's rows were picked. The latest run alone means following the latest, as no selection
+    /// does; kept as a selection, it would pin the pane to that run once a newer one arrives.
+    func select(_ picked: Set<RunID>) {
+        if let latest = latest?.id, picked == [latest] {
+            selection = []
+        } else {
+            selection = picked
+        }
+    }
+
+    /// Compares the two selected runs.
+    func compare() {
+        let chosen = runs.filter { selection.contains($0.id) }
+        guard chosen.count == 2 else {
+            return
+        }
+        comparing = RunPair(older: chosen[1].id, newer: chosen[0].id)
+    }
+
+    func compareWithLatest(_ run: RunID) {
+        guard let newest = runs.first?.id, newest != run else {
+            return
+        }
+        selection = [run, newest]
+        compare()
+    }
+
+    func endComparison() {
+        comparing = nil
+    }
+
+    /// Loads both runs and diffs them off the main actor, for the comparison view's `.task(id: comparing)`; a large
+    /// body takes a while, and leaving the comparison cancels it.
+    func loadComparison() async {
+        guard let pair = comparing else {
+            return
+        }
+        // A finished comparison is reused; one left loading was cancelled with its view, and starts over.
+        if let comparison, comparison.pair == pair, !comparison.state.isLoading {
+            return
+        }
+        comparison = (pair, .loading)
+        guard let older = await exchange(pair.older), let newer = await exchange(pair.newer) else {
+            if comparing == pair {
+                comparison = (pair, .missing)
+            }
+            return
+        }
+        let work = Task.detached(priority: .userInitiated) {
+            try RunComparer.compare(older, newer)
+        }
+        let result = try? await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
+        }
+        if comparing == pair, let result {
+            comparison = (pair, .ready(result))
+        }
     }
 
     /// Drops selected runs the history no longer lists, as after pruning or a clear.
@@ -175,20 +303,31 @@ final class RunHistoryViewModel {
         "Restored the request as it was sent \(date.formatted(date: .abbreviated, time: .shortened))."
     }
 
+    /// Whether the history still lists `run`. A run cleared or pruned since it was picked no longer shows, even while
+    /// the inspector, which drops it from the selection, is hidden.
+    private func isListed(_ run: RunID) -> Bool {
+        runs.contains { $0.id == run }
+    }
+
     private var latest: RequestExchange? {
         app.runner.latest[RunKey(requestID, in: projectID)]
     }
 
     /// The stored run, or an alert when it is gone.
     private func stored(_ run: RunSummary) async -> RequestExchange? {
-        if let latest, latest.id == run.id {
-            return latest
-        }
-        guard let exchange = await app.runner.history.exchange(run.id, for: requestID, in: projectID) else {
+        guard let exchange = await exchange(run.id) else {
             app.alert = AppAlert(title: "Run No Longer Kept", message: "The history no longer has this run.")
             return nil
         }
         return exchange
+    }
+
+    /// The run in memory when it is the latest, else from the history.
+    private func exchange(_ run: RunID) async -> RequestExchange? {
+        if let latest, latest.id == run {
+            return latest
+        }
+        return await app.runner.history.exchange(run, for: requestID, in: projectID)
     }
 }
 

@@ -20,7 +20,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 - **Give every editable table of per-row checkboxes a `CheckboxRange` and a `CheckboxSelectionBar`**, so Shift-click ranges and Select All / Select None work alike in each.
 - **Use `SectionPicker` for segmented switchers**; macOS centers a segmented control inside a wider frame, pulling it off the pane's leading edge.
 - **Use `TemplateField` or `CodeEditor` for any text that accepts `{{variables}}`**; a plain `TextField` silently loses the pills, tooltips, and completion.
-- **Show read-only code and bodies in `CodeViewerPane`, and JSON or XML trees in `BodyTreePane`; never a read-only `CodeEditor`, `NSTextView`, or SwiftUI `OutlineGroup`.** Those hold and lay out everything at once, which stalled scrolling and resizing on multi-megabyte responses.
+- **Show read-only code and bodies in `CodeViewerPane` (line diffs too, passing a `DiffDocument`'s lines), and JSON or XML trees in `BodyTreePane`; never a read-only `CodeEditor`, `NSTextView`, SwiftUI row stack, or `OutlineGroup`.** Those hold and lay out everything at once, which stalled scrolling and resizing on multi-megabyte responses.
 - **Give `ForEach` rows in a grouped `Form` IDs unique across all its sections.** Sections keyed by bare indices share IDs, and the form draws each card around the wrong rows.
 - End a sheet with `SheetFooter` and head a Settings page with `ScreenHeader`. In a column too narrow for `ContentUnavailableView`, which clips there, use `CompactEmptyState`.
 - **Never give a detail screen an in-page title.** The window's `DetailTitleBar` names and renames whatever the detail shows (`Sources/Reqling/App/AGENTS.md`).

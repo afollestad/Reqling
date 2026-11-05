@@ -16,7 +16,7 @@ extension CodeViewerView {
             return document.length
         }
         let rendered = renderedRow(row(atY: point.y), in: layout)
-        let index = CTLineGetStringIndexForPosition(rendered.line, CGPoint(x: point.x - CodeViewerMetrics.horizontalInset, y: 0))
+        let index = CTLineGetStringIndexForPosition(rendered.line, CGPoint(x: point.x - textInset, y: 0))
         return index == kCFNotFound ? rendered.bytes.lowerBound : rendered.map.byte(atUTF16: index)
     }
 
@@ -85,7 +85,19 @@ extension CodeViewerView {
         }
         let visible = scrollView.contentView.bounds
         return (row(atY: visible.minY)...row(atY: visible.maxY))
-            .map { document.text(in: layout.byteRange(ofRow: $0)) }
+            .map { row in
+                let text = document.text(in: layout.byteRange(ofRow: row))
+                // A diff's markers are only drawn, so VoiceOver hears which lines were added or removed from here.
+                let position = layout.position(ofRow: row)
+                guard position.chunk == 0, let style = diffStyle(ofLine: position.line) else {
+                    return text
+                }
+                return switch style.kind {
+                case .added: "Added: " + text
+                case .removed: "Removed: " + text
+                case .context, .omitted: text
+                }
+            }
             .joined(separator: "\n")
     }
 
