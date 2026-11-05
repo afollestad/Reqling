@@ -10,19 +10,13 @@ import XCTest
 final class GraphQLEditorModelTests: XCTestCase {
     private var fixture: AppFixture!
     private var gate: SleepGate!
-    private var sleeps: SleepSwitch!
     private var project: ProjectID!
 
     override func setUp() async throws {
         let gate = SleepGate()
-        let sleeps = SleepSwitch()
+        gate.isHolding = false
         self.gate = gate
-        self.sleeps = sleeps
-        fixture = AppFixture(sleep: { _ in
-            if await sleeps.holds {
-                await gate.sleep()
-            }
-        })
+        fixture = AppFixture(sleep: { _ in await gate.sleep() })
         fixture.model.createProject(named: "GraphQL")
         project = fixture.model.selection?.projectID
         let staging = RequestEnvironment(name: "Staging", variables: [Variable(key: "base", value: "https://staging.test")])
@@ -113,12 +107,12 @@ final class GraphQLEditorModelTests: XCTestCase {
     }
 
     func testANewerCheckSupersedesAnOlderOne() async {
-        sleeps.holds = true
+        gate.isHolding = true
         editor.spec.body.graphQL.query = "{ me { nmae } }"
         editor.spec.body.graphQL.query = "{ me { nickname } }"
 
         await waitUntil("both checks to wait") { gate.pendingCount >= 2 }
-        sleeps.holds = false
+        gate.isHolding = false
         gate.releaseAll()
         await model.settled()
 
@@ -193,7 +187,7 @@ final class GraphQLEditorModelTests: XCTestCase {
     /// A schema source chosen elsewhere (an agent, a pull) during the autosave pause survives an edit to the query
     /// here: the merged save keeps both.
     func testTheMergedSaveKeepsASchemaSourceChosenElsewhere() async throws {
-        sleeps.holds = true
+        gate.isHolding = true
         editor.spec.body.graphQL.query = "{ ping }"
         let request = editor.requestID
         var external = try XCTUnwrap(fixture.library.document(project)?.request(request)?.kind.httpSpec)
@@ -202,7 +196,7 @@ final class GraphQLEditorModelTests: XCTestCase {
         fixture.model.libraryDidChange()
 
         await waitUntil("the autosave to wait") { gate.pendingCount > 0 }
-        sleeps.holds = false
+        gate.isHolding = false
         gate.releaseAll()
         await waitUntil("the merged save") { saved?.body.graphQL.query == "{ ping }" }
 
@@ -281,12 +275,6 @@ final class GraphQLEditorModelTests: XCTestCase {
     }
 
     // MARK: - Support
-
-    /// Whether sleeps wait for the gate; off, the pauses pass at once.
-    @MainActor
-    private final class SleepSwitch {
-        var holds = false
-    }
 
     /// Waits twice: a load that reads the file changes the service's revision, which starts one quiet reload after it
     /// (a cache hit), so each test starts with nothing in flight.

@@ -4,6 +4,9 @@ import XCTest
 /// Holds every sleeper until `releaseAll()`, so debounced work runs exactly when a test says.
 @MainActor
 final class SleepGate {
+    /// While false, sleepers pass straight through. `sleep()` reads it and joins the queue in one main-actor step; a
+    /// switch read in a hop of its own let a sleeper join after the release meant for it, and wait forever.
+    var isHolding = true
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
     var pendingCount: Int {
@@ -11,6 +14,9 @@ final class SleepGate {
     }
 
     func sleep() async {
+        guard isHolding else {
+            return
+        }
         await withCheckedContinuation { waiting.append($0) }
     }
 
