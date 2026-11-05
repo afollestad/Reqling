@@ -22,10 +22,10 @@ struct GraphQLBodyEditor: View {
             if let graphQL = editor.graphQL {
                 GraphQLSchemaRow(editor: editor, schema: graphQL.schema, source: editor.spec.body.graphQL.schema)
             }
-            HSplitView {
+            // Side by side with a gap rather than in a split view: its divider drew a line between them.
+            HStack(alignment: .top, spacing: AppMetrics.sideBySideEditorSpacing) {
                 GraphQLQueryPane(query: $editor.spec.body.graphQL.query, tokenContext: tokenContext, model: editor.graphQL)
-                    .padding(.trailing, AppMetrics.splitPaneGap)
-                    .frame(minWidth: 200)
+                    .frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
                         Text("Variables")
@@ -49,8 +49,7 @@ struct GraphQLBodyEditor: View {
                     )
                         .editorChrome()
                 }
-                .padding(.leading, AppMetrics.splitPaneGap)
-                .frame(minWidth: 160)
+                .frame(maxWidth: .infinity)
             }
         }
     }
