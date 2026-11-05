@@ -36,7 +36,7 @@ struct NewProjectSheet: View {
                 }
                 LabeledRow("Location") {
                     HStack {
-                        Text(location?.path(percentEncoded: false) ?? "Reqling's projects folder")
+                        Text(location?.abbreviatedPath ?? "Reqling's projects folder")
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)

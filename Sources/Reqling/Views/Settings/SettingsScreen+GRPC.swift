@@ -76,7 +76,7 @@ struct ProtocDetectionSummary: View {
                     .foregroundStyle(.secondary)
             }
         case .found(let installation):
-            let path = (installation.executable.path as NSString).abbreviatingWithTildeInPath
+            let path = installation.executable.abbreviatedPath
             VStack(alignment: .trailing, spacing: 2) {
                 Text("protoc \(installation.version) · \(Self.title(for: installation.source))")
                 Text(path)

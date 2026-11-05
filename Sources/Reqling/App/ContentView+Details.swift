@@ -10,7 +10,7 @@ struct ProjectDetailView: View {
         if let document = project.document {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text(project.url.path(percentEncoded: false))
+                    Text(project.url.abbreviatedPath)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                     HStack(spacing: 24) {

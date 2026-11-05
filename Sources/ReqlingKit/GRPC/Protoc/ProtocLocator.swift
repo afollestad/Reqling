@@ -33,7 +33,7 @@ public struct ProtocLocatorError: Error, Hashable, Sendable, LocalizedError {
     public let reason: String
 
     public var errorDescription: String? {
-        "The protoc set in Settings (\(path)) \(reason)."
+        "The protoc set in Settings (\((path as NSString).abbreviatingWithTildeInPath)) \(reason)."
     }
 }
 
