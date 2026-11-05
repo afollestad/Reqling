@@ -74,6 +74,22 @@ public enum TemplateParser {
         return tokens
     }
 
+    /// The partial name inside the nearest `{{` before `cursor` (a UTF-16 offset) that is still open on its line, or
+    /// nil outside one. Template completion offers names there, and GraphQL completion stays out of it.
+    public static func openTokenRange(in text: NSString, cursor: Int) -> NSRange? {
+        let cursor = min(max(cursor, 0), text.length)
+        let open = text.range(of: "{{", options: .backwards, range: NSRange(location: 0, length: cursor))
+        guard open.location != NSNotFound else {
+            return nil
+        }
+        let start = NSMaxRange(open)
+        let partial = text.substring(with: NSRange(location: start, length: cursor - start))
+        guard !partial.contains("}"), !partial.contains(where: \.isNewline) else {
+            return nil
+        }
+        return NSRange(location: start, length: cursor - start)
+    }
+
     /// The distinct variable names referenced, in first-use order; dynamic names are excluded.
     public static func variableNames(in text: String) -> [String] {
         var seen: Set<String> = []

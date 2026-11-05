@@ -408,25 +408,10 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         complete(nil)
     }
 
-    /// The partial name inside the nearest `{{` before `cursor` that is still open on its line, or nil outside one.
-    static func templateCompletionRange(in text: NSString, cursor: Int) -> NSRange? {
-        let cursor = min(max(cursor, 0), text.length)
-        let open = text.range(of: "{{", options: .backwards, range: NSRange(location: 0, length: cursor))
-        guard open.location != NSNotFound else {
-            return nil
-        }
-        let start = NSMaxRange(open)
-        let partial = text.substring(with: NSRange(location: start, length: cursor - start))
-        guard !partial.contains("}"), !partial.contains(where: \.isNewline) else {
-            return nil
-        }
-        return NSRange(location: start, length: cursor - start)
-    }
-
     /// Completion only ever names variables, so outside an open `{{` there is nothing to complete; `NSNotFound` keeps
     /// AppKit from offering them as plain words.
     override var rangeForUserCompletion: NSRange {
-        guard showsTemplateTokens, let range = Self.templateCompletionRange(in: string as NSString, cursor: selectedRange().location) else {
+        guard showsTemplateTokens, let range = TemplateParser.openTokenRange(in: string as NSString, cursor: selectedRange().location) else {
             return NSRange(location: NSNotFound, length: 0)
         }
         return range
@@ -450,7 +435,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     private func followsOpeningBraces(_ range: NSRange) -> Bool {
         let text = string as NSString
         let cursor = NSMaxRange(range)
-        return cursor <= text.length && Self.templateCompletionRange(in: text, cursor: cursor)?.location == range.location
+        return cursor <= text.length && TemplateParser.openTokenRange(in: text, cursor: cursor)?.location == range.location
     }
 
     private func followingTextCloses(after range: NSRange) -> Bool {

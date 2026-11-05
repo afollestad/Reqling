@@ -11,14 +11,6 @@ final class CodeTextViewTests: XCTestCase {
 
     // MARK: - Completion
 
-    func testCompletionRangeIsOnlyInsideAnOpenTemplate() {
-        XCTAssertEqual(CodeTextView.templateCompletionRange(in: "{{to", cursor: 4), NSRange(location: 2, length: 2))
-        XCTAssertEqual(CodeTextView.templateCompletionRange(in: "a/{{", cursor: 4), NSRange(location: 4, length: 0))
-        XCTAssertNil(CodeTextView.templateCompletionRange(in: "https://x/to", cursor: 12))
-        XCTAssertNil(CodeTextView.templateCompletionRange(in: "{{a}} b", cursor: 7))
-        XCTAssertNil(CodeTextView.templateCompletionRange(in: "{{a\nb", cursor: 5))
-    }
-
     func testCompletionIsNotOfferedOutsideATemplate() {
         let textView = makeTextView(isSingleLine: true, text: "https://x/to")
         var index = -1

@@ -1,0 +1,1 @@
+From [graphql/graphiql](https://github.com/graphql/graphiql) at `1cb7ebad08da`: `StarWarsSchema.graphql` is the schema `packages/graphql-language-service/src/interface/__tests__/getAutocompleteSuggestions.test.ts` completes against, under the MIT license in `LICENSE`. `GraphQLLanguageServiceCompletionTests` ports that suite's cases for executable documents.

@@ -34,6 +34,14 @@ final class TemplateParserTests: XCTestCase {
         XCTAssertTrue(TemplateParser.tokens(in: String(repeating: "{{a\n", count: 50_000) + "}}").isEmpty)
     }
 
+    func testOpenTokenRangeIsOnlyInsideATemplateStillOpenOnItsLine() {
+        XCTAssertEqual(TemplateParser.openTokenRange(in: "{{to", cursor: 4), NSRange(location: 2, length: 2))
+        XCTAssertEqual(TemplateParser.openTokenRange(in: "a/{{", cursor: 4), NSRange(location: 4, length: 0))
+        XCTAssertNil(TemplateParser.openTokenRange(in: "https://x/to", cursor: 12))
+        XCTAssertNil(TemplateParser.openTokenRange(in: "{{a}} b", cursor: 7))
+        XCTAssertNil(TemplateParser.openTokenRange(in: "{{a\nb", cursor: 5))
+    }
+
     func testVariableNamesAreDistinctAndSkipDynamicValues() {
         XCTAssertEqual(TemplateParser.variableNames(in: "{{b}}{{a}}{{b}}{{$uuid}}"), ["b", "a"])
     }

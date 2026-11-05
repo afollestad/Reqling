@@ -99,7 +99,7 @@ let package = Package(
                 .product(name: "GraphQL", package: "GraphQL"),
                 .product(name: "GraphQLFixtureServer", package: "GraphQLFixtureServer")
             ],
-            resources: [.copy("GRPC/Fixtures")]
+            resources: [.copy("GRPC/Fixtures"), .copy("GraphQL/GraphQLFixtures")]
         ),
         .testTarget(
             name: "ReqlingTests",
