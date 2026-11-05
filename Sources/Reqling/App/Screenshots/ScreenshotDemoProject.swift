@@ -119,8 +119,8 @@ private enum StorefrontSearch {
         url: "{{baseUrl}}/graphql",
         body: HTTPBody(mode: .graphQL, graphQL: GraphQLBody(
             query: """
-            query Search($query: String!) {
-              search(query: $query, first: 2) {
+            query Search($q: String!) {
+              search(query: $q, first: 2) {
                 totalCount
                 nodes {
                   title
@@ -132,7 +132,7 @@ private enum StorefrontSearch {
               }
             }
             """,
-            variables: "{\n  \"query\": \"{{searchTerm}}\"\n}",
+            variables: "{\n  \"q\": \"{{searchTerm}}\"\n}",
             operationName: "Search",
             schema: .file(.relative(StorefrontGraphQLSchema.fileName))
         ))
