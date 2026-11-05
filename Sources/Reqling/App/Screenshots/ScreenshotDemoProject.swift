@@ -3,7 +3,9 @@ import Foundation
 import ReqlingKit
 
 /// The projects screenshot mode shows: a finished-looking "Acme API" with HTTP and gRPC requests, environments, and a
-/// cached last run for each request a scene opens, plus a collapsed second project so the sidebar reads as a library.
+/// cached last run for each request a scene opens, plus a second project so the sidebar reads as a library. That one,
+/// Storefront, holds the GraphQL scene's request and stays collapsed in every other scene, where its row still shows
+/// how many requests it holds: keep that at two, or every other capture changes.
 /// Every value is fixed, so the light and dark captures of a scene match and one `alt` describes both. The website's
 /// alt text (the `gh-pages` branch) describes this data, so recapture with `scripts/screenshots.sh` and update it there
 /// when it changes.
@@ -14,12 +16,8 @@ enum ScreenshotDemoProject {
 
     static func seed(_ scene: ScreenshotMode.Scene, into component: AppComponent) throws {
         let library = component.projectLibrary
-        let storefront = try library.createProject(named: "Storefront")
-        try library.mutate(storefront) { document in
-            try document.insert(.request(DemoRequests.http("List products", url: "{{baseUrl}}/products")), into: nil)
-            try document.insert(.request(DemoRequests.http("Checkout", .post, url: "{{baseUrl}}/checkout")), into: nil)
-        }
-        component.workspaceState.updateProject(storefront) { $0.isCollapsed = true }
+        let storefront = try seedStorefront(expanded: scene == .graphql, into: component)
+        let search = StorefrontSearch.request
 
         let acme = try library.createProject(named: "Acme API")
         guard let acmeURL = library.project(acme)?.url else {
@@ -44,9 +42,10 @@ enum ScreenshotDemoProject {
         component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = requests.expandedFolderIDs }
 
         let history = RunHistoryStore(directory: component.storageProfile.historyDirectory)
-        for run in requests.cachedRuns {
+        let runs = requests.cachedRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))]
+        for (project, run) in runs {
             history.save(RequestExchange(
-                projectID: acme,
+                projectID: project,
                 requestID: run.request,
                 startedAt: startedAt,
                 environmentName: "Default",
@@ -56,12 +55,43 @@ enum ScreenshotDemoProject {
         }
 
         let shown = switch scene {
-        case .request: requests.getUser
-        case .body: requests.createUser
-        case .grpc: requests.chat
+        case .request: WorkspaceSelection(projectID: acme, nodeID: requests.getUser)
+        case .body: WorkspaceSelection(projectID: acme, nodeID: requests.createUser)
+        case .grpc: WorkspaceSelection(projectID: acme, nodeID: requests.chat)
+        case .graphql: WorkspaceSelection(projectID: storefront, nodeID: search.id)
         }
-        component.workspaceState.update { $0.selection = WorkspaceSelection(projectID: acme, nodeID: shown) }
+        component.workspaceState.update { state in
+            state.selection = shown
+            if scene == .graphql {
+                state.showsRunHistory = true
+                state.inspectorPanel = .graphQLSchema
+            }
+        }
         showTabs(for: scene, in: component.appModel)
+    }
+
+    /// Created first, so it sits above Acme API in the sidebar.
+    private static func seedStorefront(expanded: Bool, into component: AppComponent) throws -> ProjectID {
+        let library = component.projectLibrary
+        let storefront = try library.createProject(named: "Storefront")
+        guard let storefrontURL = library.project(storefront)?.url else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        try StorefrontGraphQLSchema.sdl.write(
+            to: storefrontURL.appendingPathComponent(StorefrontGraphQLSchema.fileName),
+            atomically: true,
+            encoding: .utf8
+        )
+        try library.mutate(storefront) { document in
+            document.defaultEnvironment.variables = [
+                Variable(key: "baseUrl", value: "https://shop.acme.dev"),
+                Variable(key: "searchTerm", value: "mug")
+            ]
+            try document.insert(.request(StorefrontSearch.request), into: nil)
+            try document.insert(.request(DemoRequests.http("Checkout", .post, url: "{{baseUrl}}/checkout")), into: nil)
+        }
+        component.workspaceState.updateProject(storefront) { $0.isCollapsed = !expanded }
+        return storefront
     }
 
     /// The editor and response tabs each scene shows; `AppModel` built its editor from the seeded selection.
@@ -74,7 +104,59 @@ enum ScreenshotDemoProject {
             model.editor?.asHTTP?.response.tab = .timing
         case .grpc:
             model.editor?.asGRPC?.tab = .messages
+        case .graphql:
+            model.editor?.asHTTP?.tab = .body
+            model.editor?.asHTTP?.graphQL?.browser.show("Product")
         }
+    }
+}
+
+/// Storefront's GraphQL request, and the run cached for it.
+@MainActor
+private enum StorefrontSearch {
+    static let request = RequestItem(name: "Search products", kind: .http(HTTPRequestSpec(
+        method: .post,
+        url: "{{baseUrl}}/graphql",
+        body: HTTPBody(mode: .graphQL, graphQL: GraphQLBody(
+            query: """
+            query Search($query: String!) {
+              search(query: $query, first: 2) {
+                totalCount
+                nodes {
+                  title
+                  handle
+                  priceRange {
+                    min { amount currencyCode }
+                  }
+                }
+              }
+            }
+            """,
+            variables: "{\n  \"query\": \"{{searchTerm}}\"\n}",
+            operationName: "Search",
+            schema: .file(.relative(StorefrontGraphQLSchema.fileName))
+        ))
+    )))
+
+    static func cachedRun(of request: RequestNodeID) -> CachedRun {
+        let url = "https://shop.acme.dev/graphql"
+        let response = HTTPResponseRecord(
+            statusCode: 200,
+            headers: [KeyValuePair(key: "Content-Type", value: "application/graphql-response+json; charset=utf-8")],
+            body: Data("""
+            {"data":{"search":{"totalCount":14,"nodes":[\
+            {"title":"Enamel Camp Mug","handle":"enamel-camp-mug","priceRange":{"min":{"amount":"18.00","currencyCode":"USD"}}},\
+            {"title":"Stoneware Mug","handle":"stoneware-mug","priceRange":{"min":{"amount":"24.00","currencyCode":"USD"}}}]}}}
+            """.utf8),
+            url: url,
+            startedAt: ScreenshotDemoProject.startedAt,
+            duration: 0.094,
+            timing: HTTPTiming(dnsLookup: 0.003, connect: 0.010, tlsHandshake: 0.021, requestSent: 0.0003, waiting: 0.052, download: 0.008),
+            protocolName: "h2",
+            tlsVersion: "TLS 1.3"
+        )
+        let sent = ResolvedHTTPRequest(method: "POST", url: url, headers: [], bodyPreview: nil, bodyByteCount: 0)
+        return CachedRun(request: request, sent: sent, outcome: .response(response))
     }
 }
 

@@ -41,7 +41,7 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 ## Requests
 
 - Any method, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
-- Bodies: **raw** with any Content-Type, **form-data**, **x-www-form-urlencoded**, **binary**, and **GraphQL** (a query and its variables, sent as the JSON body GraphQL servers expect).
+- Bodies: **raw** with any Content-Type, **form-data**, **x-www-form-urlencoded**, **binary**, and **GraphQL** (a query and its variables, sent as the JSON body GraphQL servers expect; see [GraphQL](#graphql)).
 - Auth: Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
 - Untick a parameter, header, form field, or variable to keep it but leave it out. Shift-click a checkbox to set every row between it and the last one you clicked, or use **Select All** and **Select None** above the rows.
 - Automatic headers are listed alongside your own, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`). Add a header with the same name to replace one; switching off `User-Agent`, `Accept`, or `Content-Type` stops Reqling setting it, and macOS then sends its own default.
@@ -61,6 +61,17 @@ The schema comes from one of three places:
 - **Server reflection**, for servers that expose it.
 
 **Example** fills a message with every field of its type. Calls use the project's client certificates and CA certificates, the same as HTTP requests.
+
+## GraphQL
+
+A GraphQL body's query editor knows the API's schema. As you type (or on ⌥Esc) it completes fields, arguments, enum values, variables, directives, and fragments; it describes whatever the pointer rests on; and it underlines misspelled fields, missing required arguments, type mismatches, and deprecated usage, with a menu of the problems above the query. `{{variables}}` inside the query are left alone.
+
+The schema comes from one of two places, chosen in the **Schema** row:
+
+- **Introspection**, sent to the request's URL with its own headers, auth, and TLS settings as soon as the request opens, and cached on this Mac per endpoint, so the schema is there at once next time. The row says how old it is; reload to ask the server again.
+- **A schema file**, for servers that turn introspection off: SDL (`.graphql`, `.graphqls`, `.gql`) or a saved introspection result (`.json`). A file inside the project's folder or repository is stored relative to it; for one elsewhere, Reqling asks whether to share its path or remember it on this Mac only.
+
+**Request ▸ Show GraphQL Schema** (⌥⌘0) browses the schema in the inspector beside the request: the root types, then every type by kind, a filter over every type and field, and each type's fields, arguments, defaults, deprecations, and where it is used, with every type a click away.
 
 ## MCP server
 

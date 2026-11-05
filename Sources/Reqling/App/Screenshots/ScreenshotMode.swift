@@ -15,6 +15,8 @@ struct ScreenshotMode {
         case body
         /// A bidirectional gRPC call's messages, and its timeline of what was sent and received.
         case grpc
+        /// A GraphQL query checked against its schema file, and that schema in the inspector's browser.
+        case graphql
     }
 
     let scene: Scene

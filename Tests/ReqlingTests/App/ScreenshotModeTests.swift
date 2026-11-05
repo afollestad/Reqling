@@ -56,6 +56,37 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertNotNil(editor.schema.method(service: GreeterDescriptorSet.service, name: "Chat"))
     }
 
+    /// The schema file it writes must load and accept the query, or the capture shows an error or an underline.
+    func testGraphQLSceneOpensTheQueryWithItsSchemaInTheInspector() async throws {
+        try ScreenshotDemoProject.seed(.graphql, into: component)
+
+        let model = component.appModel
+        let editor = try XCTUnwrap(model.editor?.asHTTP)
+        let graphQL = try XCTUnwrap(editor.graphQL)
+        await graphQL.settled()
+
+        XCTAssertEqual(model.selectedNode()?.name, "Search products")
+        XCTAssertEqual(editor.tab, .body)
+        XCTAssertEqual(editor.response.exchange?.response?.statusCode, 200)
+        guard case .ready(.file, _, nil) = graphQL.schema.status else {
+            return XCTFail("\(graphQL.schema.status)")
+        }
+        XCTAssertEqual(graphQL.diagnostics.text, editor.spec.body.graphQL.query)
+        XCTAssertEqual(graphQL.diagnostics.items, [])
+        XCTAssertTrue(model.showsGraphQLSchema)
+        XCTAssertEqual(graphQL.browser.currentType, "Product")
+        XCTAssertNotNil(graphQL.schema.snapshot?.typeSystem.type(named: "Product"))
+    }
+
+    /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, so it changes no capture.
+    func testOtherScenesKeepStorefrontCollapsedAndTheInspectorClosed() throws {
+        try ScreenshotDemoProject.seed(.body, into: component)
+
+        let storefront = try XCTUnwrap(component.projectLibrary.projects.first { $0.name == "Storefront" }?.id)
+        XCTAssertTrue(component.workspaceState.projectState(storefront).isCollapsed)
+        XCTAssertFalse(component.appModel.isInspectorShown)
+    }
+
     func testTheStorageIsWipedOnEveryLaunch() throws {
         let first = AppStorageProfile.screenshots()
         try FileManager.default.createDirectory(at: first.projectsDirectory, withIntermediateDirectories: true)
