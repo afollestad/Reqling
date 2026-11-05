@@ -76,7 +76,8 @@ extension AppComponent {
                 pkcs12Probe: pkcs12ImportProbe,
                 history: runHistory,
                 userAgent: appInfo.userAgent,
-                grpcSchemas: grpcSchema
+                grpcSchemas: grpcSchema,
+                graphQLSchemas: graphQLSchemas
             )
         }
     }

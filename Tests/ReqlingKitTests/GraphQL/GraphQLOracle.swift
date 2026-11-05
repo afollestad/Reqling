@@ -16,6 +16,11 @@ enum GraphQLOracle {
         try await graphql(schema: schema(sdl), request: query)
     }
 
+    /// The response JSON a server built on `sdl` sends for `query`.
+    static func response(to query: String, on sdl: String = fixtureSDL) async throws -> Data {
+        try GraphQLJSONEncoder().encode(try await run(query, on: sdl))
+    }
+
     /// The response JSON a server built on `sdl` sends for the introspection query Reqling builds for `capabilities`.
     static func introspectionResponse(
         of sdl: String = fixtureSDL,

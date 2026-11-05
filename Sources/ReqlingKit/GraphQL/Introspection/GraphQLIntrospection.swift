@@ -182,7 +182,13 @@ public enum GraphQLIntrospection {
             return .data(json, errors: errors)
         }
         if object?["errors"] != nil {
-            return .refused(errors.isEmpty ? ["The server reported an error without a message."] : errors)
+            let messages = errors.isEmpty ? ["The server reported an error without a message."] : errors
+            // Servers refuse a query with 200, or 400 or 422 under GraphQL over HTTP; any other status (401, 403, 5xx)
+            // is about the request, and asking again with another query would not help.
+            guard [200, 400, 422].contains(response.statusCode) else {
+                return .failed(.http(status: response.statusCode, snippet: messages.joined(separator: " ")))
+            }
+            return .refused(messages)
         }
         guard (200..<300).contains(response.statusCode) else {
             return .failed(.http(status: response.statusCode, snippet: snippet(response.body)))

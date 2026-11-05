@@ -15,6 +15,7 @@ There is no CI yet, but every test must be able to run unattended on a clean mac
 
 - **No external network.** HTTP goes through `URLProtocol` stubs; local servers (HTTP, gRPC, MCP, fixtures) bind loopback port 0, never a fixed port. Checks against public servers belong in manual verification, never in a suite.
     - Serve GraphQL from `GraphQLFixtureServer`, which executes a real schema through GraphQLSwift; hand-written introspection JSON drifts from what servers send.
+    - App graphs never introspect (`Sources/Reqling/DI/AppComponent+GraphQL.swift`), so a GraphQL request in an app test or snapshot gets its schema from a file or a seeded `GraphQLSchemaStore`.
 - **No developer or machine state.** Use `AppStorageProfile.test()`, always paired with its `cleanUp()`, instead of Application Support, a unique wiped `UserDefaults` suite instead of `.standard`, and in-memory secret stores instead of the Keychain.
     - Inject a trasher instead of calling `FileManager.trashItem`, which would fill the developer's real Trash.
     - Put `NSOpenPanel`, `NSWorkspace`, `NSApplication.terminate`, and process launches behind protocols.

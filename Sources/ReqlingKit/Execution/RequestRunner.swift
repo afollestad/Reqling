@@ -75,6 +75,8 @@ public final class RequestRunner {
     /// `nil` only where gRPC is never run; its requests then fail with an explanation. Public so the editor's Refresh
     /// drops the same reflection cache runs use.
     @ObservationIgnored public let grpcSchemas: GRPCSchemaService?
+    /// `nil` only where GraphQL schemas are never loaded; schema lookups then fail with an explanation.
+    @ObservationIgnored public let graphQLSchemas: GraphQLSchemaService?
     @ObservationIgnored private var executors: [ProjectID: HTTPExecutor] = [:]
     @ObservationIgnored private var tasks: [RunKey: Task<RequestExchange, Never>] = [:]
     /// Each running gRPC call's timeline and outbox, by run. A run only touches its own entry (checked by identity),
@@ -91,6 +93,7 @@ public final class RequestRunner {
         userAgent: String,
         dynamic: DynamicVariables = .live,
         grpcSchemas: GRPCSchemaService? = nil,
+        graphQLSchemas: GraphQLSchemaService? = nil,
         makeExecutor: @escaping @MainActor () -> HTTPExecutor = { HTTPExecutor() }
     ) {
         self.library = library
@@ -102,6 +105,7 @@ public final class RequestRunner {
         self.userAgent = userAgent
         self.dynamic = dynamic
         self.grpcSchemas = grpcSchemas
+        self.graphQLSchemas = graphQLSchemas
         self.makeExecutor = makeExecutor
         history.onPrune = { [weak self] removal in
             self?.dropPruned(removal)
@@ -262,6 +266,7 @@ public final class RequestRunner {
         liveCalls = liveCalls.filter { $0.key.projectID != project }
         openStreams = openStreams.filter { $0.projectID != project }
         grpcSchemas?.refreshReflection(in: project)
+        graphQLSchemas?.forget(project)
         executors.removeValue(forKey: project)?.invalidate()
         history.clear(in: project)
         latest = latest.filter { $0.key.projectID != project }
@@ -342,10 +347,18 @@ public final class RequestRunner {
 
     private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
         let context = try runContext(request, in: projectID, options: options)
-        guard var spec = context.item.kind.httpSpec else {
+        guard let spec = context.item.kind.httpSpec else {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a gRPC request; this works only with HTTP requests.")
         }
-        spec = spec.normalized()
+        let prepared = try preparedHTTP(spec, context: context, options: options)
+        let tls = try tls(for: prepared, project: projectID, context: context)
+        return PreparedRun(prepared: prepared, tls: tls, environmentName: context.environmentName)
+    }
+
+    /// An HTTP spec's request built as a run builds it: normalized, with templates and auth resolved, refusing
+    /// unresolved variables unless `options` allows them.
+    func preparedHTTP(_ spec: HTTPRequestSpec, context: RunContext, options: RunOptions) throws(RunFailure) -> PreparedHTTPRequest {
+        let spec = spec.normalized()
         let buildContext = HTTPBuildContext(
             resolver: context.resolver,
             authChain: context.authChain,
@@ -362,20 +375,23 @@ public final class RequestRunner {
         if !options.allowUnresolved, !prepared.unresolvedVariables.isEmpty {
             throw RunFailure.undefinedVariables(prepared.unresolvedVariables)
         }
+        return prepared
+    }
+
+    /// The certificates a prepared request uses: the project's CAs and the client certificate for its host.
+    func tls(for prepared: PreparedHTTPRequest, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
         let url = prepared.urlRequest.url
-        let tls: TLSContext
         do {
-            tls = try tlsContext(
+            return try tlsContext(
                 host: url?.host ?? "",
                 port: url?.port ?? (url?.scheme?.lowercased() == "https" ? 443 : 80),
                 verifiesServer: prepared.verifyTLS,
-                project: projectID,
+                project: project,
                 context: context
             )
         } catch {
             throw error.redacting(context.redaction)
         }
-        return PreparedRun(prepared: prepared, tls: tls, environmentName: context.environmentName)
     }
 
     /// Snapshots what TLS needs off the main actor (passphrases and Keychain references), then loads the identity and
@@ -404,7 +420,7 @@ public final class RequestRunner {
         }
     }
 
-    private func executor(for project: ProjectID) -> HTTPExecutor {
+    func executor(for project: ProjectID) -> HTTPExecutor {
         if let executor = executors[project] {
             return executor
         }
@@ -424,7 +440,7 @@ public final class RequestRunner {
         return exchange
     }
 
-    nonisolated private static func failure(for error: any Error) -> RunFailure {
+    nonisolated static func failure(for error: any Error) -> RunFailure {
         switch error as? HTTPExecutionError {
         case .cancelled:
             RunFailure(kind: .cancelled, message: HTTPExecutionError.cancelled.localizedDescription)

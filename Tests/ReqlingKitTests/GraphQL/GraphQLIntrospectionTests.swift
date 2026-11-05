@@ -70,16 +70,21 @@ final class GraphQLIntrospectionTests: XCTestCase {
         XCTAssertEqual(errors, ["Partial"])
     }
 
-    func testClassifiesErrorsWithoutDataAsRefusedWhateverTheStatus() {
-        for status in [200, 400] {
-            let body = #"{"errors":[{"message":"GraphQL introspection is not allowed"}]}"#
-
+    func testClassifiesErrorsWithoutDataAsRefusedOnlyWhenTheQueryWasRefused() {
+        let body = #"{"errors":[{"message":"GraphQL introspection is not allowed"}]}"#
+        for status in [200, 400, 422] {
             guard case .refused(let messages) = GraphQLIntrospection.classify(response(body, status: status)) else {
                 return XCTFail("Expected refused for \(status)")
             }
 
             XCTAssertEqual(messages, ["GraphQL introspection is not allowed"])
         }
+
+        let unauthorized = GraphQLIntrospection.classify(response(#"{"errors":[{"message":"Bad token"}]}"#, status: 401))
+        guard case .failed(let failure) = unauthorized else {
+            return XCTFail("Expected a 401 to be about the request, not the query")
+        }
+        XCTAssertEqual(failure, .http(status: 401, snippet: "Bad token"))
     }
 
     func testClassifiesOtherFailuresWithWhatWillExplainThem() throws {

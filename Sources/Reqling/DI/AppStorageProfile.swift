@@ -83,6 +83,11 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("ProtocCache", isDirectory: true)
     }
 
+    /// Introspected GraphQL schemas kept across launches (`GraphQLSchemaStore`), per project and endpoint.
+    var graphQLSchemasDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("GraphQLSchemas", isDirectory: true)
+    }
+
     /// Staged updates, their metadata, and the install helper's scripts and logs. The dev build's Application Support
     /// folder is its own, so its updates never mix with the release build's.
     var updatesDirectory: URL {
