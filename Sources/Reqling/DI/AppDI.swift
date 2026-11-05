@@ -3,6 +3,11 @@
 enum AppDI {
     static let component: AppComponent = {
         registerNeedleProviders()
+        #if DEBUG
+        if let screenshotMode = ScreenshotMode.current {
+            return screenshotMode.makeComponent()
+        }
+        #endif
         return AppComponent(storageProfile: .production)
     }()
 

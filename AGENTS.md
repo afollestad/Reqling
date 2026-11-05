@@ -33,7 +33,7 @@ Read the nearest `AGENTS.md` before editing; every scoped folder pairs it with a
 
 - First-time setup: `./scripts/setup.sh`. It installs `xcsift`, `swiftlint`, `needle`, and `protobuf`, resolves packages, and installs the pre-commit hook.
 - DI generation needs `needle 0.25.1`, matching the pinned NeedleFoundation; see `Sources/Reqling/DI/AGENTS.md`.
-- Build: `./scripts/build.sh [--release]`. Run: `./scripts/run.sh [-b]`. Test: `./scripts/test.sh [filter ...]`. Snapshots: `./scripts/snapshots.sh <verify|record> [filter ...]`.
+- Build: `./scripts/build.sh [--release]`. Run: `./scripts/run.sh [-b]`. Test: `./scripts/test.sh [filter ...]`. Snapshots: `./scripts/snapshots.sh <verify|record> [filter ...]`. Website screenshots: `./scripts/screenshots.sh [-b] [scene ...]`.
 - Run ordered workflows serially, never in parallel: build-then-run, build-then-test, record-then-verify.
 - There is no CI yet. Keep every test CI-safe anyway (`Tests/AGENTS.md`).
 - `TYPECHECK_BUDGET_MS=3000 TYPECHECK_TEST_BUDGET_MS=7000` fails a build or test run when any function body or expression in this repo's sources exceeds that type-check time. `scripts/lib/typecheck-budget.sh` owns the mechanism and the exemption procedure.

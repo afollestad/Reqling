@@ -21,6 +21,12 @@ struct ContentView: View {
             .background {
                 WindowToolbarConfigurator()
                     .frame(width: 0, height: 0)
+                #if DEBUG
+                if ScreenshotMode.current != nil {
+                    ScreenshotWindowConfigurator()
+                        .frame(width: 0, height: 0)
+                }
+                #endif
             }
         )
         .preferredColorScheme(Self.colorScheme(for: model.settings.settings.theme))

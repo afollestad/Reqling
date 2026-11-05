@@ -93,6 +93,7 @@ Reqling checks this repository's GitHub Releases when it opens and every 6 hours
 ./scripts/run.sh -b              # build, then (re)launch the dev app
 ./scripts/test.sh [filter ...]   # run the tests; filters are `swift test --filter` patterns
 ./scripts/snapshots.sh verify    # verify snapshot baselines; `record` re-records them
+./scripts/screenshots.sh -b      # capture the website's screenshots of a demo project, in light and dark
 ./scripts/lint.sh                # run SwiftLint (--fix to autocorrect)
 ./scripts/generate-protos.sh     # regenerate protobuf code and descriptor sets after changing a .proto
 ```
