@@ -193,6 +193,24 @@
         </div>
     </section>
 
+    <section class="section-feature section-centered" id="graphql">
+        <div class="container">
+            <p class="chip">GraphQL</p>
+            <h2>Queries that know their schema</h2>
+            <p class="feature-copy">
+                Completion, descriptions, and checking come from the API's schema, read by introspection with the
+                request's own auth or from a schema file. Browse every type beside the request.
+            </p>
+            <picture>
+                <source srcset="images/graphql-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/graphql-light.webp"
+                    alt="The Search products GraphQL request in the Storefront project: a Search query taking a $q variable, checked against the 17 types in storefront.graphql, with q filled from {{searchTerm}} and a 200 OK response. Beside it the schema browser shows the Product type's fields, with price deprecated in favor of priceRange."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
     <section class="section-feature section-centered" id="grpc">
         <div class="container">
             <p class="chip">gRPC</p>

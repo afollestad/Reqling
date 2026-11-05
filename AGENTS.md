@@ -19,7 +19,7 @@ Built per the global `static-site-rules` skill, as a sibling of the Alveary, Chr
 
 ### Screenshots
 
-`images/{request,body,grpc}-{light,dark}.webp` are 1920x1248 captures of the main window from `main`'s screenshot mode, which seeds a fixed demo project (`ScreenshotDemoProject`), so the alt text describes that data. To regenerate:
+`images/{request,body,graphql,grpc}-{light,dark}.webp` are 1920x1248 captures of the main window from `main`'s screenshot mode, which seeds a fixed demo project (`ScreenshotDemoProject`), so the alt text describes that data. To regenerate:
 
 1. On `main`, run `./scripts/screenshots.sh -b` on a Retina display. It writes 2400x1560 PNGs of the window alone, with transparent rounded corners, to `.build/screenshots/<scene>-<light|dark>.png`.
 2. Downscale each by four fifths, which keeps both sides integral: `sips -z 1248 1920 <scene>-<theme>.png --out <tmp>.png`.
