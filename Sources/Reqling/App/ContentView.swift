@@ -150,7 +150,10 @@ private struct DetailView: View {
     let model: AppModel
 
     var body: some View {
-        content
+        // One view whose identity never changes: SwiftUI rebuilds the inspector's split column whenever the identity of
+        // the view `.inspector` modifies changes, which `content`'s does with every request (its `.id`, or its branch),
+        // and a rebuilt column comes back at its minimum width, dropping the width the person dragged it to.
+        ZStack { content }
             .inspector(isPresented: Binding(
                 get: { model.showsRunHistory && model.editor != nil },
                 // Only the person hides it; the inspector going with its editor must not forget that it was open.
