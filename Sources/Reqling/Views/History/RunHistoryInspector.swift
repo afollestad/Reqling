@@ -8,6 +8,9 @@ struct RunHistoryInspector: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.timeZone) private var timeZone
     @Environment(\.locale) private var locale
+    /// What Today and Yesterday are relative to, moved whenever the calendar day changes (midnight, waking past it, or a
+    /// new time zone): nothing else re-renders an idle inspector, so its titles would name the day before.
+    @State private var now = Date()
 
     var body: some View {
         let runs = history.runs
@@ -23,12 +26,22 @@ struct RunHistoryInspector: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // AppKit, not a SwiftUI `List`, to keep the selection neutral while the list has focus; see `RunHistoryTable`.
-                RunHistoryTable(history: history, days: history.days(formats: formats), latest: runs.first?.id, selection: history.displayedSelection)
+                RunHistoryTable(
+                    history: history,
+                    days: history.days(formats: formats, now: now),
+                    latest: runs.first?.id,
+                    selection: history.displayedSelection
+                )
                 RunHistoryFooter(history: history)
             }
         }
         .onChange(of: runs.map(\.id)) { _, listed in
             history.retainSelection(in: listed)
+        }
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: .NSCalendarDayChanged) {
+                now = Date()
+            }
         }
     }
 
