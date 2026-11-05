@@ -21,6 +21,8 @@ struct CodeEditor: NSViewRepresentable {
     var accessibilityLabel: String
     /// Lets a surrounding view edit as the user, for actions like Beautify.
     var handle: CodeEditorHandle?
+    /// Problems to underline; a set found in an older version of the text waits until it matches again.
+    var diagnostics: CodeDiagnosticSet = .none
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -65,6 +67,8 @@ struct CodeEditor: NSViewRepresentable {
         textView.setAccessibilityLabel(accessibilityLabel)
         textView.language = language
         textView.replaceText(with: text)
+        // After the text, which the set is stamped against.
+        textView.diagnostics = diagnostics
     }
 
     @MainActor

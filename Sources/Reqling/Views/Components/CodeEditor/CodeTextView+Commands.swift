@@ -80,4 +80,16 @@ final class CodeEditorHandle {
         }
         return true
     }
+
+    /// Selects `range`, scrolls it into view, and focuses the editor, as choosing a problem from a list does.
+    func reveal(_ range: NSRange) {
+        guard let textView else {
+            return
+        }
+        let length = (textView.string as NSString).length
+        let clamped = NSRange(location: min(range.location, length), length: min(range.length, max(0, length - range.location)))
+        textView.window?.makeFirstResponder(textView)
+        textView.setSelectedRange(clamped)
+        textView.scrollRangeToVisible(clamped)
+    }
 }

@@ -52,6 +52,15 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     private var isCompleting = false
     /// An outside change that arrived while an input method was composing; see `replaceText(with:)`.
     var textWaitingOnComposition: String?
+    /// Problems to underline, from `CodeEditor`; see `CodeTextView+Diagnostics`.
+    var diagnostics: CodeDiagnosticSet = .none {
+        didSet {
+            if diagnostics != oldValue {
+                applyDiagnostics()
+            }
+        }
+    }
+    var shownDiagnostics = ShownDiagnostics()
 
     static func make(isSingleLine: Bool) -> CodeTextView {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -157,6 +166,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
             }
         }
         refreshTokens()
+        applyDiagnostics()
     }
 
     private func refreshTokens() {
@@ -448,6 +458,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        drawDiagnostics(in: dirtyRect)
         guard string.isEmpty, !placeholder.isEmpty else {
             return
         }

@@ -7,7 +7,7 @@ import XCTest
 /// Drives `CodeTextView` directly, unhosted or in an offscreen window; its undo manager comes from the delegate.
 @MainActor
 final class CodeTextViewTests: XCTestCase {
-    private let tokenContext = TemplateTokenContext(entries: ["token": .init(displayValue: "t", sourceName: "Default")])
+    let tokenContext = TemplateTokenContext(entries: ["token": .init(displayValue: "t", sourceName: "Default")])
 
     // MARK: - Completion
 
@@ -310,7 +310,7 @@ final class CodeTextViewTests: XCTestCase {
     }
 
     /// Puts the views in an offscreen window and focuses the first, as a click into it would.
-    private func focus(_ textView: CodeTextView, alongside others: CodeTextView...) -> NSWindow {
+    func focus(_ textView: CodeTextView, alongside others: CodeTextView...) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         let container = NSView(frame: window.contentLayoutRect)
@@ -324,7 +324,7 @@ final class CodeTextViewTests: XCTestCase {
     }
 
     /// Types at the end as one undo step; the host's manager does not group by event.
-    private func type(_ text: String, into textView: CodeTextView, host: UndoHost) {
+    func type(_ text: String, into textView: CodeTextView, host: UndoHost) {
         host.manager.beginUndoGrouping()
         textView.insertText(text, replacementRange: NSRange(location: (textView.string as NSString).length, length: 0))
         host.manager.endUndoGrouping()
@@ -351,7 +351,7 @@ final class CodeTextViewTests: XCTestCase {
         return color
     }
 
-    private func makeTextView(isSingleLine: Bool, text: String, delegate: (any NSTextViewDelegate)? = nil) -> CodeTextView {
+    func makeTextView(isSingleLine: Bool, text: String, delegate: (any NSTextViewDelegate)? = nil) -> CodeTextView {
         let textView = CodeTextView.make(isSingleLine: isSingleLine)
         textView.delegate = delegate
         textView.tokenContext = tokenContext
@@ -363,7 +363,7 @@ final class CodeTextViewTests: XCTestCase {
 
 /// Supplies the undo manager a window would; grouping is explicit because no run loop turns between steps.
 @MainActor
-private final class UndoHost: NSObject, NSTextViewDelegate {
+final class UndoHost: NSObject, NSTextViewDelegate {
     let manager: UndoManager = {
         let manager = UndoManager()
         manager.groupsByEvent = false
@@ -384,13 +384,13 @@ private final class UndoHost: NSObject, NSTextViewDelegate {
 }
 
 /// A responder that is not an editor, standing in for the find bar or a SwiftUI field.
-private final class FocusSink: NSView {
+final class FocusSink: NSView {
     override var acceptsFirstResponder: Bool {
         true
     }
 }
 
-private final class CancelProbe: NSResponder {
+final class CancelProbe: NSResponder {
     private(set) var didCancel = false
 
     override func cancelOperation(_ sender: Any?) {
