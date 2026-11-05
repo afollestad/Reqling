@@ -31,6 +31,7 @@ final class RequestRunnerTests: XCTestCase {
             workspace: workspace,
             settings: settings,
             keychain: EmptyKeychain(),
+            pkcs12Probe: TLSFixtures.probe,
             cache: ResponseCache(directory: fixture.directory.file("Support/Responses")),
             userAgent: "Reqling/1.0"
         )

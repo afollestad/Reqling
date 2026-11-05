@@ -33,7 +33,8 @@ generate_needle
 
 # The `+` guards keep macOS's bash 3.2 from treating an empty array as unbound under `set -u`.
 swift_build=(swift build -c "$configuration" ${build_flags[@]+"${build_flags[@]}"} ${typecheck_budget_flags[@]+"${typecheck_budget_flags[@]}"})
-run_filtered build "${swift_build[@]}" --product "$app_name"
+# No `--product`: one build makes both the app and the PKCS#12 helper it bundles.
+run_filtered build "${swift_build[@]}"
 typecheck_budget_report_offenders "$logs_dir/build.log"
 bin_path=$("${swift_build[@]}" --show-bin-path)
 
@@ -42,6 +43,9 @@ dsym="$app.dSYM"
 rm -rf "$app" "$dsym"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_path/$app_name" "$app/Contents/MacOS/"
+# The app opens every PKCS#12 file in this helper first and finds it beside its own executable, by this name.
+helper="$app/Contents/MacOS/ReqlingPKCS12Probe"
+cp "$bin_path/ReqlingPKCS12Probe" "$helper"
 cp Resources/Info.plist "$app/Contents/"
 
 # Dependencies that declare SwiftPM resources (privacy manifests, for one) build a `<package>_<target>.bundle` beside the
@@ -86,12 +90,15 @@ if [ "$configuration" = debug ]; then
 else
   # Ship a stripped binary; the dSYM beside the bundle symbolicates its crash reports.
   ditto "$bin_path/$app_name.dSYM" "$dsym"
-  strip -rSTx "$app/Contents/MacOS/$app_name"
+  strip -rSTx "$app/Contents/MacOS/$app_name" "$helper"
 fi
 
+# Each branch signs the helper before the bundle, the same way: the bundle's signature seals its nested code, and
+# updates verify it with `codesign --deep --strict`.
 identity=${CODESIGN_IDENTITY:--}
 if [ "$identity" != - ]; then
   # Notarization requires the hardened runtime and a secure timestamp.
+  codesign --force --options runtime --timestamp --sign "$identity" "$helper"
   codesign --force --options runtime --timestamp --sign "$identity" "$app"
 elif [ "$configuration" = debug ]; then
   # macOS ties Keychain items to the code that may read them twice: the ACL checks the designated requirement, and the
@@ -103,8 +110,10 @@ elif [ "$configuration" = debug ]; then
   if [ -z "$debug_identity" ]; then
     debug_identity=$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2}' | head -n 1 || true)
   fi
-  if ! codesign --force --timestamp=none --sign "${debug_identity:--}" \
-    --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"; then
+  # Only the app takes the requirement: the helper reads no Keychain item and holds no privacy grant.
+  if ! codesign --force --timestamp=none --sign "${debug_identity:--}" "$helper" \
+    || ! codesign --force --timestamp=none --sign "${debug_identity:--}" \
+      --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"; then
     # Over SSH the login keychain is usually locked, so codesign can't reach the identity's private key.
     if [ "${debug_identity:--}" != - ]; then
       echo "error: signing with $debug_identity failed; set DEBUG_CODESIGN_IDENTITY=- to sign ad hoc" >&2
@@ -112,6 +121,7 @@ elif [ "$configuration" = debug ]; then
     exit 1
   fi
 else
+  codesign --force --sign - "$helper"
   codesign --force --sign - "$app"
 fi
 echo "Built $app"

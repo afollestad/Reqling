@@ -12,13 +12,17 @@ extension SnapshotTests {
         assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
     }
 
-    func testProjectSettings() throws {
+    func testProjectSettings() async throws {
         let project = try SnapshotProject.make(in: fixture)
         let settings = ProjectSettingsModel(projectID: project.id, app: fixture.model)
         settings.clientCertificates = [
             ClientCertificateEntry(hostPattern: "*.internal", source: .pkcs12(.relative("client.p12"))),
             ClientCertificateEntry(hostPattern: "api.example.com", source: .pem(certificate: .relative("client.crt"), key: .relative("client.key")))
         ]
+        // The rows check their certificates from a task the snapshot would not wait for.
+        for entry in settings.clientCertificates {
+            await settings.refreshStatus(of: entry)
+        }
 
         assertBothAppearances(
             ProjectSettingsSheet(settings: settings, tokenContext: TemplateTokenContext(scope: fixture.model.scope(for: project.id))),

@@ -14,7 +14,9 @@ let package = Package(
     name: "Reqling",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "Reqling", targets: ["Reqling"])
+        .executable(name: "Reqling", targets: ["Reqling"]),
+        // Bundled beside the app: opens PKCS#12 files in a throwaway process first (`HelperPKCS12ImportProbe`).
+        .executable(name: "ReqlingPKCS12Probe", targets: ["ReqlingPKCS12Probe"])
     ],
     dependencies: [
         .package(url: "https://github.com/uber/needle.git", revision: "69f7a889d2736f2621c6083ac29e0a75d158f249"),
@@ -60,6 +62,8 @@ let package = Package(
             ],
             exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "ViewModels")
         ),
+        // Foundation and Security only, so each launch stays fast.
+        .executableTarget(name: "ReqlingPKCS12Probe"),
         .testTarget(
             name: "ReqlingKitTests",
             dependencies: [

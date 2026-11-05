@@ -32,6 +32,7 @@ final class AppFixture {
             settings: component.settingsStore,
             appInfo: Self.appInfo,
             keychain: component.keychainIdentities,
+            pkcs12Probe: component.pkcs12ImportProbe,
             system: system,
             protoWorkspaces: component.protoWorkspaces,
             protocTooling: protoc.model,

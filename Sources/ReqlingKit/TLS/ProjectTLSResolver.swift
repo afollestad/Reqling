@@ -8,19 +8,22 @@ public struct ProjectTLSResolver: Sendable {
     public let passphrase: @Sendable (CertificateEntryID) -> String?
     public let keychainIdentityReference: @Sendable (CertificateEntryID) -> Data?
     public let keychain: any KeychainIdentityStore
+    public let pkcs12Probe: any PKCS12ImportProbe
 
     public init(
         configuration: ProjectTLSConfiguration,
         paths: ProjectPathResolver,
         passphrase: @escaping @Sendable (CertificateEntryID) -> String?,
         keychainIdentityReference: @escaping @Sendable (CertificateEntryID) -> Data?,
-        keychain: any KeychainIdentityStore
+        keychain: any KeychainIdentityStore,
+        pkcs12Probe: any PKCS12ImportProbe
     ) {
         self.configuration = configuration
         self.paths = paths
         self.passphrase = passphrase
         self.keychainIdentityReference = keychainIdentityReference
         self.keychain = keychain
+        self.pkcs12Probe = pkcs12Probe
     }
 
     /// The context for a request to `host`. The matching identity and the CA files load eagerly, so a wrong passphrase
@@ -50,7 +53,7 @@ public struct ProjectTLSResolver: Sendable {
     public func loadIdentity(_ entry: ClientCertificateEntry) throws(TLSError) -> TLSClientIdentity {
         switch entry.source {
         case .pkcs12(let file):
-            return try PKCS12Importer.importIdentity(try paths.data(for: file), passphrase: passphrase(entry.id) ?? "")
+            return try PKCS12Importer.importIdentity(try paths.data(for: file), passphrase: passphrase(entry.id) ?? "", probe: pkcs12Probe)
         case .pem(let certificate, let key):
             return try PEMIdentityImporter.importIdentity(
                 certificate: try paths.data(for: certificate),

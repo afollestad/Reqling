@@ -7,7 +7,8 @@ import Security
 ///
 /// Security has no public API that makes a `SecIdentity` from a loose certificate and key, so NIOSSL (BoringSSL)
 /// reads the key — RSA or EC; PKCS#1, SEC1, or PKCS#8; plain, encrypted PKCS#8, or legacy `Proc-Type` encrypted — and
-/// repackages the pair as an in-memory PKCS#12 that `PKCS12Importer` opens like any other.
+/// repackages the pair as an in-memory PKCS#12 that `PKCS12Importer` opens. It skips `PKCS12ImportProbe`: matching the key
+/// to its leaf already proves Security can read the leaf's key, whose absence is what crashes the importer.
 public enum PEMIdentityImporter {
     /// `certificate` is PEM (one or more blocks; a combined file may hold the key too) or DER. The leaf is whichever
     /// certificate the key belongs to, and the rest become intermediates.
@@ -18,6 +19,10 @@ public enum PEMIdentityImporter {
         // Matching first also guards `serialize(passphrase:)`, which dereferences NULL when BoringSSL refuses a key
         // that doesn't belong to the certificate, and traps on an empty chain.
         guard let leafIndex = certificates.firstIndex(where: { externalRepresentation(of: $0) == publicKey }) else {
+            // Security reads no key from a certificate with explicit EC curve parameters, so it can never match.
+            if certificates.contains(where: { SecCertificateCopyKey($0) == nil }) {
+                throw .unsupportedCertificate
+            }
             throw .unreadableIdentity("The private key does not match the certificate.")
         }
         var chain = certificates
@@ -33,7 +38,7 @@ public enum PEMIdentityImporter {
         } catch {
             throw .unreadableIdentity("The certificate and key could not be combined.")
         }
-        return try PKCS12Importer.importIdentity(Data(pkcs12), passphrase: transientPassphrase)
+        return try PKCS12Importer.importChecked(Data(pkcs12), passphrase: transientPassphrase)
     }
 
     /// Whether PEM `data` holds a private key, so a certificate chosen alone needs no separate key file.

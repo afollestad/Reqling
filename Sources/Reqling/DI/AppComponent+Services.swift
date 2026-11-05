@@ -1,3 +1,4 @@
+import Foundation
 import ReqlingKit
 
 /// The app's long-lived services. Production storage uses the Keychain, the Trash, and folder watching; an ephemeral
@@ -32,6 +33,15 @@ extension AppComponent {
         }
     }
 
+    /// The helper sits beside the app's executable, where `scripts/build.sh` copies it. Test graphs get none, so their
+    /// PKCS#12 checks fail closed instead of launching anything.
+    var pkcs12ImportProbe: any PKCS12ImportProbe {
+        shared {
+            let helper = storageProfile.isEphemeral ? nil : Bundle.main.url(forAuxiliaryExecutable: "ReqlingPKCS12Probe")
+            return HelperPKCS12ImportProbe(executable: helper) as any PKCS12ImportProbe
+        }
+    }
+
     var projectLibrary: ProjectLibrary {
         shared {
             ProjectLibrary(configuration: .init(
@@ -59,6 +69,7 @@ extension AppComponent {
                 workspace: workspaceState,
                 settings: settingsStore,
                 keychain: keychainIdentities,
+                pkcs12Probe: pkcs12ImportProbe,
                 cache: ResponseCache(directory: storageProfile.responsesDirectory),
                 userAgent: appInfo.userAgent,
                 grpcSchemas: grpcSchema
@@ -75,6 +86,7 @@ extension AppComponent {
                 settings: settingsStore,
                 appInfo: appInfo,
                 keychain: keychainIdentities,
+                pkcs12Probe: pkcs12ImportProbe,
                 system: systemIntegration,
                 protoWorkspaces: protoWorkspaces,
                 protocTooling: protocTooling,

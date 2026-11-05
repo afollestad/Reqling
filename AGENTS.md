@@ -24,6 +24,7 @@ Read the nearest `AGENTS.md` before editing; every scoped folder pairs it with a
 
 - `Package.swift` is the project; there is no Xcode project and no XcodeGen. Opening the package in Xcode is fine for editing, but launch through `./scripts/run.sh`: only the bundle `scripts/build.sh` assembles has the Info.plist, icon, and signing.
 - `ReqlingKit` holds everything that is not UI and imports no SwiftUI. The `Reqling` executable holds the app lifecycle, DI, view models, and views.
+- **Keep `ReqlingPKCS12Probe` to Foundation and Security**, so each launch stays fast. `scripts/build.sh` copies it into `Contents/MacOS`, where `Sources/Reqling/DI/AppComponent+Services.swift` finds it by name, as `Tests/ReqlingKitTests/Support/TLSFixtures.swift` does beside the test bundle; rename them together.
 - Pin dependencies exactly (`exact:` or `revision:`) and commit `Package.resolved`.
 - After changing a pin, run `swift package resolve` and confirm `.build/checkouts/<dep>` moved to the new revision before trusting a green build.
 - Never edit dependency sources under `.build/`; change the pin or the upstream package.

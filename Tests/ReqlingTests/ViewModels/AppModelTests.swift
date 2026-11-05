@@ -39,6 +39,7 @@ final class AppModelTests: XCTestCase {
             settings: fixture.component.settingsStore,
             appInfo: AppFixture.appInfo,
             keychain: fixture.component.keychainIdentities,
+            pkcs12Probe: fixture.component.pkcs12ImportProbe,
             system: fixture.system,
             protoWorkspaces: fixture.component.protoWorkspaces,
             protocTooling: fixture.protoc.model,

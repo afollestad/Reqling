@@ -27,7 +27,11 @@ extension GRPCExecutorTests {
     /// must offer and produce for the server to accept it.
     func testMutualTLSWithAnRSAClientCertificateSucceeds() async throws {
         let server = try await startMutualTLS()
-        let identity = try PKCS12Importer.importIdentity(try TLSFixtures.rsaClientPKCS12, passphrase: try TLSFixtures.clientPassphrase)
+        let identity = try PKCS12Importer.importIdentity(
+            try TLSFixtures.rsaClientPKCS12,
+            passphrase: try TLSFixtures.clientPassphrase,
+            probe: TLSFixtures.probe
+        )
         let context = TLSContext(anchors: try fixtureCA()) { _, _ in identity }
 
         let (events, outcome) = await run(call(server, "Unary", .unary, body: .message(try encode("rsa")), security: .tls(context)))
@@ -170,7 +174,7 @@ extension GRPCExecutorTests {
     }
 
     func clientIdentity() throws -> TLSClientIdentity {
-        try PKCS12Importer.importIdentity(try TLSFixtures.data("client.p12"), passphrase: try TLSFixtures.clientPassphrase)
+        try PKCS12Importer.importIdentity(try TLSFixtures.data("client.p12"), passphrase: try TLSFixtures.clientPassphrase, probe: TLSFixtures.probe)
     }
 
     func fixtureCA() throws -> [SecCertificate] {

@@ -2,6 +2,7 @@ import Crypto
 import CryptoExtras
 import Foundation
 import NIOSSL
+import ReqlingKit
 import SwiftASN1
 import X509
 
@@ -20,6 +21,34 @@ enum TLSFixtures {
 
     static var clientPassphrase: String {
         get throws { try authority.get().passphrase }
+    }
+
+    /// A probe that runs the real `ReqlingPKCS12Probe`, which `swift test` builds into this bundle's products
+    /// directory. Fresh per use, so no test sees another's kept verdicts.
+    static var probe: HelperPKCS12ImportProbe {
+        HelperPKCS12ImportProbe(executable: helper)
+    }
+
+    static var helper: URL {
+        Bundle(for: FixtureBundleToken.self).bundleURL.deletingLastPathComponent().appendingPathComponent("ReqlingPKCS12Probe")
+    }
+
+    /// `client-explicit.p12`: a self-signed client identity whose certificate's EC key uses explicit curve parameters,
+    /// under `clientPassphrase`. Security reads no key from that certificate, and `SecPKCS12Import` crashes on it.
+    /// Minted by `openssl` on first use, since swift-certificates writes only named curves.
+    static var explicitCurveClientPKCS12: Data {
+        get throws { try Data(contentsOf: explicitCurveDirectory.get().appendingPathComponent("client-explicit.p12")) }
+    }
+
+    /// The explicit-curve identity's certificate and its SEC1 key, as PEM.
+    static var explicitCurveClientPEM: (certificate: Data, key: Data) {
+        get throws {
+            let directory = try explicitCurveDirectory.get()
+            return (
+                try Data(contentsOf: directory.appendingPathComponent("client-explicit.pem")),
+                try Data(contentsOf: directory.appendingPathComponent("client-explicit-key.pem"))
+            )
+        }
     }
 
     /// One of `ca.pem`, `ca.der`, `client.pem`, `client-key.pem`, or `client.p12`.
@@ -109,6 +138,8 @@ private struct FixtureError: Error, CustomStringConvertible {
     let description: String
 }
 
+private final class FixtureBundleToken {}
+
 private enum LeafKeyType {
     case p256
     case rsa
@@ -122,6 +153,9 @@ extension TLSFixtures {
     private static let rsaClient = Result<URL, any Error> { try makeRSAClient() }
 
     private static let encryptedKeys = Result<(pkcs8: URL, legacyRSA: URL), any Error> { try makeEncryptedKeys() }
+
+    /// The fixture directory, once `client-explicit*` is in it.
+    private static let explicitCurveDirectory = Result<URL, any Error> { try makeExplicitCurveClient() }
 
     private static func makeAuthority() throws -> FixtureAuthority {
         let directory = FileManager.default.temporaryDirectory
@@ -182,6 +216,32 @@ extension TLSFixtures {
             "-passout", "env:REQLING_FIXTURE_PASSPHRASE", "-out", legacyRSA.path
         ], passphrase: passphrase)
         return (pkcs8, legacyRSA)
+    }
+
+    private static func makeExplicitCurveClient() throws -> URL {
+        let directory = try authority.get().directory
+        let passphrase = try clientPassphrase
+        let namedKey = directory.appendingPathComponent("client-explicit-named-key.pem")
+        let key = directory.appendingPathComponent("client-explicit-key.pem")
+        let certificate = directory.appendingPathComponent("client-explicit.pem")
+        // LibreSSL writes the private scalar without leading zero bytes, a key Security cannot read: it drops that key
+        // instead of crashing. A scalar that starts nonzero keeps every run's file crashing the importer.
+        var privateKey = P256.Signing.PrivateKey()
+        while privateKey.rawRepresentation.first == 0 {
+            privateKey = P256.Signing.PrivateKey()
+        }
+        try Data(privateKey.pemRepresentation.utf8).write(to: namedKey)
+        defer { try? FileManager.default.removeItem(at: namedKey) }
+        try openssl(["ec", "-in", namedKey.path, "-param_enc", "explicit", "-out", key.path], passphrase: passphrase)
+        try openssl([
+            "req", "-new", "-x509", "-key", key.path, "-subj", "/CN=Reqling Test Explicit Curve Client", "-days", "1",
+            "-out", certificate.path
+        ], passphrase: passphrase)
+        try openssl([
+            "pkcs12", "-export", "-descert", "-inkey", key.path, "-in", certificate.path, "-name", "client-explicit",
+            "-passout", "env:REQLING_FIXTURE_PASSPHRASE", "-out", directory.appendingPathComponent("client-explicit.p12").path
+        ], passphrase: passphrase)
+        return directory
     }
 
     /// A client identity valid for a year, packaged by `package(_:as:passphrase:in:)`.

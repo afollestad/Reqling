@@ -302,7 +302,11 @@ final class HTTPExecutorTests: XCTestCase {
 
     private func mutualTLSContext(identity: Bool = true, anchors: Bool = true) throws -> TLSContext {
         let clientIdentity = identity
-            ? try PKCS12Importer.importIdentity(try TLSFixtures.data("client.p12"), passphrase: TLSFixtures.clientPassphrase)
+            ? try PKCS12Importer.importIdentity(
+                try TLSFixtures.data("client.p12"),
+                passphrase: TLSFixtures.clientPassphrase,
+                probe: TLSFixtures.probe
+            )
             : nil
         return try mutualTLSContext(clientIdentity, anchors: anchors)
     }

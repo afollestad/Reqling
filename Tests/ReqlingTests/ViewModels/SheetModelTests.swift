@@ -168,7 +168,7 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(settings.passphrases[added.id], "added", "the sheet shows what Done stored")
     }
 
-    func testAPassphraseTheKeychainCannotReadIsFlaggedAndNeverSavedOver() throws {
+    func testAPassphraseTheKeychainCannotReadIsFlaggedAndNeverSavedOver() async throws {
         let entry = ClientCertificateEntry(hostPattern: "a.test", source: .pkcs12(.relative("a.p12")))
         try fixture.library.mutate(project) { $0.tls.clientCertificates = [entry] }
         try fixture.library.setCertificatePassphrase("hunter2", for: entry.id, in: project)
@@ -178,7 +178,8 @@ final class SheetModelTests: XCTestCase {
         store.isFailingReads = false
 
         XCTAssertEqual(settings.unreadablePassphrases, [entry.id])
-        XCTAssertEqual(settings.status(of: entry), .problem("Reqling couldn't read this certificate's passphrase from the Keychain."))
+        let status = await settings.refreshStatus(of: entry)
+        XCTAssertEqual(status, .problem("Reqling couldn't read this certificate's passphrase from the Keychain."))
         settings.name = "Renamed"
         XCTAssertTrue(settings.save())
         XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: entry.id, in: project), "hunter2")
@@ -214,7 +215,7 @@ final class SheetModelTests: XCTestCase {
         ], "a file holding its key asks for no other")
     }
 
-    func testAnUnreadablePEMKeyPassphraseIsFlaggedLikeAPKCS12One() throws {
+    func testAnUnreadablePEMKeyPassphraseIsFlaggedLikeAPKCS12One() async throws {
         let entry = ClientCertificateEntry(hostPattern: "a.test", source: .pem(certificate: .relative("a.crt"), key: .relative("a.key")))
         try fixture.library.mutate(project) { $0.tls.clientCertificates = [entry] }
         try fixture.library.setCertificatePassphrase("hunter2", for: entry.id, in: project)
@@ -223,16 +224,37 @@ final class SheetModelTests: XCTestCase {
         let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
         store.isFailingReads = false
 
-        XCTAssertEqual(settings.status(of: entry), .problem("Reqling couldn't read this certificate's passphrase from the Keychain."))
+        let status = await settings.refreshStatus(of: entry)
+        XCTAssertEqual(status, .problem("Reqling couldn't read this certificate's passphrase from the Keychain."))
     }
 
-    func testAMissingCertificateFileIsReportedAsAProblem() {
+    func testAMissingCertificateFileIsReportedAsAProblem() async {
         let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
         let entry = ClientCertificateEntry(hostPattern: "api.test", source: .pkcs12(.relative("missing.p12")))
 
-        XCTAssertEqual(settings.status(of: entry), .problem(TLSError.missingFile("“missing.p12”").localizedDescription))
+        let status = await settings.refreshStatus(of: entry)
+        XCTAssertEqual(status, .problem(TLSError.missingFile("“missing.p12”").localizedDescription))
         XCTAssertTrue(settings.isValidHostPattern("*.api.test:8443"))
         XCTAssertFalse(settings.isValidHostPattern("https://api.test"))
+    }
+
+    /// The test graph has no helper, so the check fails closed; what matters is that the file reached the probe.
+    func testAPKCS12FileIsCheckedBeforeItOpensAndItsStatusKeptUntilRemoved() async throws {
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        try Data("not a PKCS#12 file".utf8).write(to: root.appendingPathComponent("client.p12"))
+        let entry = ClientCertificateEntry(hostPattern: "api.test", source: .pkcs12(.relative("client.p12")))
+        try fixture.library.mutate(project) { $0.tls.clientCertificates = [entry] }
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+        XCTAssertNil(settings.certificateStatuses[entry.id])
+
+        await settings.refreshStatus(of: entry)
+        let missing = TLSError.certificateCheckFailed("Reqling's certificate checker is missing. Reinstall Reqling.")
+        XCTAssertEqual(settings.certificateStatuses[entry.id], .problem(missing.localizedDescription))
+
+        settings.removeClientCertificate(entry.id)
+        XCTAssertNil(settings.certificateStatuses[entry.id])
+        await settings.refreshStatus(of: entry)
+        XCTAssertNil(settings.certificateStatuses[entry.id], "a check finishing after its entry went keeps nothing")
     }
 
     func testProjectSettingsRoundTripProtoDefinitionsThroughTheDocument() throws {

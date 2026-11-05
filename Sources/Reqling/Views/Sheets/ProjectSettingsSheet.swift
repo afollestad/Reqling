@@ -129,10 +129,20 @@ private struct ClientCertificateRow: View {
                     .labelsHidden()
                 }
             }
-            CertificateStatusLabel(status: settings.status(of: entry))
-                .alignedWithLabeledRowControls()
+            if let status = settings.certificateStatuses[entry.id] {
+                CertificateStatusLabel(status: status)
+                    .alignedWithLabeledRowControls()
+            }
         }
         .padding(.vertical, 4)
+        .task(id: statusCheck) {
+            await settings.refreshStatus(of: entry)
+        }
+    }
+
+    /// Everything the status depends on, so editing any of it checks again; the previous status stays up meanwhile.
+    private var statusCheck: CertificateStatusCheck {
+        CertificateStatusCheck(entry: entry, passphrase: settings.passphrases[entry.id], identity: settings.keychainIdentities[entry.id])
     }
 
     /// A PEM key is usually unencrypted, so its field says when it is needed.
@@ -142,6 +152,12 @@ private struct ClientCertificateRow: View {
         }
         return nil
     }
+}
+
+private struct CertificateStatusCheck: Equatable {
+    let entry: ClientCertificateEntry
+    let passphrase: String?
+    let identity: Data?
 }
 
 private struct FileRow: View {

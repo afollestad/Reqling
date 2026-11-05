@@ -31,6 +31,8 @@ final class ProjectSettingsModel {
     /// Entries whose stored passphrase the Keychain refused to read. Their field starts empty without meaning "no
     /// passphrase": saving keeps the stored value unless the user types a new one.
     private(set) var unreadablePassphrases: Set<CertificateEntryID>
+    /// Each client certificate's status as `refreshStatus(of:)` last found it; none until its first check finishes.
+    private(set) var certificateStatuses: [CertificateEntryID: CertificateStatus] = [:]
 
     @ObservationIgnored unowned let app: AppModel
     @ObservationIgnored private let now: () -> Date
@@ -43,6 +45,8 @@ final class ProjectSettingsModel {
     @ObservationIgnored private var savedEntryIDs: Set<CertificateEntryID> = []
     /// The settings as loaded or last saved: the base of Done's merge.
     @ObservationIgnored private var base: ProjectSettingsBase
+    /// Serial and off the cooperative pool: a status check blocks while `PKCS12ImportProbe` waits on its helper.
+    @ObservationIgnored private let statusQueue = DispatchQueue(label: "com.afollestad.reqling.certificate-status")
 
     init(projectID: ProjectID, app: AppModel, now: @escaping () -> Date = { Date() }) {
         self.projectID = projectID
@@ -122,6 +126,7 @@ final class ProjectSettingsModel {
         passphrases[id] = nil
         keychainIdentities[id] = nil
         unreadablePassphrases.remove(id)
+        certificateStatuses[id] = nil
     }
 
     func addCACertificate() {
@@ -144,8 +149,19 @@ final class ProjectSettingsModel {
         HostPattern(pattern) != nil
     }
 
-    /// Opens the entry the way a request would, so a wrong passphrase or missing file shows up here first.
-    func status(of entry: ClientCertificateEntry) -> CertificateStatus {
+    /// Opens the entry the way a request would, so a wrong passphrase or missing file shows up here first, and keeps
+    /// the result in `certificateStatuses`. The row starts it from `.task(id:)`, never from `body`: the first check of
+    /// a PKCS#12 file and passphrase launches the probe's helper. A check superseded while it ran keeps nothing.
+    @discardableResult
+    func refreshStatus(of entry: ClientCertificateEntry) async -> CertificateStatus {
+        let status = await loadStatus(of: entry)
+        if !Task.isCancelled, clientCertificates.contains(where: { $0.id == entry.id }) {
+            certificateStatuses[entry.id] = status
+        }
+        return status
+    }
+
+    private func loadStatus(of entry: ClientCertificateEntry) async -> CertificateStatus {
         guard let paths = app.pathResolver(for: projectID) else {
             return .problem("The project is not available.")
         }
@@ -159,14 +175,22 @@ final class ProjectSettingsModel {
             paths: paths,
             passphrase: { _ in passphrase },
             keychainIdentityReference: { _ in reference },
-            keychain: app.keychain
+            keychain: app.keychain,
+            pkcs12Probe: app.pkcs12Probe
         )
-        do {
-            guard let certificate = try resolver.loadIdentity(entry).certificate else {
-                return .problem("The identity has no certificate.")
+        let summary = await withCheckedContinuation { (continuation: CheckedContinuation<Result<CertificateSummary?, TLSError>, Never>) in
+            statusQueue.async {
+                continuation.resume(returning: Result { () throws(TLSError) in
+                    try resolver.loadIdentity(entry).certificate.map(CertificateSummary.init)
+                })
             }
-            return classify(CertificateSummary(certificate))
-        } catch {
+        }
+        switch summary {
+        case .success(let summary?):
+            return classify(summary)
+        case .success(nil):
+            return .problem("The identity has no certificate.")
+        case .failure(let error):
             return .problem(error.localizedDescription)
         }
     }
@@ -288,6 +312,7 @@ final class ProjectSettingsModel {
         passphrases = passphrases.filter { entryIDs.contains($0.key) }
         keychainIdentities = keychainIdentities.filter { entryIDs.contains($0.key) }
         unreadablePassphrases.formIntersection(entryIDs)
+        certificateStatuses = certificateStatuses.filter { entryIDs.contains($0.key) }
         base.grpc = grpcConfiguration
         loadSecrets(of: saved.tls.clientCertificates.filter { !known.contains($0.id) })
     }

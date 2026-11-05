@@ -38,7 +38,11 @@ final class GRPCReflectionClientTests: XCTestCase {
             config.trustRoots = .certificates([.bytes(authority, format: .pem)])
         }
         let server = try await start([try ReflectionService(descriptorSetFileURLs: [try descriptorSetURL()])], security: security)
-        let identity = try PKCS12Importer.importIdentity(try TLSFixtures.data("client.p12"), passphrase: try TLSFixtures.clientPassphrase)
+        let identity = try PKCS12Importer.importIdentity(
+            try TLSFixtures.data("client.p12"),
+            passphrase: try TLSFixtures.clientPassphrase,
+            probe: TLSFixtures.probe
+        )
         let context = TLSContext(anchors: try CertificateLoader.certificates(from: try TLSFixtures.data("ca.pem"))) { _, _ in identity }
 
         let registry = try await GRPCReflectionClient().registry(target: server.target, security: .tls(context))

@@ -75,6 +75,8 @@ The server listens on `127.0.0.1` only and requires its bearer token, which is k
 
 A project's **Project Settings** take client certificates for mutual TLS — a PKCS#12 file (`.p12`/`.pfx`), a PEM certificate and private key (`.crt`/`.key`, RSA or EC, encrypted or not), or an identity already in your Keychain — matched by host (`api.example.com`, `*.internal`, `host:8443`), plus extra CA certificates trusted in addition to the system's. Passphrases are stored in your Keychain; certificates and keys are read in memory and never added to it.
 
+macOS can't open a certificate whose EC key uses explicit curve parameters instead of a named curve; Reqling reports this instead of crashing. Reissue the certificate from a named-curve key; re-exporting the same certificate doesn't help.
+
 ## Updates
 
 Reqling checks this repository's GitHub Releases when it opens and every 6 hours (turn that off in **Settings ▸ App Updates**). The gear in the toolbar shows a dot when an update is available, and a green one once it's downloaded. Downloads are verified against GitHub's SHA-256 digest, then checked for the same bundle identifier, a newer version, a valid signature from the same developer, and Gatekeeper approval before **Install & Relaunch** replaces the app. A failed install restores the previous version. Builds run from `.build/` can check for updates but not install them.
@@ -98,7 +100,7 @@ Reqling checks this repository's GitHub Releases when it opens and every 6 hours
 ./scripts/generate-protos.sh     # regenerate protobuf code and descriptor sets after changing a .proto
 ```
 
-Reqling is a SwiftPM package; `scripts/build.sh` assembles the `.app` bundle and compiles its assets with `actool`. Launch it through `scripts/run.sh` rather than `swift run` or Xcode, since only the assembled bundle has its Info.plist, icon, and signature.
+Reqling is a SwiftPM package; `scripts/build.sh` assembles the `.app` bundle, compiles its assets with `actool`, and bundles `ReqlingPKCS12Probe`, a helper that opens each PKCS#12 file first so a file that crashes Apple's importer can't take the app down. Launch it through `scripts/run.sh` rather than `swift run` or Xcode, since only the assembled bundle has its Info.plist, icon, and signature.
 
 Debug builds use the `com.afollestad.reqling.debug` identity and appear as **Reqling Dev**. They keep their own preferences and Application Support folder, so they never touch a release build's data. They are signed with your Apple Development certificate when one is installed, so Keychain access survives rebuilds; without one they are signed ad hoc, and macOS asks again after each build. Set `DEBUG_CODESIGN_IDENTITY` to pick an identity, or `-` to force ad hoc.
 

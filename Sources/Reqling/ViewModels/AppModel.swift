@@ -110,6 +110,7 @@ final class AppModel {
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let appInfo: AppInfo
     @ObservationIgnored let keychain: any KeychainIdentityStore
+    @ObservationIgnored let pkcs12Probe: any PKCS12ImportProbe
     @ObservationIgnored let system: any SystemIntegration
     /// One workspace per project with proto definitions, kept in step by `syncProtoWorkspaces()`.
     @ObservationIgnored let protoWorkspaces: ProtoWorkspaceStore
@@ -130,6 +131,7 @@ final class AppModel {
         settings: SettingsStore,
         appInfo: AppInfo,
         keychain: any KeychainIdentityStore,
+        pkcs12Probe: any PKCS12ImportProbe,
         system: any SystemIntegration,
         protoWorkspaces: ProtoWorkspaceStore,
         protocTooling: ProtocToolingModel,
@@ -143,6 +145,7 @@ final class AppModel {
         self.settings = settings
         self.appInfo = appInfo
         self.keychain = keychain
+        self.pkcs12Probe = pkcs12Probe
         self.system = system
         self.protoWorkspaces = protoWorkspaces
         self.protocTooling = protocTooling

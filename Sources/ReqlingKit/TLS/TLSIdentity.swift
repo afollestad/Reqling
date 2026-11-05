@@ -26,6 +26,9 @@ public enum TLSError: Error, Equatable, LocalizedError {
     case unreadableCertificate(String)
     case missingFile(String)
     case untrustedServer(host: String, reason: String)
+    /// Security cannot read the certificate's key, which would crash `SecPKCS12Import` (`PKCS12ImportProbe`).
+    case unsupportedCertificate
+    case certificateCheckFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -39,13 +42,30 @@ public enum TLSError: Error, Equatable, LocalizedError {
             "\(description) could not be found on this Mac."
         case .untrustedServer(let host, let reason):
             "The certificate for \(host) is not trusted: \(reason)"
+        case .unsupportedCertificate:
+            """
+            macOS can't open this client certificate. This usually means its EC key uses explicit curve parameters \
+            instead of a named curve. Reissue the certificate from a named-curve key, such as one converted with: \
+            openssl ec -in client.key -param_enc named_curve -out client-named.key
+            """
+        case .certificateCheckFailed(let detail):
+            "Reqling couldn't check the client certificate before opening it: \(detail)"
         }
     }
 }
 
 /// Opens PKCS#12 (`.p12`/`.pfx`) files without adding anything to a keychain.
 public enum PKCS12Importer {
-    public static func importIdentity(_ data: Data, passphrase: String) throws(TLSError) -> TLSClientIdentity {
+    /// `probe` checks the file first: `SecPKCS12Import` raises an uncatchable exception on some files, which would end
+    /// Reqling, so no file from disk reaches it unchecked.
+    public static func importIdentity(_ data: Data, passphrase: String, probe: any PKCS12ImportProbe) throws(TLSError) -> TLSClientIdentity {
+        try probe.check(data, passphrase: passphrase)
+        return try importChecked(data, passphrase: passphrase)
+    }
+
+    /// Skips the probe, so only for PKCS#12 data built in this process around a leaf whose key Security already read:
+    /// an unreadable leaf key is what crashes the importer. `PEMIdentityImporter` builds such data.
+    static func importChecked(_ data: Data, passphrase: String) throws(TLSError) -> TLSClientIdentity {
         let options: [String: Any] = [
             kSecImportExportPassphrase as String: passphrase,
             kSecImportToMemoryOnly as String: true

@@ -65,6 +65,8 @@ public final class RequestRunner {
     @ObservationIgnored let workspace: WorkspaceStateStore
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored private let keychain: any KeychainIdentityStore
+    /// Checks PKCS#12 files before they open; its first check of a file blocks `tlsContext` for one helper launch.
+    @ObservationIgnored private let pkcs12Probe: any PKCS12ImportProbe
     @ObservationIgnored private let cache: ResponseCacheWriter
     @ObservationIgnored private let userAgent: String
     @ObservationIgnored let dynamic: DynamicVariables
@@ -85,6 +87,7 @@ public final class RequestRunner {
         workspace: WorkspaceStateStore,
         settings: SettingsStore,
         keychain: any KeychainIdentityStore,
+        pkcs12Probe: any PKCS12ImportProbe,
         cache: ResponseCache,
         userAgent: String,
         dynamic: DynamicVariables = .live,
@@ -95,6 +98,7 @@ public final class RequestRunner {
         self.workspace = workspace
         self.settings = settings
         self.keychain = keychain
+        self.pkcs12Probe = pkcs12Probe
         self.cache = ResponseCacheWriter(cache: cache)
         self.userAgent = userAgent
         self.dynamic = dynamic
@@ -389,7 +393,8 @@ public final class RequestRunner {
             paths: context.paths,
             passphrase: { passphrases[$0] },
             keychainIdentityReference: { references[$0] },
-            keychain: keychain
+            keychain: keychain,
+            pkcs12Probe: pkcs12Probe
         )
         do {
             return try resolver.context(host: host, port: port, verifiesServer: verifiesServer)
