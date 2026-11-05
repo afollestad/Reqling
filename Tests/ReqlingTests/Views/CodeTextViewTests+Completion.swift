@@ -1,11 +1,12 @@
 import AppKit
+import SwiftUI
 import ReqlingKit
 import XCTest
 
 @testable import Reqling
 
 /// The assistant's completion list and hover card, driven by a fake assistant and a presenter that records what it
-/// would show, so no panel ever reaches the screen.
+/// would show; only `testThePanelShowsEachModelItIsGiven` puts a real panel on screen.
 extension CodeTextViewTests {
     func testTypingANameCharacterOpensTheListAtTheNameBeingTyped() throws {
         let (textView, presenter) = makeAssisted(text: "{ ")
@@ -209,7 +210,95 @@ extension CodeTextViewTests {
         window.close()
     }
 
+    // MARK: - Updates and the live panel
+
+    func testReplacingWithTheSameTextKeepsTheListOpen() {
+        let (textView, presenter) = makeAssisted(text: "{ ")
+        let window = focus(textView)
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        textView.insertText("n", replacementRange: textView.selectedRange())
+        XCTAssertNotNil(presenter.completions)
+
+        textView.replaceText(with: textView.string)
+        XCTAssertNotNil(presenter.completions, "the text it already holds")
+        textView.replaceText(with: "{ x")
+        XCTAssertNil(presenter.completions, "an outside change")
+        window.close()
+    }
+
+    /// `CodeEditor` hands the text back to its view on every SwiftUI update, and typing causes one. Driven through the
+    /// hosted editor, since a bare `CodeTextView` never sees that update.
+    func testTheListSurvivesTheUpdateTypingCauses() throws {
+        let inputs = HostedEditorInputs()
+        let handle = CodeEditorHandle()
+        let assistant = FakeAssistant()
+        retained.append(assistant)
+        let hosting = NSHostingView(rootView: HostedEditor(inputs: inputs, handle: handle, assistant: assistant))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        let textView = try XCTUnwrap(handle.textView)
+        let presenter = RecordingPopups()
+        textView.assistance.presenter = presenter
+        XCTAssertTrue(window.makeFirstResponder(textView))
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+
+        textView.insertText("n", replacementRange: textView.selectedRange())
+        XCTAssertEqual(inputs.text, "{ n")
+        XCTAssertNotNil(presenter.completions)
+        inputs.placeholder = "Query"
+        hosting.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(textView.placeholder, "Query", "the update ran")
+        XCTAssertNotNil(presenter.completions)
+        window.close()
+    }
+
+    func testThePanelShowsEachModelItIsGiven() throws {
+        let textView = makeTextView(isSingleLine: false, text: "{ ")
+        let window = focus(textView)
+        // Panels show only beside a window on screen.
+        window.orderFront(nil)
+        let panels = CodeEditorPopupPanels()
+        // Mid-screen, so neither list meets the screen's edge (or a Dock) and flips above the anchor.
+        let visible = try XCTUnwrap(window.screen ?? NSScreen.main).visibleFrame
+        let anchor = NSRect(x: visible.minX + 20, y: visible.midY, width: 0, height: 16)
+
+        panels.showCompletions(Self.model(rows: 3), below: anchor, from: textView)
+        let panel = try XCTUnwrap(window.childWindows?.first as? CodeEditorPopupPanel)
+        let threeRows = panel.frame
+        panels.showCompletions(Self.model(rows: 1), below: anchor, from: textView)
+        let oneRow = panel.frame
+
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertEqual(threeRows.width, CodeCompletionModel.width)
+        XCTAssertGreaterThan(threeRows.height, 0)
+        XCTAssertLessThan(oneRow.height, threeRows.height, "the second model, not the first")
+        XCTAssertEqual(oneRow.maxY, anchor.minY - 4, accuracy: 0.5, "hung under the anchor")
+        panels.hideCompletions()
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertNil(panel.parent)
+        window.close()
+    }
+
     // MARK: - Support
+
+    private static func model(rows: Int) -> CodeCompletionModel {
+        let model = CodeCompletionModel()
+        model.items = (0..<rows).map { index in
+            CodeCompletionItem(
+                id: index,
+                label: "field\(index)",
+                kind: .field,
+                detail: "String",
+                summary: nil,
+                isDeprecated: false,
+                insertText: "field\(index)"
+            )
+        }
+        return model
+    }
 
     private func makeAssisted(
         text: String,
@@ -280,6 +369,31 @@ final class RecordingPopups: CodeEditorPopupPresenting {
 
     func hideHover() {
         hover = nil
+    }
+}
+
+/// A `CodeEditor` whose text and placeholder a test changes, as a parent view would.
+@MainActor
+@Observable
+private final class HostedEditorInputs {
+    var text = "{ "
+    var placeholder = ""
+}
+
+private struct HostedEditor: View {
+    @Bindable var inputs: HostedEditorInputs
+    let handle: CodeEditorHandle
+    let assistant: FakeAssistant
+
+    var body: some View {
+        CodeEditor(
+            text: $inputs.text,
+            language: .graphQL,
+            placeholder: inputs.placeholder,
+            accessibilityLabel: "Query",
+            handle: handle,
+            assistant: assistant
+        )
     }
 }
 

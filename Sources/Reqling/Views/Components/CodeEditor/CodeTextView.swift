@@ -133,16 +133,19 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// While an input method is composing it waits: marked text never reaches the binding, so a re-render
     /// mid-composition would delete it under the input method. A cancelled composition applies the waiting text; a
     /// committed one is newer and replaces it (`CodeTextView+History`).
+    ///
+    /// `CodeEditor` calls this on every SwiftUI update, and each typed character causes one, with the text this view
+    /// already holds; so only a real change may close the completion list, or it closes as soon as typing opens it.
     func replaceText(with newText: String) {
         if hasMarkedText() {
             textWaitingOnComposition = newText
             return
         }
         textWaitingOnComposition = nil
-        dismissCompletions()
         guard string != newText, let storage = textStorage else {
             return
         }
+        dismissCompletions()
         let edit = TextEdit.minimal(from: string as NSString, to: newText as NSString)
         let selection = edit.mapping(selectedRange())
         breakUndoCoalescing()

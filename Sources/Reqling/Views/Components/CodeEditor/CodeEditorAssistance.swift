@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// What shows the completion list and the hover card. Tests swap in a recorder, so no test ever puts a panel on
-/// screen.
+/// What shows the completion list and the hover card. Editor tests swap in a recorder; only the panels' own test puts
+/// one on screen.
 @MainActor
 protocol CodeEditorPopupPresenting: AnyObject {
     /// `anchor` is in screen coordinates: the first character the list completes, or the name the card describes.
@@ -60,10 +60,16 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
         guard let window = view.window, window.isVisible else {
             return
         }
-        let panel = completionPanel ?? CodeEditorPopupPanel(content: CodeCompletionListView(model: model), ignoresMouse: false)
+        let panel = completionPanel ?? CodeEditorPopupPanel(ignoresMouse: false)
         completionPanel = panel
-        let appearance = view.effectiveAppearance
-        panel.place(below: anchor, attachedTo: window, appearance: appearance, accent: Self.accent(of: view), width: CodeCompletionModel.width)
+        // Each opening brings a new model, so the reused panel shows the one it is given, never the first it showed.
+        panel.place(
+            CodeCompletionListView(model: model).appAccent(Self.accent(of: view)),
+            below: anchor,
+            attachedTo: window,
+            appearance: view.effectiveAppearance,
+            width: CodeCompletionModel.width
+        )
     }
 
     func hideCompletions() {
@@ -75,10 +81,15 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
             return
         }
         hoverPanel?.detach()
-        let panel = CodeEditorPopupPanel(content: CodeHoverCard(content: content), ignoresMouse: true)
+        let panel = CodeEditorPopupPanel(ignoresMouse: true)
         hoverPanel = panel
-        let appearance = view.effectiveAppearance
-        panel.place(below: anchor, attachedTo: window, appearance: appearance, accent: Self.accent(of: view), width: CodeHoverCard.maxWidth)
+        panel.place(
+            CodeHoverCard(content: content).appAccent(Self.accent(of: view)),
+            below: anchor,
+            attachedTo: window,
+            appearance: view.effectiveAppearance,
+            width: CodeHoverCard.maxWidth
+        )
     }
 
     func hideHover() {
@@ -94,12 +105,9 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
 
 /// A panel that shows SwiftUI content beside a window without becoming key or main.
 final class CodeEditorPopupPanel: NSPanel {
-    private let host: NSHostingView<AnyView>
-    private let content: AnyView
+    private let host: NSHostingView<AnyView> = FirstMouseHostingView(rootView: AnyView(EmptyView()))
 
-    init(content: some View, ignoresMouse: Bool) {
-        self.content = AnyView(content)
-        host = FirstMouseHostingView(rootView: AnyView(content))
+    init(ignoresMouse: Bool) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isReleasedWhenClosed = false
         isOpaque = false
@@ -118,11 +126,12 @@ final class CodeEditorPopupPanel: NSPanel {
         false
     }
 
-    /// Sizes the panel to its content at `width`, then places it under `anchor`, or above it when the screen ends
-    /// first, and attaches it to `window` so it moves with it.
-    func place(below anchor: NSRect, attachedTo window: NSWindow, appearance: NSAppearance, accent: NSColor, width: CGFloat) {
+    /// Shows `content`, sized at `width`, under `anchor`, or above it when the screen ends first, and attaches the
+    /// panel to `window` so it moves with it. `content` carries its own `appAccent`, which a panel cannot inherit from
+    /// the window's SwiftUI environment.
+    func place(_ content: some View, below anchor: NSRect, attachedTo window: NSWindow, appearance: NSAppearance, width: CGFloat) {
         self.appearance = appearance
-        host.rootView = AnyView(content.appAccent(accent))
+        host.rootView = AnyView(content)
         let fitting = NSHostingController(rootView: host.rootView).sizeThatFits(in: CGSize(width: width, height: 2_000))
         let visible = window.screen?.visibleFrame ?? .infinite
         var origin = NSPoint(x: anchor.minX - 6, y: anchor.minY - fitting.height - 4)
