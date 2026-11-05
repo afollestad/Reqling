@@ -37,6 +37,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.3"),
         // The built-in MCP server: protocol types, the server, and a stateless Streamable HTTP transport.
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
+        // GraphQL: SDL schemas, parsing, and spec validation (GraphQLSwift, a port of graphql-js).
+        .package(url: "https://github.com/GraphQLSwift/GraphQL.git", exact: "4.3.0"),
         // Test-only: a loopback GraphQL server. A separate package, so `scripts/build.sh`, which builds every root
         // product, never builds its executable; its pins must match these.
         .package(path: "Tools/GraphQLFixtureServer")
@@ -53,9 +55,17 @@ let package = Package(
                 // NIOSSL reads PEM client keys into the in-memory PKCS#12 that `PEMIdentityImporter` builds.
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
-                .product(name: "MCP", package: "swift-sdk")
+                .product(name: "MCP", package: "swift-sdk"),
+                "ReqlingGraphQLEngine"
             ],
-            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History")
+            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL")
+        ),
+        // GraphQLSwift behind Foundation types, imported implementation-only so its declarations never reach ReqlingKit
+        // (`GraphQLEngine`); the feature has the compiler check that nothing public exposes them.
+        .target(
+            name: "ReqlingGraphQLEngine",
+            dependencies: [.product(name: "GraphQL", package: "GraphQL")],
+            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")]
         ),
         .executableTarget(
             name: "Reqling",
@@ -85,6 +95,8 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "MCP", package: "swift-sdk"),
+                // The oracle GraphQL suites check Reqling's analysis against.
+                .product(name: "GraphQL", package: "GraphQL"),
                 .product(name: "GraphQLFixtureServer", package: "GraphQLFixtureServer")
             ],
             resources: [.copy("GRPC/Fixtures")]

@@ -27,3 +27,13 @@ disabled_rules:
   - opening_brace
 opt_in_rules:
   - force_unwrapping
+custom_rules:
+  # GraphQLSwift's declarations change overload resolution in any module that can see them, and its error locations
+  # are unreliable; `ReqlingGraphQLEngine` adapts it for everything else (`GraphQLEngine`).
+  graphql_import:
+    name: GraphQL Import
+    included: /Sources/
+    excluded: /Sources/ReqlingGraphQLEngine/|/Tools/
+    regex: ^\s*(@testable\s+|@_implementationOnly\s+|internal\s+|public\s+)?import\s+GraphQL\s*$
+    message: Only Sources/ReqlingGraphQLEngine/ imports GraphQL; use ReqlingKit's GraphQL types elsewhere.
+    severity: error
