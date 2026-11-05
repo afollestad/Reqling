@@ -48,8 +48,8 @@ struct RunHistoryRow: View, Equatable {
 
 extension RunHistoryRow {
     /// The cap heights of `.body` and `.caption`, the fonts the time and "Latest" use; `capitalsCenter` needs them.
-    private static let bodyCapHeight = NSFont.preferredFont(forTextStyle: .body).capHeight
-    private static let captionCapHeight = NSFont.preferredFont(forTextStyle: .caption1).capHeight
+    nonisolated private static let bodyCapHeight = NSFont.preferredFont(forTextStyle: .body).capHeight
+    nonisolated private static let captionCapHeight = NSFont.preferredFont(forTextStyle: .caption1).capHeight
 }
 
 extension VerticalAlignment {
