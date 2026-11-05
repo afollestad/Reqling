@@ -22,7 +22,7 @@ struct ResponseView: View {
                 ResponseFailureView(failure: failure)
             } else if let record = exchange.response {
                 let pendingShape = response.body.pendingShape
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                     ResponseSectionBar(response: response, model: model)
                     ResponseTabContent(response: response, exchange: exchange, record: record, model: model)
                         // A tab narrower or shorter than the pane (Timing caps its width) would otherwise center the whole stack.

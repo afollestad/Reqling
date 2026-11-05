@@ -20,7 +20,7 @@ struct GRPCResponseView: View {
         if let failure = exchange?.failure {
             ResponseFailureView(failure: failure)
         } else if let call = exchange?.grpc {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 GRPCResponseSectionBar(response: response)
                 GRPCResponseTabContent(response: response, call: call)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
