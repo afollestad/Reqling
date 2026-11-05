@@ -273,6 +273,23 @@ final class GraphQLTypeSystemTests: XCTestCase {
         XCTAssertEqual(result, [])
     }
 
+    // MARK: - Browsing
+
+    func testSearchFindsTypesBeforeFieldsAndReferencesNameEveryUse() async throws {
+        let schema = try await GraphQLTypeSystem.loading(schemaFile: Data(GraphQLOracle.fixtureSDL.utf8)).typeSystem
+
+        let hits = schema.search("genre")
+        let uses = Set(schema.references(to: "Genre").map(\.path))
+
+        XCTAssertEqual(hits.first, .type("Genre"))
+        XCTAssertTrue(hits.contains(.field(type: "Book", name: "genre")))
+        XCTAssertTrue(hits.contains(.field(type: "NewBook", name: "genre")), "input fields too")
+        XCTAssertEqual(uses, ["Book.genre", "BookFilter.genre", "NewBook.genre", "Events.bookAdded(genre:)"])
+        XCTAssertEqual(Set(schema.implementations(of: "Entity").map(\.name)), ["Author", "Book"])
+        XCTAssertFalse(schema.browsableTypes.contains { $0.name.hasPrefix("__") })
+        XCTAssertEqual(schema.search("", limit: 3).count, 3)
+    }
+
     // MARK: - Support
 
     /// Compares what introspection reports of two schemas, naming each type or directive that differs.

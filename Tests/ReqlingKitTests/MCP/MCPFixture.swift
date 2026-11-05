@@ -34,7 +34,11 @@ final class MCPFixture {
             pkcs12Probe: TLSFixtures.probe,
             history: RunHistory(directory: storage.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
-            grpcSchemas: GRPCSchemaService(workspaces: protoWorkspaces)
+            grpcSchemas: GRPCSchemaService(workspaces: protoWorkspaces),
+            graphQLSchemas: GraphQLSchemaService(
+                store: GraphQLSchemaStore(directory: storage.directory.file("Support/GraphQLSchemas")),
+                fetcher: LiveGraphQLIntrospectionFetcher()
+            )
         )
         context = MCPToolContext(
             library: storage.library,
