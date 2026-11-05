@@ -58,6 +58,20 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: CGSize(width: 820, height: 420))
     }
 
+    /// Identical bodies say so across the whole pane, not at the empty state's own width.
+    func testRunComparisonWithoutDifferences() async throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let base: TimeInterval = 1_700_000_000
+        let body = #"{"users":[{"id":1,"name":"Ada"}]}"#
+        let older = storeJSON(body, status: 200, at: base - 300, duration: 0.31, in: project)
+        storeJSON(body, status: 200, at: base, duration: 0.142, in: project)
+        let editor = try project.editor(project.listUsers, in: fixture)
+        editor.history.compareWithLatest(older.id)
+        await editor.history.loadComparison()
+
+        assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: CGSize(width: 820, height: 420))
+    }
+
     func testSettingsHistory() {
         fixture.model.showSettings(.history)
 

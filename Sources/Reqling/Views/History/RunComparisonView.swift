@@ -136,14 +136,17 @@ private struct RunComparisonSectionView: View {
             ContentUnavailableView(
                 "No Differences",
                 systemImage: "equal",
-                description: Text("Both runs' \(section.title.lowercased()) are the same.")
+                description: Text("Both runs have the same \(section.title.lowercased()).")
             )
+            // Centered in the pane; the parent's top-leading frame would otherwise hold it at its own width.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .binary(let identical):
             ContentUnavailableView(
                 identical ? "No Differences" : "The Bodies Differ",
                 systemImage: identical ? "equal" : "doc.badge.ellipsis",
-                description: Text(identical ? "Both runs' binary bodies are the same." : "Binary bodies can't be compared line by line.")
+                description: Text(identical ? "Both runs have the same binary body." : "Binary bodies can't be compared line by line.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import ReqlingKit
 import SwiftUI
 
@@ -11,15 +12,16 @@ struct RunHistoryRow: View, Equatable {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 RunStatusBadge(status: run.status)
-                // On the time's baseline: centered, the smaller caption sits above it.
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .capitalsCenter, spacing: 6) {
                     Text(time)
                         .monospacedDigit()
+                        .alignmentGuide(.capitalsCenter) { $0[.firstTextBaseline] - Self.bodyCapHeight / 2 }
                     Spacer(minLength: 4)
                     if isLatest {
                         Text("Latest")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                            .alignmentGuide(.capitalsCenter) { $0[.firstTextBaseline] - Self.captionCapHeight / 2 }
                     }
                 }
             }
@@ -41,6 +43,24 @@ struct RunHistoryRow: View, Equatable {
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension RunHistoryRow {
+    /// The cap heights of `.body` and `.caption`, the fonts the time and "Latest" use; `capitalsCenter` needs them.
+    private static let bodyCapHeight = NSFont.preferredFont(forTextStyle: .body).capHeight
+    private static let captionCapHeight = NSFont.preferredFont(forTextStyle: .caption1).capHeight
+}
+
+extension VerticalAlignment {
+    /// The middle of a text's capitals, so a small caption beside larger text looks level with it. Frames centered put
+    /// the caption high, since a line's frame includes room for descenders; baselines matched put it low.
+    fileprivate static let capitalsCenter = VerticalAlignment(CapitalsCenter.self)
+
+    private enum CapitalsCenter: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat {
+            context[VerticalAlignment.center]
+        }
     }
 }
 
