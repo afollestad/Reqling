@@ -80,13 +80,35 @@ final class ProjectSettingsModel {
 
     // MARK: - Certificates
 
-    func addPKCS12Certificate() {
-        let types = ["p12", "pfx"].compactMap { UTType(filenameExtension: $0) }
-        guard let url = app.system.chooseFile(prompt: "Add Certificate", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID) else {
+    /// A PKCS#12 file, or a certificate and its private key: the same file when it holds the key, otherwise one a second
+    /// panel asks for. Both are chosen before either becomes a reference, so cancelling the second registers no path.
+    func addCertificateFile() {
+        let types = ["p12", "pfx", "pem", "crt", "cer"].compactMap { UTType(filenameExtension: $0) }
+        guard let url = app.system.chooseFile(prompt: "Add Certificate", allowedTypes: types) else {
             return
         }
-        clientCertificates.append(ClientCertificateEntry(hostPattern: "", source: .pkcs12(reference)))
+        guard !["p12", "pfx"].contains(url.pathExtension.lowercased()) else {
+            if let reference = app.reference(for: url, in: projectID) {
+                clientCertificates.append(ClientCertificateEntry(hostPattern: "", source: .pkcs12(reference)))
+            }
+            return
+        }
+        let keyURL: URL
+        if let data = try? Data(contentsOf: url), PEMIdentityImporter.containsPrivateKey(data) {
+            keyURL = url
+        } else {
+            // Unfiltered: keys come as .key, .pem, or no extension, and the system types .key as a Keynote document.
+            let message = "Choose the private key for \(url.lastPathComponent)."
+            guard let chosen = app.system.chooseFile(prompt: "Choose Private Key", message: message, allowedTypes: []) else {
+                return
+            }
+            keyURL = chosen
+        }
+        guard let certificate = app.reference(for: url, in: projectID),
+              let key = keyURL == url ? certificate : app.reference(for: keyURL, in: projectID) else {
+            return
+        }
+        clientCertificates.append(ClientCertificateEntry(hostPattern: "", source: .pem(certificate: certificate, key: key)))
     }
 
     func addKeychainCertificate() {
@@ -128,7 +150,7 @@ final class ProjectSettingsModel {
             return .problem("The project is not available.")
         }
         let passphrase = passphrases[entry.id]
-        if case .pkcs12 = entry.source, passphrase == nil, unreadablePassphrases.contains(entry.id) {
+        if entry.source.usesPassphrase, passphrase == nil, unreadablePassphrases.contains(entry.id) {
             return .problem("Reqling couldn't read this certificate's passphrase from the Keychain.")
         }
         let reference = keychainIdentities[entry.id]

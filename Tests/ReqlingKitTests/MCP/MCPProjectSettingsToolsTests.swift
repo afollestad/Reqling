@@ -120,6 +120,47 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
         XCTAssertNil(fixture.library.certificatePassphrase(for: try XCTUnwrap(CertificateEntryID(string: id)), in: project))
     }
 
+    func testAPEMCertificateTakesItsCertificateAndKeyFiles() async throws {
+        let added = try await fixture.success("update_tls_config", [
+            "project": projectArgument,
+            "clientCertificates": [[
+                "hostPattern": "*.internal",
+                "certificate": ["path": "certs/client.crt"],
+                "key": ["path": "certs/client.key"],
+                "passphrase": "k3y-phrase"
+            ]]
+        ])
+        let entry = try XCTUnwrap(added["clientCertificates"]?.arrayValue?.first)
+        let id = try XCTUnwrap(entry["id"]?.stringValue)
+
+        XCTAssertEqual(entry["source"], "pem")
+        XCTAssertEqual(entry["certificate"]?["relativePath"], "certs/client.crt")
+        XCTAssertEqual(entry["key"]?["relativePath"], "certs/client.key")
+        XCTAssertEqual(entry["hasPassphrase"], true)
+        XCTAssertFalse(MCPJSON.text(.object(added)).contains("k3y-phrase"))
+
+        _ = try await fixture.success("update_tls_config", [
+            "project": projectArgument,
+            "clientCertificates": [["id": .string(id), "key": ["path": "certs/rotated.key"]]]
+        ])
+        XCTAssertEqual(
+            try fixture.document(project).tls.clientCertificates.first?.source,
+            .pem(certificate: .relative("certs/client.crt"), key: .relative("certs/rotated.key"))
+        )
+
+        let both = await fixture.failure("update_tls_config", [
+            "project": projectArgument,
+            "clientCertificates": [["hostPattern": "x", "file": ["path": "a.p12"], "certificate": ["path": "a.crt"]]]
+        ])
+        let keyless = await fixture.failure("update_tls_config", [
+            "project": projectArgument,
+            "clientCertificates": [["hostPattern": "x", "certificate": ["path": "a.crt"]]]
+        ])
+        XCTAssertTrue(both.contains("not both"), both)
+        XCTAssertTrue(keyless.contains("needs both"), keyless)
+        XCTAssertEqual(try fixture.document(project).tls.clientCertificates.map(\.id.description), [id], "A refused update changes nothing")
+    }
+
     // MARK: - App
 
     func testSettingsChangeWithinRangeAndNeverIncludeTheServer() async throws {

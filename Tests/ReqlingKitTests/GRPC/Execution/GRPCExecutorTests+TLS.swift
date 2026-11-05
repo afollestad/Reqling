@@ -36,6 +36,19 @@ extension GRPCExecutorTests {
         XCTAssertEqual(try decode(events.received), ["rsa"])
     }
 
+    /// A PEM key, repackaged in memory, signs the handshake through `SecKeyPrivateKey` like a PKCS#12 one.
+    func testMutualTLSWithAPEMRSAClientCertificateSucceeds() async throws {
+        let server = try await startMutualTLS()
+        let pem = try TLSFixtures.rsaClientPEM
+        let identity = try PEMIdentityImporter.importIdentity(certificate: pem.certificate, key: pem.key, passphrase: "")
+        let context = TLSContext(anchors: try fixtureCA()) { _, _ in identity }
+
+        let (events, outcome) = await run(call(server, "Unary", .unary, body: .message(try encode("pem")), security: .tls(context)))
+
+        XCTAssertEqual(outcome.status?.isOK, true, "\(outcome)")
+        XCTAssertEqual(try decode(events.received), ["pem"])
+    }
+
     func testMutualTLSWithoutAClientCertificateFailsTheHandshake() async throws {
         let server = try await startMutualTLS()
 

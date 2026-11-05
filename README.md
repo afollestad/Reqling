@@ -73,7 +73,7 @@ The server listens on `127.0.0.1` only and requires its bearer token, which is k
 
 ## TLS and client certificates
 
-A project's **Project Settings** take client certificates for mutual TLS — a PKCS#12 file (`.p12`/`.pfx`) or an identity already in your Keychain — matched by host (`api.example.com`, `*.internal`, `host:8443`), plus extra CA certificates trusted in addition to the system's. Passphrases are stored in your Keychain. For a `.crt` and `.key` pair, convert it first: `openssl pkcs12 -export -in client.crt -inkey client.key -out client.p12`.
+A project's **Project Settings** take client certificates for mutual TLS — a PKCS#12 file (`.p12`/`.pfx`), a PEM certificate and private key (`.crt`/`.key`, RSA or EC, encrypted or not), or an identity already in your Keychain — matched by host (`api.example.com`, `*.internal`, `host:8443`), plus extra CA certificates trusted in addition to the system's. Passphrases are stored in your Keychain; certificates and keys are read in memory and never added to it.
 
 ## Updates
 

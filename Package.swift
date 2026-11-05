@@ -44,7 +44,8 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-                // The gRPC executor's TLS hooks (trust callback, `SecKey`-backed private key) are NIOSSL types.
+                // The gRPC executor's TLS hooks (trust callback, `SecKey`-backed private key) are NIOSSL types, and
+                // NIOSSL reads PEM client keys into the in-memory PKCS#12 that `PEMIdentityImporter` builds.
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "MCP", package: "swift-sdk")

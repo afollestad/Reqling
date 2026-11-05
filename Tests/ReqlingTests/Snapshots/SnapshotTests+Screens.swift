@@ -15,7 +15,10 @@ extension SnapshotTests {
     func testProjectSettings() throws {
         let project = try SnapshotProject.make(in: fixture)
         let settings = ProjectSettingsModel(projectID: project.id, app: fixture.model)
-        settings.clientCertificates = [ClientCertificateEntry(hostPattern: "*.internal", source: .pkcs12(.relative("client.p12")))]
+        settings.clientCertificates = [
+            ClientCertificateEntry(hostPattern: "*.internal", source: .pkcs12(.relative("client.p12"))),
+            ClientCertificateEntry(hostPattern: "api.example.com", source: .pem(certificate: .relative("client.crt"), key: .relative("client.key")))
+        ]
 
         assertBothAppearances(
             ProjectSettingsSheet(settings: settings, tokenContext: TemplateTokenContext(scope: fixture.model.scope(for: project.id))),

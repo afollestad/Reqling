@@ -126,4 +126,32 @@ final class CertificateTests: XCTestCase {
             XCTAssertEqual(error as? TLSError, .missingFile("A file chosen on another Mac"))
         }
     }
+
+    func testTheResolverOpensAPEMEntryAndFailsClearlyWithoutItsKey() throws {
+        func resolver(key: ProjectPathReference) throws -> ProjectTLSResolver {
+            let entry = ClientCertificateEntry(hostPattern: "localhost", source: .pem(certificate: .relative("client.pem"), key: key))
+            return ProjectTLSResolver(
+                configuration: ProjectTLSConfiguration(clientCertificates: [entry]),
+                paths: ProjectPathResolver(projectRoot: try TLSFixtures.directory),
+                passphrase: { _ in nil },
+                keychainIdentityReference: { _ in nil },
+                keychain: SystemKeychainIdentityStore()
+            )
+        }
+
+        let context = try resolver(key: .relative("client-key.pem")).context(host: "localhost", port: 443, verifiesServer: true)
+        XCTAssertEqual(context.clientIdentity("localhost", 443)?.certificate.map { CertificateSummary($0).subject }, "Reqling Test Client")
+        XCTAssertThrowsError(try resolver(key: .relative("missing.key")).context(host: "localhost", port: 443, verifiesServer: true)) { error in
+            XCTAssertEqual(error as? TLSError, .missingFile("“missing.key”"))
+        }
+    }
+
+    func testAPEMSourceIsStoredAsItsCertificateAndKey() throws {
+        let json = #"{"type": "pem", "certificate": {"relative": "certs/client.crt"}, "key": {"relative": "certs/client.key"}}"#
+        let source = ClientCertificateSource.pem(certificate: .relative("certs/client.crt"), key: .relative("certs/client.key"))
+
+        XCTAssertEqual(try JSONDecoder().decode(ClientCertificateSource.self, from: Data(json.utf8)), source)
+        XCTAssertEqual(try JSONDecoder().decode(ClientCertificateSource.self, from: try JSONEncoder().encode(source)), source)
+        XCTAssertEqual(ClientCertificateSource.pem(certificate: .relative("both.pem"), key: .relative("both.pem")).files, [.relative("both.pem")])
+    }
 }

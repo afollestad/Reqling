@@ -44,12 +44,7 @@ public enum TLSError: Error, Equatable, LocalizedError {
 }
 
 /// Opens PKCS#12 (`.p12`/`.pfx`) files without adding anything to a keychain.
-///
-/// Loose PEM certificate and key pairs are not accepted: macOS has no public API that builds a `SecIdentity` from them
-/// without importing the key into a keychain. Convert them with `openssl pkcs12 -export` instead.
 public enum PKCS12Importer {
-    public static let conversionHint = "openssl pkcs12 -export -in client.crt -inkey client.key -out client.p12"
-
     public static func importIdentity(_ data: Data, passphrase: String) throws(TLSError) -> TLSClientIdentity {
         let options: [String: Any] = [
             kSecImportExportPassphrase as String: passphrase,

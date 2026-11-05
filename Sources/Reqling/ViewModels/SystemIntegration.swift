@@ -7,7 +7,8 @@ import UniformTypeIdentifiers
 @MainActor
 protocol SystemIntegration {
     func chooseDirectory(prompt: String) -> URL?
-    func chooseFile(prompt: String, allowedTypes: [UTType]) -> URL?
+    /// `message` says what the panel is for when its button prompt alone can't, as when a second panel follows another.
+    func chooseFile(prompt: String, message: String?, allowedTypes: [UTType]) -> URL?
     func chooseSaveLocation(suggestedName: String) -> URL?
     func reveal(_ url: URL)
     func copyToPasteboard(_ string: String)
@@ -17,6 +18,12 @@ protocol SystemIntegration {
     func confirmQuitDiscardingUnsavedChanges() -> Bool
     /// Activates Reqling and brings its window forward, for an agent showing the user something.
     func bringToFront()
+}
+
+extension SystemIntegration {
+    func chooseFile(prompt: String, allowedTypes: [UTType]) -> URL? {
+        chooseFile(prompt: prompt, message: nil, allowedTypes: allowedTypes)
+    }
 }
 
 enum PathSharing {
@@ -42,12 +49,13 @@ struct AppKitSystemIntegration: SystemIntegration {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
-    func chooseFile(prompt: String, allowedTypes: [UTType]) -> URL? {
+    func chooseFile(prompt: String, message: String?, allowedTypes: [UTType]) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         panel.prompt = prompt
+        panel.message = message ?? ""
         if !allowedTypes.isEmpty {
             panel.allowedContentTypes = allowedTypes
         }

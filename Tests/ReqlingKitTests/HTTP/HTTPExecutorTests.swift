@@ -304,7 +304,11 @@ final class HTTPExecutorTests: XCTestCase {
         let clientIdentity = identity
             ? try PKCS12Importer.importIdentity(try TLSFixtures.data("client.p12"), passphrase: TLSFixtures.clientPassphrase)
             : nil
-        return TLSContext(
+        return try mutualTLSContext(clientIdentity, anchors: anchors)
+    }
+
+    private func mutualTLSContext(_ clientIdentity: TLSClientIdentity?, anchors: Bool = true) throws -> TLSContext {
+        TLSContext(
             anchors: anchors ? try CertificateLoader.certificates(from: try TLSFixtures.data("ca.pem")) : [],
             clientIdentity: { _, _ in clientIdentity }
         )
@@ -318,6 +322,23 @@ final class HTTPExecutorTests: XCTestCase {
         XCTAssertEqual(response.body.utf8Text, "secure")
         XCTAssertTrue(response.presentedClientCertificate)
         XCTAssertNotNil(response.tlsVersion)
+    }
+
+    /// URLSession presents the identity `PEMIdentityImporter` repackages exactly as one from a PKCS#12 file. This one
+    /// has no intermediates, as a Keychain identity never does, which once trapped inside CFNetwork.
+    func testMutualTLSPresentsAPEMClientIdentityWithoutIntermediates() async throws {
+        let server = try await start(tls: true, requireClientCertificate: true) { _ in .text("secure") }
+        let identity = try PEMIdentityImporter.importIdentity(
+            certificate: try TLSFixtures.data("client.pem"),
+            key: try TLSFixtures.encryptedClientKey,
+            passphrase: try TLSFixtures.clientPassphrase
+        )
+        XCTAssertTrue(identity.intermediates.isEmpty)
+
+        let response = try await HTTPExecutor().execute(try prepare(HTTPRequestSpec(url: server.baseURL)), tls: try mutualTLSContext(identity))
+
+        XCTAssertEqual(response.body.utf8Text, "secure")
+        XCTAssertTrue(response.presentedClientCertificate)
     }
 
     func testAServerRequiringAClientCertificateRejectsTheRequestWithoutOne() async throws {

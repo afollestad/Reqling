@@ -184,6 +184,48 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(try fixture.library.loadCertificatePassphrase(for: entry.id, in: project), "hunter2")
     }
 
+    func testACertificateFileIsPKCS12OrAPEMCertificateWithItsKey() throws {
+        let root = try XCTUnwrap(fixture.library.project(project)?.url)
+        let combined = "-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----\nMII=\n-----END PRIVATE KEY-----\n"
+        try Data("-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----\n".utf8).write(to: root.appendingPathComponent("client.crt"))
+        try Data(combined.utf8).write(to: root.appendingPathComponent("combined.pem"))
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+
+        fixture.system.filesToChoose = [root.appendingPathComponent("client.p12")]
+        settings.addCertificateFile()
+        fixture.system.filesToChoose = [root.appendingPathComponent("client.crt"), nil]
+        settings.addCertificateFile()
+        XCTAssertEqual(settings.clientCertificates.map(\.source), [.pkcs12(.relative("client.p12"))], "cancelling the key adds nothing")
+
+        fixture.system.filesToChoose = [root.appendingPathComponent("client.crt"), root.appendingPathComponent("client.key")]
+        settings.addCertificateFile()
+        fixture.system.filesToChoose = [root.appendingPathComponent("combined.pem")]
+        settings.addCertificateFile()
+
+        XCTAssertEqual(settings.clientCertificates.dropFirst().map(\.source), [
+            .pem(certificate: .relative("client.crt"), key: .relative("client.key")),
+            .pem(certificate: .relative("combined.pem"), key: .relative("combined.pem"))
+        ])
+        XCTAssertEqual(fixture.system.fileMessages, [
+            nil,
+            nil, "Choose the private key for client.crt.",
+            nil, "Choose the private key for client.crt.",
+            nil
+        ], "a file holding its key asks for no other")
+    }
+
+    func testAnUnreadablePEMKeyPassphraseIsFlaggedLikeAPKCS12One() throws {
+        let entry = ClientCertificateEntry(hostPattern: "a.test", source: .pem(certificate: .relative("a.crt"), key: .relative("a.key")))
+        try fixture.library.mutate(project) { $0.tls.clientCertificates = [entry] }
+        try fixture.library.setCertificatePassphrase("hunter2", for: entry.id, in: project)
+        let store = try XCTUnwrap(fixture.component.secretStore as? InMemorySecretStore)
+        store.isFailingReads = true
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+        store.isFailingReads = false
+
+        XCTAssertEqual(settings.status(of: entry), .problem("Reqling couldn't read this certificate's passphrase from the Keychain."))
+    }
+
     func testAMissingCertificateFileIsReportedAsAProblem() {
         let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
         let entry = ClientCertificateEntry(hostPattern: "api.test", source: .pkcs12(.relative("missing.p12")))

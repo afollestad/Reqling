@@ -57,6 +57,9 @@ final class AppFixture {
 final class StubSystemIntegration: SystemIntegration {
     var directoryToChoose: URL?
     var fileToChoose: URL?
+    /// Answers `chooseFile` calls in order, `nil` cancelling one; `fileToChoose` answers once it runs out.
+    var filesToChoose: [URL?] = []
+    private(set) var fileMessages: [String?] = []
     var saveLocation: URL?
     var pathSharing: PathSharing? = .shared
     var quitsDiscardingUnsavedChanges = false
@@ -69,8 +72,9 @@ final class StubSystemIntegration: SystemIntegration {
         directoryToChoose
     }
 
-    func chooseFile(prompt: String, allowedTypes: [UTType]) -> URL? {
-        fileToChoose
+    func chooseFile(prompt: String, message: String?, allowedTypes: [UTType]) -> URL? {
+        fileMessages.append(message)
+        return filesToChoose.isEmpty ? fileToChoose : filesToChoose.removeFirst()
     }
 
     func chooseSaveLocation(suggestedName: String) -> URL? {

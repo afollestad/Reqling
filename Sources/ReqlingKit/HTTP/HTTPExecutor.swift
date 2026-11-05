@@ -375,8 +375,10 @@ private final class ExchangeDelegate: NSObject, URLSessionTaskDelegate, Sendable
                 return (.performDefaultHandling, nil)
             }
             state.withLock { $0.presentedClientCertificate = true }
-            // `.none`: each new connection asks again, so the credential store never answers for the delegate.
-            return (.useCredential, URLCredential(identity: identity.identity, certificates: identity.intermediates, persistence: .none))
+            // `.none`: each new connection asks again, so the credential store never answers for the delegate. No
+            // intermediates must be `nil`, not empty: CFNetwork reads the first element of any array it gets and traps.
+            let intermediates = identity.intermediates.isEmpty ? nil : identity.intermediates
+            return (.useCredential, URLCredential(identity: identity.identity, certificates: intermediates, persistence: .none))
         default:
             return (.performDefaultHandling, nil)
         }

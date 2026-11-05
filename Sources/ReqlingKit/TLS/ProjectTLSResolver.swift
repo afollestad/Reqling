@@ -51,6 +51,12 @@ public struct ProjectTLSResolver: Sendable {
         switch entry.source {
         case .pkcs12(let file):
             return try PKCS12Importer.importIdentity(try paths.data(for: file), passphrase: passphrase(entry.id) ?? "")
+        case .pem(let certificate, let key):
+            return try PEMIdentityImporter.importIdentity(
+                certificate: try paths.data(for: certificate),
+                key: try paths.data(for: key),
+                passphrase: passphrase(entry.id) ?? ""
+            )
         case .keychainIdentity:
             guard let reference = keychainIdentityReference(entry.id) else {
                 throw .missingFile("The Keychain identity for \(entry.hostPattern)")
@@ -74,6 +80,11 @@ public struct ProjectTLSResolver: Sendable {
             case .pkcs12(let file):
                 add(Data("pkcs12".utf8))
                 add((try? paths.data(for: file)) ?? Data())
+                add(Data((passphrase(entry.id) ?? "").utf8))
+            case .pem(let certificate, let key):
+                add(Data("pem".utf8))
+                add((try? paths.data(for: certificate)) ?? Data())
+                add((try? paths.data(for: key)) ?? Data())
                 add(Data((passphrase(entry.id) ?? "").utf8))
             case .keychainIdentity:
                 add(Data("keychain".utf8))

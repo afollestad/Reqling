@@ -61,7 +61,7 @@ final class WorkspaceStateStoreTests: XCTestCase {
     }
 
     func testEveryFieldHoldingAReferenceCountsAsUsed() throws {
-        let ids = (0..<6).map { _ in LocalPathID() }
+        let ids = (0..<8).map { _ in LocalPathID() }
         var http = HTTPRequestSpec()
         http.body.binary.file = .local(ids[0])
         http.body.formData = [MultipartField(key: "upload", kind: .file, file: .local(ids[1]))]
@@ -69,7 +69,10 @@ final class WorkspaceStateStoreTests: XCTestCase {
         let document = ProjectDocument(
             name: "API",
             tls: ProjectTLSConfiguration(
-                clientCertificates: [ClientCertificateEntry(hostPattern: "*", source: .pkcs12(.local(ids[3])))],
+                clientCertificates: [
+                    ClientCertificateEntry(hostPattern: "*", source: .pkcs12(.local(ids[3]))),
+                    ClientCertificateEntry(hostPattern: "*.internal", source: .pem(certificate: .local(ids[6]), key: .local(ids[7])))
+                ],
                 caCertificates: [.local(ids[4]), .relative("ca.pem")]
             ),
             grpc: ProjectGRPCConfiguration(protoRoots: [.local(ids[5])], descriptorSets: [.relative("api.binpb")]),

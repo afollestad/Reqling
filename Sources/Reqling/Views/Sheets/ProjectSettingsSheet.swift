@@ -52,7 +52,7 @@ private struct ClientCertificatesSection: View {
                 ClientCertificateRow(entry: $entry, settings: settings)
             }
             HStack {
-                Button("Add Certificate File…") { settings.addPKCS12Certificate() }
+                Button("Add Certificate File…") { settings.addCertificateFile() }
                 Button("Choose from Keychain…") { settings.addKeychainCertificate() }
                     .disabled(settings.availableKeychainIdentities.isEmpty)
             }
@@ -60,12 +60,11 @@ private struct ClientCertificatesSection: View {
             Text("Client Certificates")
         } footer: {
             Text("""
-                Presented to hosts that ask for one (mutual TLS). Use a PKCS#12 file (.p12 or .pfx). For a .crt and .key \
-                pair, convert it first: \(PKCS12Importer.conversionHint)
+                Presented to hosts that ask for one (mutual TLS). Use a PKCS#12 file (.p12 or .pfx), or a PEM certificate \
+                and its private key (.crt and .key).
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
         }
     }
 }
@@ -99,17 +98,11 @@ private struct ClientCertificateRow: View {
             }
             switch entry.source {
             case .pkcs12(let file):
-                LabeledRow("File") {
-                    Text(settings.describe(file))
-                        .foregroundStyle(.secondary)
-                }
-                LabeledRow("Passphrase") {
-                    SecureField("Passphrase", text: Binding(
-                        get: { settings.passphrases[entry.id] ?? "" },
-                        set: { settings.passphrases[entry.id] = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
+                FileRow(label: "File", description: settings.describe(file))
+            case .pem(let certificate, let key):
+                FileRow(label: "Certificate", description: settings.describe(certificate))
+                if key != certificate {
+                    FileRow(label: "Key", description: settings.describe(key))
                 }
             case .keychainIdentity:
                 LabeledRow("Identity") {
@@ -126,10 +119,40 @@ private struct ClientCertificateRow: View {
                     .fixedSize()
                 }
             }
+            if entry.source.usesPassphrase {
+                LabeledRow("Passphrase") {
+                    SecureField("Passphrase", text: Binding(
+                        get: { settings.passphrases[entry.id] ?? "" },
+                        set: { settings.passphrases[entry.id] = $0 }
+                    ), prompt: passphrasePrompt)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                }
+            }
             CertificateStatusLabel(status: settings.status(of: entry))
                 .alignedWithLabeledRowControls()
         }
         .padding(.vertical, 4)
+    }
+
+    /// A PEM key is usually unencrypted, so its field says when it is needed.
+    private var passphrasePrompt: Text? {
+        if case .pem = entry.source {
+            return Text("Only for an encrypted key")
+        }
+        return nil
+    }
+}
+
+private struct FileRow: View {
+    let label: String
+    let description: String
+
+    var body: some View {
+        LabeledRow(label) {
+            Text(description)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

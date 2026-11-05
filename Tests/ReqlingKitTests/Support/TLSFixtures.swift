@@ -6,12 +6,13 @@ import SwiftASN1
 import X509
 
 /// Test-only TLS material, minted once per test process so no key or passphrase is ever committed: a CA, a client
-/// identity it signed (`client.pem`, and `client.p12` under a random passphrase), an RSA twin of that identity, and
-/// server leaves on demand. Leaves stay short-lived because Apple's SSL policy rejects server certificates valid for
-/// more than 825 days.
+/// identity it signed (`client.pem` with its PKCS#8 key `client-key.pem`, and `client.p12` under a random passphrase),
+/// an RSA twin of that identity, and server leaves on demand. Leaves stay short-lived because Apple's SSL policy
+/// rejects server certificates valid for more than 825 days.
 ///
-/// The CA and client files live in a per-process temporary `directory`, removed at exit. Packaging the PKCS#12 shells
-/// out to `/usr/bin/openssl`, which ships with macOS: neither Security nor swift-certificates can write one.
+/// The CA and client files live in a per-process temporary `directory`, removed at exit. Packaging the PKCS#12 and
+/// encrypting keys shell out to `/usr/bin/openssl`, which ships with macOS; the PKCS#12 fixtures stay independent of
+/// the NIOSSL packaging `PEMIdentityImporter` uses.
 enum TLSFixtures {
     static var directory: URL {
         get throws { try authority.get().directory }
@@ -21,7 +22,7 @@ enum TLSFixtures {
         get throws { try authority.get().passphrase }
     }
 
-    /// One of `ca.pem`, `ca.der`, `client.pem`, or `client.p12`.
+    /// One of `ca.pem`, `ca.der`, `client.pem`, `client-key.pem`, or `client.p12`.
     static func url(_ name: String) throws -> URL {
         try directory.appendingPathComponent(name)
     }
@@ -34,7 +35,28 @@ enum TLSFixtures {
     /// client certificates in use are RSA, and a TLS 1.3 handshake signs with one differently (RSA-PSS). Minted on
     /// first use, because RSA key generation is slow.
     static var rsaClientPKCS12: Data {
-        get throws { try Data(contentsOf: rsaClient.get()) }
+        get throws { try Data(contentsOf: rsaClient.get().appendingPathComponent("client-rsa.p12")) }
+    }
+
+    /// The RSA twin's certificate and its PKCS#1 key (`BEGIN RSA PRIVATE KEY`), as PEM.
+    static var rsaClientPEM: (certificate: Data, key: Data) {
+        get throws {
+            let directory = try rsaClient.get()
+            return (
+                try Data(contentsOf: directory.appendingPathComponent("client-rsa.pem")),
+                try Data(contentsOf: directory.appendingPathComponent("client-rsa-key.pem"))
+            )
+        }
+    }
+
+    /// `client-key.pem` as encrypted PKCS#8 (`BEGIN ENCRYPTED PRIVATE KEY`) under `clientPassphrase`.
+    static var encryptedClientKey: Data {
+        get throws { try Data(contentsOf: encryptedKeys.get().pkcs8) }
+    }
+
+    /// The RSA twin's key in OpenSSL's legacy encrypted PEM (`Proc-Type: 4,ENCRYPTED`) under `clientPassphrase`.
+    static var legacyEncryptedRSAClientKey: Data {
+        get throws { try Data(contentsOf: encryptedKeys.get().legacyRSA) }
     }
 
     struct Minted {
@@ -96,7 +118,10 @@ extension TLSFixtures {
     /// Built on first use; a failure (no `openssl`) fails each test that needs it rather than crashing the process.
     private static let authority = Result<FixtureAuthority, any Error> { try makeAuthority() }
 
+    /// The fixture directory, once `client-rsa.*` is in it.
     private static let rsaClient = Result<URL, any Error> { try makeRSAClient() }
+
+    private static let encryptedKeys = Result<(pkcs8: URL, legacyRSA: URL), any Error> { try makeEncryptedKeys() }
 
     private static func makeAuthority() throws -> FixtureAuthority {
         let directory = FileManager.default.temporaryDirectory
@@ -138,12 +163,29 @@ extension TLSFixtures {
     }
 
     private static func makeRSAClient() throws -> URL {
-        try makeClient(named: "client-rsa", commonName: "Reqling Test RSA Client", key: .rsa, issuer: authority.get())
+        let authority = try authority.get()
+        try makeClient(named: "client-rsa", commonName: "Reqling Test RSA Client", key: .rsa, issuer: authority)
+        return authority.directory
+    }
+
+    private static func makeEncryptedKeys() throws -> (pkcs8: URL, legacyRSA: URL) {
+        let directory = try rsaClient.get()
+        let passphrase = try clientPassphrase
+        let pkcs8 = directory.appendingPathComponent("client-key-encrypted.pem")
+        let legacyRSA = directory.appendingPathComponent("client-rsa-key-encrypted.pem")
+        try openssl([
+            "pkcs8", "-topk8", "-v2", "aes-256-cbc", "-in", directory.appendingPathComponent("client-key.pem").path,
+            "-passout", "env:REQLING_FIXTURE_PASSPHRASE", "-out", pkcs8.path
+        ], passphrase: passphrase)
+        try openssl([
+            "rsa", "-aes256", "-in", directory.appendingPathComponent("client-rsa-key.pem").path,
+            "-passout", "env:REQLING_FIXTURE_PASSPHRASE", "-out", legacyRSA.path
+        ], passphrase: passphrase)
+        return (pkcs8, legacyRSA)
     }
 
     /// A client identity valid for a year, packaged by `package(_:as:passphrase:in:)`.
-    @discardableResult
-    private static func makeClient(named name: String, commonName: String, key: LeafKeyType, issuer: FixtureAuthority) throws -> URL {
+    private static func makeClient(named name: String, commonName: String, key: LeafKeyType, issuer: FixtureAuthority) throws {
         let now = Date()
         let client = try sign(
             commonName: commonName,
@@ -152,7 +194,7 @@ extension TLSFixtures {
             validity: now.addingTimeInterval(-3600)...now.addingTimeInterval(365 * 86_400),
             issuer: issuer
         )
-        return try package(client, as: name, passphrase: issuer.passphrase, in: issuer.directory)
+        try package(client, as: name, passphrase: issuer.passphrase, in: issuer.directory)
     }
 
     private static func sign(
@@ -172,7 +214,7 @@ extension TLSFixtures {
         case .rsa:
             let key = try _RSA.Signing.PrivateKey(keySize: .bits2048)
             publicKey = .init(key.publicKey)
-            privateKeyPEM = key.pkcs8PEMRepresentation
+            privateKeyPEM = key.pemRepresentation
         }
         let certificate = try Certificate(
             version: .v3,
@@ -202,28 +244,29 @@ extension TLSFixtures {
         )
     }
 
-    /// Writes `<name>.pem` and `<name>.p12`, with the CA in its chain, and returns the `.p12`. The key is PKCS#8, with a
-    /// named curve for EC, which `SecPKCS12Import` requires; the passphrase travels through the environment rather
-    /// than the argument list.
-    private static func package(_ client: Minted, as name: String, passphrase: String, in directory: URL) throws -> URL {
-        let outputURL = directory.appendingPathComponent("\(name).p12")
+    /// Writes `<name>.pem`, its key `<name>-key.pem`, and `<name>.p12` with the CA in its chain. An EC key is PKCS#8
+    /// with a named curve, which `SecPKCS12Import` requires.
+    private static func package(_ client: Minted, as name: String, passphrase: String, in directory: URL) throws {
         let certificateURL = directory.appendingPathComponent("\(name).pem")
         try Data(client.certificatePEM.utf8).write(to: certificateURL)
         let keyURL = directory.appendingPathComponent("\(name)-key.pem")
         try Data(client.privateKeyPEM.utf8).write(to: keyURL)
-        defer { try? FileManager.default.removeItem(at: keyURL) }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
-        process.arguments = [
+        try openssl([
             "pkcs12", "-export", "-descert",
             "-inkey", keyURL.path,
             "-in", certificateURL.path,
             "-certfile", directory.appendingPathComponent("ca.pem").path,
             "-name", name,
             "-passout", "env:REQLING_FIXTURE_PASSPHRASE",
-            "-out", outputURL.path
-        ]
+            "-out", directory.appendingPathComponent("\(name).p12").path
+        ], passphrase: passphrase)
+    }
+
+    /// Runs `/usr/bin/openssl`; the passphrase travels through the environment rather than the argument list.
+    private static func openssl(_ arguments: [String], passphrase: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+        process.arguments = arguments
         process.environment = ["REQLING_FIXTURE_PASSPHRASE": passphrase]
         let errors = Pipe()
         process.standardError = errors
@@ -232,8 +275,7 @@ extension TLSFixtures {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let message = String(bytes: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw FixtureError(description: "openssl pkcs12 failed (\(process.terminationStatus)): \(message)")
+            throw FixtureError(description: "openssl \(arguments.first ?? "") failed (\(process.terminationStatus)): \(message)")
         }
-        return outputURL
     }
 }

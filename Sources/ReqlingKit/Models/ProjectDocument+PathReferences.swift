@@ -6,9 +6,7 @@ extension ProjectDocument {
     public var localPathIDs: Set<LocalPathID> {
         var references = tls.caCertificates + grpc.protoRoots + grpc.descriptorSets
         for entry in tls.clientCertificates {
-            if case .pkcs12(let reference) = entry.source {
-                references.append(reference)
-            }
+            references += entry.source.files
         }
         for (request, _) in allRequests {
             _ = request.kind.mappingPathReferences { reference in
