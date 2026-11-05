@@ -16,10 +16,14 @@ struct KeyValueTable: View {
 
     /// The ID the draft row's first edit appends its row under; renewed once it has.
     @State private var draftID = KeyValuePairID()
+    @State private var checkboxRange = CheckboxRange<KeyValuePairID>()
 
     var body: some View {
         let draftID = draftID
         VStack(alignment: .leading, spacing: 6) {
+            if !rows.isEmpty {
+                CheckboxSelectionBar(rows: $rows, isOn: \.isEnabled)
+            }
             ForEach(rows + [KeyValuePair(id: draftID, key: "", value: "")]) { row in
                 KeyValueTableRow(
                     writer: IdentifiedRowWriter(
@@ -28,6 +32,7 @@ struct KeyValueTable: View {
                         isDraft: row.id == draftID,
                         onDraftAppended: { self.draftID = KeyValuePairID() }
                     ),
+                    onToggle: { checkboxRange.click(\.isEnabled, to: $0, at: row.id, in: $rows) },
                     keyPlaceholder: keyPlaceholder,
                     valuePlaceholder: valuePlaceholder,
                     rowName: rowName,
@@ -40,6 +45,8 @@ struct KeyValueTable: View {
 
 private struct KeyValueTableRow: View {
     let writer: IdentifiedRowWriter<KeyValuePair>
+    /// Goes through the table rather than `writer`, since a Shift-click sets a range of rows.
+    let onToggle: @MainActor (Bool) -> Void
     let keyPlaceholder: String
     let valuePlaceholder: String
     let rowName: String
@@ -48,7 +55,7 @@ private struct KeyValueTableRow: View {
     var body: some View {
         let isDraft = writer.isDraft
         HStack(spacing: 6) {
-            Toggle("Enabled", isOn: writer.binding(\.isEnabled))
+            Toggle("Enabled", isOn: Binding(get: { writer.shown.isEnabled }, set: { onToggle($0) }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
                 .disabled(isDraft)

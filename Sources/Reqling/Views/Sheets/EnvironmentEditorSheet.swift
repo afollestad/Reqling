@@ -116,14 +116,19 @@ private struct VariableTable: View {
     /// The identity the draft row gives the variable its first edit creates, so the new row keeps the draft row's view
     /// identity, and with it the text field's focus.
     @State private var draftID = VariableID()
+    @State private var checkboxRange = CheckboxRange<VariableID>()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if !variables.isEmpty {
+                CheckboxSelectionBar(rows: $variables, isOn: \.isEnabled)
+            }
             ForEach(variables + [Variable(id: draftID, key: "", value: "")]) { variable in
                 VariableRow(
                     variable: variable,
                     isDraft: variable.id == draftID,
                     onEdit: { edit(variable.id, $0) },
+                    onToggle: { checkboxRange.click(\.isEnabled, to: $0, at: variable.id, in: $variables) },
                     onRemove: { variables.removeAll { $0.id == variable.id } }
                 )
             }
@@ -152,11 +157,13 @@ private struct VariableRow: View {
     /// Applies one field's change to the table's current copy of this variable, never to this render's `variable`,
     /// so a second edit before the next render cannot revert the first.
     let onEdit: @MainActor (_ change: (inout Variable) -> Void) -> Void
+    /// Goes through the table rather than `onEdit`, since a Shift-click sets a range of rows.
+    let onToggle: @MainActor (Bool) -> Void
     let onRemove: @MainActor () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
-            Toggle("Enabled", isOn: binding(\.isEnabled))
+            Toggle("Enabled", isOn: Binding(get: { variable.isEnabled }, set: { onToggle($0) }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
                 .disabled(isDraft)

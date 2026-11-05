@@ -129,11 +129,19 @@ private struct RawBodyEditor: View {
 private struct FormDataEditor: View {
     @Binding var fields: [MultipartField]
     let editor: RequestEditorViewModel
+    @State private var checkboxRange = CheckboxRange<MultipartField.ID>()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if !fields.isEmpty {
+                CheckboxSelectionBar(rows: $fields, isOn: \.isEnabled)
+            }
             ForEach(fields) { field in
-                FormDataRow(writer: IdentifiedRowWriter(rows: $fields, shown: field), editor: editor)
+                FormDataRow(
+                    writer: IdentifiedRowWriter(rows: $fields, shown: field),
+                    editor: editor,
+                    onToggle: { checkboxRange.click(\.isEnabled, to: $0, at: field.id, in: $fields) }
+                )
             }
             Button {
                 fields.append(MultipartField(key: ""))
@@ -148,12 +156,14 @@ private struct FormDataEditor: View {
 private struct FormDataRow: View {
     let writer: IdentifiedRowWriter<MultipartField>
     let editor: RequestEditorViewModel
+    /// Goes through the editor rather than `writer`, since a Shift-click sets a range of rows.
+    let onToggle: @MainActor (Bool) -> Void
 
     var body: some View {
         let field = writer.shown
         let tokenContext = editor.tokenContext
         HStack(spacing: 6) {
-            Toggle("Send this field", isOn: writer.binding(\.isEnabled))
+            Toggle("Send this field", isOn: Binding(get: { writer.shown.isEnabled }, set: { onToggle($0) }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
             TemplateField(text: writer.binding(\.key), placeholder: "Key", tokenContext: tokenContext, accessibilityLabel: "Field name")
