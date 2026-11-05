@@ -80,7 +80,9 @@ extension MCPRequestTools {
         "An HTTP spec: method, url (any query string moves into queryParameters), queryParameters and headers "
             + #"([{"key", "value", "enabled"}]), body ({"mode": "none" | "raw" | "form-data" | "x-www-form-urlencoded" | "#
             + #""binary" | "graphql", "raw": {"text", "contentType"}, "x-www-form-urlencoded": [{"key", "value"}], "graphql": "#
-            + #"{"query", "variables"}}), auth (as update_project describes, or {"type": "inherit"}), and options "#
+            + #"{"query", "variables", "operationName", "schema": {"type": "introspection"} (the default; null resets it) or "#
+            + #"{"type": "file", "file": {"relative": "path"}} for a .graphql SDL or introspection .json file}}), "#
+            + #"auth (as update_project describes, or {"type": "inherit"}), and options "#
             + #"({"timeoutSeconds", "followRedirects", "verifyTLS"}). Values may contain {{variables}}."#
     )
 

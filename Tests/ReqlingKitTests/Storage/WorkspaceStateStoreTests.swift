@@ -61,10 +61,11 @@ final class WorkspaceStateStoreTests: XCTestCase {
     }
 
     func testEveryFieldHoldingAReferenceCountsAsUsed() throws {
-        let ids = (0..<8).map { _ in LocalPathID() }
+        let ids = (0..<9).map { _ in LocalPathID() }
         var http = HTTPRequestSpec()
         http.body.binary.file = .local(ids[0])
         http.body.formData = [MultipartField(key: "upload", kind: .file, file: .local(ids[1]))]
+        http.body.graphQL.schema = .file(.local(ids[8]))
         let grpc = GRPCRequestSpec(schema: .descriptorSet(.local(ids[2])))
         let document = ProjectDocument(
             name: "API",

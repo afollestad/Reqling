@@ -1,6 +1,6 @@
 extension ProjectDocument {
     /// Every `ProjectPathReference.local` ID the project uses: certificates, proto definitions, and each request's
-    /// files and descriptor set. `WorkspaceStateStore.reconcileLocalPaths(in:keeping:)` deletes every other stored path,
+    /// files, GraphQL schema file, and descriptor set. `WorkspaceStateStore.reconcileLocalPaths(in:keeping:)` deletes every other stored path,
     /// so a new field that holds a reference must be listed here, or in `RequestKind.mappingPathReferences(_:)` for a
     /// request's, or its path is lost on the next launch.
     public var localPathIDs: Set<LocalPathID> {
@@ -24,8 +24,9 @@ extension ProjectDocument {
 }
 
 extension RequestKind {
-    /// The spec with each file it refers to passed through `transform`: form-data file parts, the binary body, and the
-    /// descriptor set. The one list of a request's reference fields, which `ProjectDocument.localPathIDs` reads too.
+    /// The spec with each file it refers to passed through `transform`: form-data file parts, the binary body, the
+    /// GraphQL schema file, and the descriptor set. The one list of a request's reference fields, which
+    /// `ProjectDocument.localPathIDs` reads too.
     public func mappingPathReferences(_ transform: (ProjectPathReference) -> ProjectPathReference) -> RequestKind {
         switch self {
         case .http(var spec):
@@ -33,6 +34,9 @@ extension RequestKind {
                 spec.body.formData[index].file = spec.body.formData[index].file.map(transform)
             }
             spec.body.binary.file = spec.body.binary.file.map(transform)
+            if case .file(let reference) = spec.body.graphQL.schema {
+                spec.body.graphQL.schema = .file(transform(reference))
+            }
             return .http(spec)
         case .grpc(var spec):
             if case .descriptorSet(let reference) = spec.schema {

@@ -185,11 +185,14 @@ public struct GraphQLBody: Hashable, Sendable, Codable {
     public var variables: String
     /// Empty sends no `operationName`.
     public var operationName: String
+    /// Where completion, checking, and the schema browser read the schema from; it is never sent.
+    public var schema: GraphQLSchemaSource
 
-    public init(query: String = "", variables: String = "", operationName: String = "") {
+    public init(query: String = "", variables: String = "", operationName: String = "", schema: GraphQLSchemaSource = .introspection) {
         self.query = query
         self.variables = variables
         self.operationName = operationName
+        self.schema = schema
     }
 
     public init(from decoder: any Decoder) throws {
@@ -197,11 +200,62 @@ public struct GraphQLBody: Hashable, Sendable, Codable {
         query = try container.decodeIfPresent(String.self, forKey: .query) ?? ""
         variables = try container.decodeIfPresent(String.self, forKey: .variables) ?? ""
         operationName = try container.decodeIfPresent(String.self, forKey: .operationName) ?? ""
+        // A source this version does not know, or `null`, falls back rather than failing the whole request.
+        schema = (try? container.decodeIfPresent(GraphQLSchemaSource.self, forKey: .schema)) ?? .introspection
+    }
+
+    /// The default schema source is left out, so request files written before it existed stay byte for byte the same.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(query, forKey: .query)
+        try container.encode(variables, forKey: .variables)
+        try container.encode(operationName, forKey: .operationName)
+        if schema != .introspection {
+            try container.encode(schema, forKey: .schema)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
         case query
         case variables
         case operationName
+        case schema
+    }
+}
+
+/// Where a GraphQL request's schema comes from.
+public enum GraphQLSchemaSource: Hashable, Sendable, Codable {
+    /// The server describes itself, asked through the request's own URL, headers, auth, and certificates.
+    case introspection
+    /// A `.graphql`/`.graphqls`/`.gql` SDL file, or a saved introspection result (`.json`), for servers that refuse
+    /// introspection.
+    case file(ProjectPathReference)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case file
+    }
+
+    private enum Kind: String, Codable {
+        case introspection, file
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .type) {
+        case .introspection: self = .introspection
+        case .file: self = .file(try container.decode(ProjectPathReference.self, forKey: .file))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .introspection:
+            try container.encode(Kind.introspection, forKey: .type)
+        case .file(let file):
+            try container.encode(Kind.file, forKey: .type)
+            try container.encode(file, forKey: .file)
+        }
     }
 }

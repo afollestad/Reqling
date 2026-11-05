@@ -1,4 +1,4 @@
-/// A file a project refers to: a binary body, a form-data file part, a certificate, or a proto root.
+/// A file a project refers to: a binary body, a form-data file part, a GraphQL schema, a certificate, or a proto root.
 ///
 /// `relative` paths resolve against the project folder and travel with it through git. `local` paths are machine
 /// specific: the project file stores only an ID, and the absolute path lives in this Mac's `WorkspaceStateStore`, so
