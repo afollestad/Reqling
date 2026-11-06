@@ -124,6 +124,111 @@ final class SidebarRenameKeyboardTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === table)
     }
 
+    func testANewRequestOrFolderStartsRenamedWithTheKeyboard() async throws {
+        let table = try await focusSidebar(selecting: .node(project.id, project.listUsers))
+        for (create, name) in [({ self.fixture.model.newRequest() }, "New Request"), ({ self.fixture.model.newFolder() }, "New Folder")] {
+            create()
+            let editor = try await waitForRenameEditor()
+            XCTAssertEqual(editor.string, name)
+            let item = try XCTUnwrap(fixture.model.selection)
+
+            editor.insertText("Named", replacementRange: editor.selectedRange())
+            try sendKey(toWindow: true)
+
+            await waitUntil("the \(name) field to close") { self.renameField() == nil && self.window.firstResponder === table }
+            XCTAssertEqual(self.name(of: item), "Named")
+        }
+    }
+
+    /// Renaming the same row again before SwiftUI redraws (Rename from the menu of the row being edited, whose
+    /// right-click ended the edit) still gets a field that takes the keyboard and reports its own end.
+    func testRenamingARowAgainBeforeARedrawGetsAFreshField() async throws {
+        let item = SidebarItem.node(project.id, project.listUsers)
+        let table = try await focusSidebar(selecting: item)
+        try sendKey()
+        _ = try await waitForRenameEditor()
+
+        try sendKey(53, characters: "\u{1b}", toWindow: true)
+        fixture.model.beginRename(item)
+
+        let editor = try await waitForRenameEditor()
+        editor.insertText("Users", replacementRange: editor.selectedRange())
+        try sendKey(toWindow: true)
+        await waitUntil("the field to close") { self.renameField() == nil && self.window.firstResponder === table }
+        XCTAssertEqual(name(of: item), "Users")
+    }
+
+    /// ⌘N while a row is renamed starts the new one renamed and keeps what was typed for the first, as clicking away does.
+    func testANewRequestMidRenameKeepsTheNameTyped() async throws {
+        _ = try await focusSidebar(selecting: .node(project.id, project.listUsers))
+        try sendKey()
+        let editor = try await waitForRenameEditor()
+        editor.insertText("Users", replacementRange: editor.selectedRange())
+
+        fixture.model.newRequest()
+
+        let newEditor = try await waitForRenameEditor()
+        XCTAssertEqual(newEditor.string, "New Request")
+        XCTAssertEqual(name(of: .node(project.id, project.listUsers)), "Users")
+    }
+
+    /// A project longer than the sidebar puts the new row out of view, at its end or in the folder last in it, so it
+    /// scrolls in to be named.
+    func testANewRequestBelowTheFoldScrollsIntoViewRenamed() async throws {
+        try fixture.library.mutate(project.id) { document in
+            for index in 0..<40 {
+                try document.insert(.request(RequestItem(name: "Extra \(index)", kind: .http(HTTPRequestSpec()))), into: nil, at: 0)
+            }
+        }
+        for parent: SidebarItem in [.project(project.id), .node(project.id, project.folder)] {
+            let table = try await focusSidebar(selecting: parent)
+            table.scrollRowToVisible(0)
+
+            fixture.model.newRequest()
+
+            let editor = try await waitForRenameEditor()
+            XCTAssertEqual(editor.string, "New Request", "\(parent)")
+            try sendKey(53, characters: "\u{1b}", toWindow: true)
+            await waitUntil("the field to close") { self.renameField() == nil }
+        }
+    }
+
+    /// A collapsed sidebar keeps its list, hidden, but builds no rows, so the new row has no field to name it in.
+    func testANewRequestWithTheSidebarCollapsedIsNotRenamed() async throws {
+        controller.rootView = AnyView(
+            NavigationSplitView(columnVisibility: .constant(.detailOnly)) {
+                SidebarView(model: fixture.model)
+            } detail: {
+                TextField("Detail", text: .constant(""))
+            }
+        )
+        fixture.model.selection = .node(project.id, project.listUsers)
+        await waitUntil("the hidden sidebar's list") {
+            self.settle()
+            return self.descendants(of: NSTableView.self).first?.isHiddenOrHasHiddenAncestor == true
+        }
+
+        fixture.model.newRequest()
+        await waitUntil("the rename to end") {
+            self.settle()
+            return self.fixture.model.renaming == nil
+        }
+
+        XCTAssertNotEqual(fixture.model.selection, .node(project.id, project.listUsers))
+        XCTAssertNil(renameField())
+    }
+
+    func testANewRequestTheFilterHidesIsNotRenamed() async throws {
+        fixture.model.sidebar.query = "users"
+        _ = try await focusSidebar(selecting: .node(project.id, project.listUsers))
+
+        fixture.model.newRequest()
+        settle()
+
+        XCTAssertNotNil(fixture.model.selection?.nodeID)
+        XCTAssertNil(fixture.model.renaming)
+    }
+
     func testCommittedNamesAreTrimmedAndBlankOrUnchangedOnesKeepTheOldName() {
         XCTAssertEqual(InlineRenameField.committedName("  Users ", replacing: "List users"), "Users")
         XCTAssertNil(InlineRenameField.committedName("   ", replacing: "List users"))

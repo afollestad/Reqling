@@ -76,8 +76,12 @@ final class AppModel {
     var kindChangePending: RequestKindChange?
     /// Run history awaiting confirmation before it is cleared, which cannot be undone.
     var historyClearPending: HistoryClearScope?
-    /// The sidebar row showing a name field in place of its name; `AppModel+Rename.swift` begins and ends it.
+    /// The sidebar row showing a name field in place of its name. `AppModel+Rename.swift` begins and ends it, and
+    /// `SidebarView` scrolls to the row, or ends the rename while the sidebar is collapsed and the row cannot show.
     var renaming: SidebarItem?
+    /// Bumped by every `beginRename`, and only there, so `SidebarRowName` mounts a fresh field even when the same row is
+    /// renamed again before the last one's field went, which would otherwise ignore the new rename as already ended.
+    var renameSession = 0
     /// The selected request's editor, HTTP or gRPC.
     private(set) var editor: RequestEditor?
     /// A folder's auth while it is edited, so typing a token is not a disk write per keystroke. It saves after the

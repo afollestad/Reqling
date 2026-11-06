@@ -15,18 +15,27 @@ extension AppModel {
 
     func beginRename(_ item: SidebarItem) {
         if canRename(item) {
+            renameSession += 1
             renaming = item
         }
     }
 
-    /// `name` is `nil` to cancel. Ignored unless `item` is still the one being renamed: removing the field ends its
-    /// editing once more after Return or a click away already did. An item deleted or made read-only mid-edit (by an
-    /// agent, or a `git pull`) drops the name, rather than raising an alert about a row that is gone.
-    func endRename(_ item: SidebarItem, to name: String?) {
-        guard renaming == item else {
-            return
+    /// Only where the sidebar shows the new row: one the filter hides has no field, and `renaming` would linger until a
+    /// filter change showed the row, whose field would then take the keyboard from whatever had it.
+    func beginRenameOfNewItem(_ item: SidebarItem) {
+        if sidebar.shows(item) {
+            beginRename(item)
         }
-        renaming = nil
+    }
+
+    /// `name` is `nil` to cancel. Each field reports its end once. A rename that a newer one replaced (⌘N mid-edit
+    /// starts another) still lands on `item` as its field goes, and leaves the newer one going. An item deleted or made
+    /// read-only mid-edit (by an agent, or a `git pull`) drops the name, rather than raising an alert about a row that
+    /// is gone.
+    func endRename(_ item: SidebarItem, to name: String?) {
+        if renaming == item {
+            renaming = nil
+        }
         guard let name, canRename(item) else {
             return
         }

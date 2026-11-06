@@ -1,3 +1,4 @@
+import AppKit
 import CoreTransferable
 import ReqlingKit
 import SwiftUI
@@ -7,21 +8,30 @@ import UniformTypeIdentifiers
 /// through `AppModel`; filtering through `SidebarViewModel`.
 struct SidebarView: View {
     @Bindable var model: AppModel
+    @State private var presence = SidebarPresence()
 
     var body: some View {
         let sidebar = model.sidebar
         let sections = sidebar.sections
-        List(selection: $model.selection) {
-            Section {
-                ForEach(sections) { section in
-                    SidebarProjectGroup(section: section, isFiltering: sidebar.isFiltering, model: model)
+        ScrollViewReader { proxy in
+            List(selection: $model.selection) {
+                Section {
+                    ForEach(sections) { section in
+                        SidebarProjectGroup(section: section, isFiltering: sidebar.isFiltering, model: model)
+                    }
+                } header: {
+                    Text("Projects")
                 }
-            } header: {
-                Text("Projects")
+            }
+            .listStyle(.sidebar)
+            .onDeleteCommand(perform: moveSelectionToTrash)
+            .background { SidebarPresenceReader(presence: presence) }
+            .onChange(of: model.renaming) { _, item in
+                if let item {
+                    reveal(item, with: proxy)
+                }
             }
         }
-        .listStyle(.sidebar)
-        .onDeleteCommand(perform: moveSelectionToTrash)
         .overlay {
             if model.library.projects.isEmpty {
                 SidebarEmptyState(model: model)
@@ -39,6 +49,22 @@ struct SidebarView: View {
             ToolbarItem(id: MainToolbarItemID.addProject, placement: .automatic) {
                 SidebarAddProjectMenu(model: model)
             }
+        }
+    }
+
+    /// Brings a row being renamed into view, or ends the rename when the sidebar is collapsed. A new request or folder
+    /// can land below the fold or behind a collapsed column, where no row and so no field exists yet; left alone, the
+    /// field would appear whenever the row did and take the keyboard from whatever had it by then. A visible row stays.
+    private func reveal(_ item: SidebarItem, with proxy: ScrollViewProxy) {
+        guard presence.isOnScreen else {
+            model.endRename(item, to: nil)
+            return
+        }
+        switch item {
+        case .project(let project):
+            proxy.scrollTo(project)
+        case .node(_, let node):
+            proxy.scrollTo(node)
         }
     }
 
@@ -149,5 +175,50 @@ private struct SidebarFooter: View {
         .padding(.bottom, 8)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+    }
+}
+
+/// Where the sidebar's `List` sits in AppKit, to ask whether it is on screen when that matters rather than mirror it in
+/// state: `NavigationSplitView` hides a collapsed column instead of removing it.
+@MainActor
+private final class SidebarPresence {
+    weak var view: NSView?
+
+    var isOnScreen: Bool {
+        guard let view else {
+            return false
+        }
+        return view.window != nil && !view.isHiddenOrHasHiddenAncestor
+    }
+}
+
+private struct SidebarPresenceReader: NSViewRepresentable {
+    let presence: SidebarPresence
+
+    func makeNSView(context: Context) -> SidebarPresenceView {
+        let view = SidebarPresenceView()
+        presence.view = view
+        return view
+    }
+
+    func updateNSView(_ view: SidebarPresenceView, context: Context) {
+        presence.view = view
+    }
+}
+
+private final class SidebarPresenceView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Clicks go to the list as before.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }

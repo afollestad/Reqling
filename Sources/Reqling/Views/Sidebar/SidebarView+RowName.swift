@@ -13,6 +13,7 @@ struct SidebarRowName: View {
     var body: some View {
         if model.renaming == item {
             SidebarRenameField(item: item, original: name, isEmphasized: isEmphasized, model: model)
+                .id(model.renameSession)
         } else {
             Text(name)
                 .fontWeight(isEmphasized ? .semibold : nil)
@@ -27,7 +28,9 @@ struct SidebarRowName: View {
     }
 }
 
-/// Mounted fresh each time a rename begins, so `draft` starts from the name even when SwiftUI rebuilds the row mid-edit.
+/// Mounted fresh for each rename (`AppModel.renameSession`), so `draft` starts from the name even when SwiftUI rebuilds
+/// the row mid-edit. Reports its end once, whichever comes first: Return, Escape, a click away, or the field going
+/// (another rename began, or the row left the list).
 private struct SidebarRenameField: View {
     /// How far the field's box reaches past its text, which stays where the label's was.
     private static let chromeInset: CGFloat = 4
@@ -37,6 +40,7 @@ private struct SidebarRenameField: View {
     let isEmphasized: Bool
     let model: AppModel
     @State private var draft: String
+    @State private var hasEnded = false
 
     init(item: SidebarItem, original: String, isEmphasized: Bool, model: AppModel) {
         self.item = item
@@ -53,14 +57,14 @@ private struct SidebarRenameField: View {
             sizing: .fillsWidth,
             accessibilityLabel: "Name",
             onCommit: commit,
-            onCancel: { model.endRename(item, to: nil) }
+            onCancel: cancel
         )
         .padding(.horizontal, Self.chromeInset)
         .modifier(InlineRenameChrome())
         .padding(.leading, -Self.chromeInset)
         // Ahead of a project or folder row's spacer, so the field takes the width and the count stays put.
         .layoutPriority(1)
-        // A row scrolled away or removed mid-edit keeps what was typed, as clicking away does.
+        // A field that goes mid-edit keeps what was typed, as clicking away does.
         .onDisappear(perform: commit)
     }
 
@@ -70,6 +74,18 @@ private struct SidebarRenameField: View {
     }
 
     private func commit() {
-        model.endRename(item, to: InlineRenameField.committedName(draft, replacing: original))
+        end(with: InlineRenameField.committedName(draft, replacing: original))
+    }
+
+    private func cancel() {
+        end(with: nil)
+    }
+
+    private func end(with name: String?) {
+        guard !hasEnded else {
+            return
+        }
+        hasEnded = true
+        model.endRename(item, to: name)
     }
 }

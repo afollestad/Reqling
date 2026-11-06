@@ -6,32 +6,27 @@ import XCTest
 
 @MainActor
 extension AppModelTests {
-    /// The field commits as the selection moves away, so the rename lands on the row it began on, and the end of
-    /// editing that removing the field causes cannot rename it again.
-    func testAnInPlaceRenameLandsOnTheItemItBeganOnOnce() throws {
+    /// The field commits as the selection moves away, or as a newer rename replaces it, so the rename lands on the row
+    /// it began on and leaves the newer one going.
+    func testAnInPlaceRenameLandsOnTheItemItBeganOn() throws {
         let project = try makeProject()
         model.newRequest()
         let first = try XCTUnwrap(model.selection?.nodeID)
-        model.beginRename(.node(project, first))
+        XCTAssertEqual(model.renaming, .node(project, first), "a new request starts renamed")
         model.newRequest()
+        let second = try XCTUnwrap(model.selection?.nodeID)
 
         model.endRename(.node(project, first), to: "Users")
-        model.endRename(.node(project, first), to: "Again")
 
-        let document = try XCTUnwrap(fixture.library.document(project))
-        XCTAssertEqual(document.node(first)?.name, "Users")
+        XCTAssertEqual(fixture.library.document(project)?.node(first)?.name, "Users")
+        XCTAssertEqual(model.renaming, .node(project, second))
+        model.endRename(.node(project, second), to: nil)
         XCTAssertNil(model.renaming)
     }
 
-    func testCancellingKeepsTheNameAndAnotherRowsEndIsIgnored() throws {
+    func testCancellingKeepsTheName() throws {
         let project = try makeProject()
-        model.newRequest()
-        let request = try XCTUnwrap(model.selection?.nodeID)
         model.beginRename(.project(project))
-
-        model.endRename(.node(project, request), to: "Elsewhere")
-        XCTAssertEqual(model.renaming, .project(project))
-        XCTAssertEqual(fixture.library.document(project)?.node(request)?.name, "New Request")
 
         model.endRename(.project(project), to: nil)
         XCTAssertNil(model.renaming)
@@ -58,6 +53,7 @@ extension AppModelTests {
         let project = try makeProject()
         model.newRequest()
         let request = try XCTUnwrap(model.selection?.nodeID)
+        model.endRename(.node(project, request), to: nil)
         XCTAssertTrue(model.canRename(.project(project)))
         XCTAssertTrue(model.canRename(.node(project, request)))
         XCTAssertFalse(model.canRename(.node(project, RequestNodeID())))

@@ -58,6 +58,15 @@ final class SidebarViewModel {
         return sections
     }
 
+    /// Whether the query and filters keep `item` in the sidebar. Its row shows only with its folders expanded too, as
+    /// every folder is while filtering, and scrolled to.
+    func shows(_ item: SidebarItem) -> Bool {
+        guard let section = sections.first(where: { $0.id == item.projectID }) else {
+            return false
+        }
+        return item.nodeID.map { Self.contains($0, in: section.items) } ?? true
+    }
+
     func clearFilters() {
         query = ""
         filter = .none
@@ -77,6 +86,15 @@ final class SidebarViewModel {
                 return nil
             }
             return SidebarSection(project: project, items: items, requestCount: countRequests(in: items))
+        }
+    }
+
+    private static func contains(_ id: RequestNodeID, in nodes: [RequestNode]) -> Bool {
+        nodes.contains { node in
+            switch node {
+            case .request(let request): request.id == id
+            case .folder(let folder): folder.id == id || contains(id, in: folder.children)
+            }
         }
     }
 

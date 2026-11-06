@@ -67,15 +67,13 @@ extension AppModel {
         return (parent, siblings.firstIndex { $0.id == nodeID }.map { $0 + 1 })
     }
 
+    /// Starts renamed in the sidebar, as a new folder does, so naming it is the next thing typed.
     func newRequest(in project: ProjectID? = nil) {
-        insertRequest(RequestItem(name: "New Request", kind: .http(HTTPRequestSpec())), in: project)
-    }
-
-    private func insertRequest(_ request: RequestItem, in project: ProjectID?) {
         guard let project = project ?? activeProjectID else {
             sheet = .newProject
             return
         }
+        let request = RequestItem(name: "New Request", kind: .http(HTTPRequestSpec()))
         let point = insertionPoint(in: project)
         guard perform("Couldn't Add the Request", {
             try library.mutate(project) { try $0.insert(.request(request), into: point.parent, at: point.index) }
@@ -84,6 +82,7 @@ extension AppModel {
         }
         expandAncestors(of: request.id, in: project)
         selection = .node(project, request.id)
+        beginRenameOfNewItem(.node(project, request.id))
     }
 
     /// Switches a request between protocols in place, asking first through `kindChangePending` when the switch
@@ -116,6 +115,7 @@ extension AppModel {
         syncEditor()
     }
 
+    /// Starts renamed in the sidebar, as Finder's New Folder does.
     func newFolder(in project: ProjectID? = nil) {
         guard let project = project ?? activeProjectID else {
             sheet = .newProject
@@ -130,6 +130,7 @@ extension AppModel {
         }
         expandAncestors(of: folder.id, in: project)
         selection = .node(project, folder.id)
+        beginRenameOfNewItem(.node(project, folder.id))
     }
 
     func rename(_ node: RequestNodeID, in project: ProjectID, to name: String) {
