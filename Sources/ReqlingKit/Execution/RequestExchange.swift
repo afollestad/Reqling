@@ -21,6 +21,8 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     /// The stored HTTP body, gRPC messages, stream events, or WebSocket messages were cut to fit the history (`RunHistoryStore.bodyLimit`
     /// and `messageLimit`); the run itself saw them all.
     public var isBodyTruncated: Bool
+    /// What the run's scripts did, masked; `nil` when it had none. Optional, so runs recorded before scripts decode.
+    public var scriptReport: ScriptReport?
 
     public enum Outcome: Hashable, Sendable, Codable {
         case response(HTTPResponseRecord)
@@ -42,7 +44,8 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         request: ResolvedHTTPRequest?,
         outcome: Outcome,
         unresolvedVariables: [String] = [],
-        isBodyTruncated: Bool = false
+        isBodyTruncated: Bool = false,
+        scriptReport: ScriptReport? = nil
     ) {
         self.id = id
         self.projectID = projectID
@@ -55,6 +58,7 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         self.outcome = outcome
         self.unresolvedVariables = unresolvedVariables
         self.isBodyTruncated = isBodyTruncated
+        self.scriptReport = scriptReport
     }
 
     public var response: HTTPResponseRecord? {
@@ -85,8 +89,12 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         return nil
     }
 
+    /// Failed scripts fail the run whatever came back: a failed test is what the person asked to hear about.
     public var outcomeKind: RunOutcomeKind {
-        switch outcome {
+        if scriptReport?.hasFailures == true {
+            return .failed
+        }
+        return switch outcome {
         // A stream that timed out or failed never answered with an error status, but still went wrong.
         case .response(let response): response.statusCode < 400 && response.eventStream?.end?.isFailure != true ? .succeeded : .failed
         case .grpc(let call): call.status?.isOK == true ? .succeeded : .failed
@@ -100,6 +108,8 @@ public struct RunFailure: Hashable, Sendable, Codable, Error {
     public enum Kind: String, Hashable, Sendable, Codable {
         /// The request could not be built: a bad URL, a missing file, unresolved variables.
         case invalidRequest
+        /// A pre-request script threw, timed out, or couldn't run, so the request wasn't sent.
+        case script
         case tls
         case cancelled
         case timedOut

@@ -10,6 +10,7 @@ final class RequestRunnerTests: XCTestCase {
     private var suiteName: String!
     var servers: [TestHTTPServer] = []
     var socketServers: [TestWebSocketServer] = []
+    let scriptDeadline = TestSleeper(returnsAtOnce: false)
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
@@ -29,6 +30,7 @@ final class RequestRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
+    /// Scripts run in the real helper, whose time limit passes only when `scriptDeadline.wake()` is called.
     func makeRunner(library: ProjectLibrary? = nil, sleep: TestSleeper = TestSleeper(returnsAtOnce: true)) -> RequestRunner {
         RequestRunner(
             library: library ?? fixture.library,
@@ -38,6 +40,7 @@ final class RequestRunnerTests: XCTestCase {
             pkcs12Probe: TLSFixtures.probe,
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
+            scripts: HelperScriptRunner(executable: ScriptFixtures.helper, runtimeDirectory: ScriptFixtures.runtime, sleep: scriptDeadline.sleep),
             sleep: sleep.sleep
         )
     }

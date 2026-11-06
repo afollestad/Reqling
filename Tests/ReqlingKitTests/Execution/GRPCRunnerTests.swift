@@ -216,7 +216,8 @@ extension GRPCRunnerTests {
             pkcs12Probe: TLSFixtures.probe,
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
-            grpcSchemas: schemas ?? makeSchemas()
+            grpcSchemas: schemas ?? makeSchemas(),
+            scripts: ScriptFixtures.realRunner
         )
     }
 

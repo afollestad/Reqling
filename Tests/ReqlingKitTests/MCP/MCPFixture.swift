@@ -43,6 +43,7 @@ final class MCPFixture {
                 store: GraphQLSchemaStore(directory: storage.directory.file("Support/GraphQLSchemas")),
                 fetcher: LiveGraphQLIntrospectionFetcher()
             ),
+            scripts: ScriptFixtures.realRunner,
             sleep: runnerSleep
         )
         context = MCPToolContext(

@@ -58,7 +58,7 @@ struct MCPProjectTools {
         ) { arguments in
             let name = try arguments.string("name")
             let location = try arguments.optionalString("location").map { try Self.absoluteURL($0, field: "location") }
-            let id = try context.library.createProject(named: name, in: location)
+            let id = try context.lifecycle.createProject(named: name, in: location)
             guard let project = context.library.project(id) else {
                 throw MCPToolError("The project was created but didn't open.")
             }

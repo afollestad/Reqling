@@ -160,9 +160,26 @@ public struct RunHistoryStore: Sendable {
         }
     }
 
+    /// The most console text one run keeps, its newest entries, so a script that logs in a loop can't fill the history.
+    static let consoleLimit = 512 * 1_024
+
     /// The exchange cut to the limits, marked as cut when it was.
     private static func fitted(_ exchange: RequestExchange) -> RequestExchange {
         var stored = exchange
+        if var report = stored.scriptReport {
+            for index in report.phases.indices {
+                var total = 0
+                let kept = report.phases[index].console.reversed().prefix { entry in
+                    total += entry.text.utf8.count
+                    return total <= consoleLimit
+                }
+                if kept.count < report.phases[index].console.count {
+                    report.phases[index].console = Array(kept.reversed())
+                    report.phases[index].isConsoleTruncated = true
+                }
+            }
+            stored.scriptReport = report
+        }
         switch exchange.outcome {
         case .response(var response) where response.eventStream != nil:
             if let fitted = response.eventStream?.fittingCache(dataLimit: messageLimit, totalLimit: bodyLimit), fitted.wasCut {

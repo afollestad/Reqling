@@ -37,13 +37,31 @@ extension RequestRunner {
         }
     }
 
-    func httpTask(_ preparation: PreparedRun, key: RunKey, options: RunOptions, id: RunID, startedAt: Date) -> Task<RequestExchange, Never> {
-        let executor = executor(for: key.projectID)
+    /// The whole of an HTTP run, inside the run's task: its pre-request scripts, preparing the request with what they
+    /// left, and sending it. Post-response scripts run after (`finishScripts`), outside this task, so a stopped stream
+    /// still runs them.
+    func executeHTTP(_ key: RunKey, options: RunOptions, stamp: RunStamp, session: ScriptSession?) async -> RequestExchange {
+        let request = key.requestID
+        let project = key.projectID
+        if let session, let failure = await runPreRequestScripts(session, key: key, options: options) {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, failure)
+        }
+        // A newer run replaced this one while its scripts ran; it must not take the newer run's place.
+        guard !Task.isCancelled else {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, Self.failure(for: HTTPExecutionError.cancelled))
+        }
+        let preparation: PreparedRun
+        do {
+            preparation = try prepareRun(request, in: project, options: options, session: session)
+        } catch {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, error)
+        }
+        let executor = executor(for: project)
         let live = EventStreamLive(context: EventStreamLive.Context(
-            runID: id,
-            projectID: key.projectID,
-            requestID: key.requestID,
-            startedAt: startedAt,
+            runID: stamp.id,
+            projectID: project,
+            requestID: request,
+            startedAt: stamp.startedAt,
             environmentName: preparation.environmentName,
             request: preparation.prepared.summary,
             unresolvedVariables: preparation.prepared.unresolvedVariables,
@@ -51,14 +69,12 @@ extension RequestRunner {
         ))
         liveStreams[key] = live
         let run = HTTPRun(preparation: preparation, live: live, key: key, publishes: options.unsaved == nil)
-        return Task {
-            let exchange = await self.runHTTP(run, executor: executor)
-            if self.liveStreams[key] === live {
-                self.liveStreams[key] = nil
-                self.eventStreams.remove(key)
-            }
-            return exchange
+        let exchange = await runHTTP(run, executor: executor)
+        if liveStreams[key] === live {
+            liveStreams[key] = nil
+            eventStreams.remove(key)
         }
+        return exchange
     }
 
     /// The whole of an HTTP run, inside the run's task so `cancel` and `forget` reach every await. Until a response

@@ -116,6 +116,7 @@ struct RunStatusBadge: View {
     private static func title(for kind: RunFailure.Kind) -> String {
         switch kind {
         case .invalidRequest: "Not Sent"
+        case .script: "Script Error"
         case .tls: "TLS Failed"
         case .cancelled: "Cancelled"
         case .timedOut: "Timed Out"

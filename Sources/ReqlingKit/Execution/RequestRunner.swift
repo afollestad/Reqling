@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ReqlingScriptProtocol
 import ReqlingTemplating
 
 /// Options for one run, mostly used by agents through MCP.
@@ -19,6 +20,9 @@ public struct RunOptions: Sendable {
     public var keepsStreamOpen: Bool
     /// Stops an event-stream response or a WebSocket early, so an agent's run returns; `nil` lets it run until stopped.
     public var streamLimit: StreamLimit?
+    /// Whether the run may ask the person at the Mac to trust the project's scripts (`ScriptTrustDeciding`). Only runs
+    /// they start set it; without it, a project not yet trusted runs without its scripts.
+    public var mayPromptForTrust: Bool
 
     public init(
         environmentID: EnvironmentID? = nil,
@@ -26,7 +30,8 @@ public struct RunOptions: Sendable {
         spec: RequestKind? = nil,
         allowUnresolved: Bool = false,
         keepsStreamOpen: Bool = false,
-        streamLimit: StreamLimit? = nil
+        streamLimit: StreamLimit? = nil,
+        mayPromptForTrust: Bool = false
     ) {
         self.environmentID = environmentID
         self.variableOverrides = variableOverrides
@@ -34,6 +39,7 @@ public struct RunOptions: Sendable {
         self.allowUnresolved = allowUnresolved
         self.keepsStreamOpen = keepsStreamOpen
         self.streamLimit = streamLimit
+        self.mayPromptForTrust = mayPromptForTrust
     }
 
     /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
@@ -69,13 +75,18 @@ public final class RequestRunner {
     public internal(set) var eventStreams: Set<RunKey> = []
     /// WebSocket connections open for `sendWebSocketMessage` and `pingWebSocket`, which Disconnect (`cancel`) closes.
     public internal(set) var openSockets: Set<RunKey> = []
+    /// The script phase each run is in, while its scripts run.
+    public internal(set) var scriptPhases: [RunKey: ScriptPhase] = [:]
+    /// Asks whether a project's scripts may run; the app sets it. Without one, a project not yet trusted runs without
+    /// its scripts.
+    @ObservationIgnored public weak var trustDecider: (any ScriptTrustDeciding)?
 
     @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored let workspace: WorkspaceStateStore
     @ObservationIgnored let settings: SettingsStore
-    @ObservationIgnored private let keychain: any KeychainIdentityStore
+    @ObservationIgnored let keychain: any KeychainIdentityStore
     /// Checks PKCS#12 files before they open; its first check of a file blocks `tlsContext` for one helper launch.
-    @ObservationIgnored private let pkcs12Probe: any PKCS12ImportProbe
+    @ObservationIgnored let pkcs12Probe: any PKCS12ImportProbe
     /// Every recorded run. Only `record` adds to it; clearing goes through this runner too, so `latest` never shows a
     /// run its history no longer has.
     @ObservationIgnored public let history: RunHistory
@@ -104,6 +115,17 @@ public final class RequestRunner {
     /// Waits out an event stream's reconnect delay and time limit, and times a WebSocket's handshake, keepalive, and
     /// close; tests inject one that needs no wall clock.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
+    /// Runs scripts out of process (`HelperScriptRunner`).
+    @ObservationIgnored let scripts: any ScriptRunning
+    /// Each run's scripts, from its start until it is recorded; `recordLiveRuns` reports them for a run Reqling quits on.
+    @ObservationIgnored var scriptSessions: [RunKey: ScriptSession] = [:]
+    /// Each run's post-response phase while it runs. Not the run's own task, so Stop on an event stream, which cancels
+    /// that, lets the scripts run on what arrived; `cancel` and `detach` stop it too.
+    @ObservationIgnored var scriptTasks: [RunKey: Task<ScriptSession.PhaseOutcome, Never>] = [:]
+    /// The exchange each run's post-response phase is running on, for `recordLiveRuns`.
+    @ObservationIgnored var pendingPostExchanges: [RunKey: RequestExchange] = [:]
+    /// One trust question per project at a time, which every run waiting on it shares.
+    @ObservationIgnored var trustPrompts: [ProjectID: Task<Bool?, Never>] = [:]
 
     public init(
         library: ProjectLibrary,
@@ -116,6 +138,7 @@ public final class RequestRunner {
         dynamic: DynamicVariables = .live,
         grpcSchemas: GRPCSchemaService? = nil,
         graphQLSchemas: GraphQLSchemaService? = nil,
+        scripts: any ScriptRunning,
         makeExecutor: @escaping @MainActor () -> HTTPExecutor = { HTTPExecutor() },
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
@@ -129,6 +152,7 @@ public final class RequestRunner {
         self.dynamic = dynamic
         self.grpcSchemas = grpcSchemas
         self.graphQLSchemas = graphQLSchemas
+        self.scripts = scripts
         self.makeExecutor = makeExecutor
         self.sleep = sleep
         history.onPrune = { [weak self] removal in
@@ -176,12 +200,12 @@ public final class RequestRunner {
     public func run(_ request: RequestNodeID, in project: ProjectID, options: RunOptions = RunOptions()) async -> RequestExchange {
         let key = RunKey(request, in: project)
         // Detach the earlier run before anything can fail, so its late completion can never overwrite this one.
-        tasks.removeValue(forKey: key)?.cancel()
-        inFlight.remove(key)
-        dropLive(key)
+        detach(key)
         let item = item(request, in: project, options: options)
         let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
         let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
+        // Taken now, so editing a script while the run waits on its response never changes what runs.
+        let session = item.flatMap { $0.kind.httpSpec == nil ? nil : scriptSession(for: $0, in: project, options: options, mode: .run) }
         let task: Task<RequestExchange, Never>
         do throws(RunFailure) {
             switch item?.kind {
@@ -193,8 +217,7 @@ public final class RequestRunner {
                 let preparation = try prepareWebSocket(request, in: project, options: options)
                 task = webSocketTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
             case .http, nil:
-                let preparation = try prepareRun(request, in: project, options: options)
-                task = httpTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
+                task = Task { await self.executeHTTP(key, options: options, stamp: stamp, session: session) }
             }
         } catch {
             let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
@@ -205,8 +228,9 @@ public final class RequestRunner {
         if options.unsaved == nil {
             liveStamps[key] = stamp
         }
+        scriptSessions[key] = session
         // The run is an unstructured task, so it outlives a replaced caller; the caller's cancellation is forwarded.
-        let exchange = stamp.applied(to: await withTaskCancellationHandler {
+        var exchange = stamp.applied(to: await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
@@ -215,9 +239,16 @@ public final class RequestRunner {
         guard tasks[key] == task else {
             return exchange
         }
+        if let session {
+            exchange = await finishScripts(exchange, key: key, session: session)
+            guard tasks[key] == task else {
+                return exchange
+            }
+        }
         tasks[key] = nil
         inFlight.remove(key)
         liveStamps[key] = nil
+        scriptSessions[key] = nil
         return options.unsaved == nil ? record(exchange) : exchange
     }
 
@@ -261,6 +292,7 @@ public final class RequestRunner {
     public func cancel(_ request: RequestNodeID, in project: ProjectID) {
         let key = RunKey(request, in: project)
         tasks[key]?.cancel()
+        scriptTasks[key]?.cancel()
         liveSockets[key]?.isStopping = true
         openSockets.remove(key)
     }
@@ -295,6 +327,10 @@ public final class RequestRunner {
         if cancels {
             task?.cancel()
         }
+        scriptTasks.removeValue(forKey: key)?.cancel()
+        scriptSessions[key] = nil
+        pendingPostExchanges[key] = nil
+        scriptPhases[key] = nil
         inFlight.remove(key)
         dropLive(key)
     }
@@ -321,12 +357,18 @@ public final class RequestRunner {
         }
     }
 
-    func runContext(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> RunContext {
+    /// `session`, when the run has scripts, supplies the variables and request changes they left.
+    func runContext(
+        _ request: RequestNodeID,
+        in projectID: ProjectID,
+        options: RunOptions,
+        session: ScriptSession? = nil
+    ) throws(RunFailure) -> RunContext {
         library.reloadSecretsIfUnread(for: projectID)
         guard let project = library.project(projectID), let document = project.document else {
             throw RunFailure(kind: .invalidRequest, message: "The project is not available.")
         }
-        guard let item = item(request, in: projectID, options: options) else {
+        guard var item = item(request, in: projectID, options: options) else {
             throw RunFailure(kind: .invalidRequest, message: "The request no longer exists.")
         }
         if let saved = document.request(request), options.unsaved == nil, saved.kind.name != item.kind.name {
@@ -335,7 +377,7 @@ public final class RequestRunner {
         guard let environment = runEnvironment(in: document, project: projectID, options: options) else {
             throw RunFailure(kind: .invalidRequest, message: "The environment no longer exists.")
         }
-        let scope = VariableScope(
+        let scope = session?.scope ?? VariableScope(
             global: library.globalEnvironment,
             document: document,
             activeEnvironmentID: environment.id,
@@ -343,11 +385,17 @@ public final class RequestRunner {
             overrides: options.variableOverrides
         )
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
+        var redaction = SecretRedaction(resolver: resolver)
+        if let session {
+            item.kind = session.kind
+            let scoped = scope.entries.values.filter(\.isSecret).flatMap { [$0.value, resolver.resolve($0.value).value] }
+            redaction = SecretRedaction(secrets: session.allSecretValues.union(scoped))
+        }
         return RunContext(
             item: item,
             document: document,
             resolver: resolver,
-            redaction: SecretRedaction(resolver: resolver),
+            redaction: redaction,
             paths: ProjectPathResolver(projectRoot: project.url, localPaths: workspace.localPaths(in: projectID)),
             environmentName: environment.name
         )
@@ -362,13 +410,21 @@ public final class RequestRunner {
         return workspace.projectState(project).activeEnvironmentID.flatMap { document.environment($0) } ?? document.defaultEnvironment
     }
 
-    private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
-        let context = try runContext(request, in: projectID, options: options)
+    func prepareRun(
+        _ request: RequestNodeID,
+        in projectID: ProjectID,
+        options: RunOptions,
+        session: ScriptSession? = nil
+    ) throws(RunFailure) -> PreparedRun {
+        let context = try runContext(request, in: projectID, options: options, session: session)
         guard let spec = context.item.kind.httpSpec else {
             let kind = context.item.kind.name.title
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a \(kind) request; this works only with HTTP requests.")
         }
-        let prepared = try preparedHTTP(spec, context: context, options: options)
+        var prepared = try preparedHTTP(spec, context: context, options: options)
+        if let session {
+            prepared.markScriptChanges(session.changes, redaction: context.redaction)
+        }
         let tls = try tls(for: prepared, project: projectID, context: context)
         return PreparedRun(prepared: prepared, tls: tls, environmentName: context.environmentName)
     }
@@ -396,48 +452,6 @@ public final class RequestRunner {
         return prepared
     }
 
-    /// The certificates a prepared request uses: the project's CAs and the client certificate for its host.
-    func tls(for prepared: PreparedHTTPRequest, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
-        let url = prepared.urlRequest.url
-        do {
-            return try tlsContext(
-                host: url?.host ?? "",
-                port: url?.port ?? (["https", "wss"].contains(url?.scheme?.lowercased()) ? 443 : 80),
-                verifiesServer: prepared.verifyTLS,
-                project: project,
-                context: context
-            )
-        } catch {
-            throw error.redacting(context.redaction)
-        }
-    }
-
-    /// Snapshots what TLS needs off the main actor (passphrases and Keychain references), then loads the identity and
-    /// CAs for `host` and `port`. HTTP and gRPC both build their context here, so one host gets the same certificates.
-    func tlsContext(host: String, port: Int?, verifiesServer: Bool, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
-        let configuration = context.document.tls
-        let entries = configuration.clientCertificates
-        let passphrases = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
-            library.certificatePassphrase(for: entry.id, in: project).map { (entry.id, $0) }
-        })
-        let references = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
-            workspace.keychainIdentity(for: entry.id).map { (entry.id, $0) }
-        })
-        let resolver = ProjectTLSResolver(
-            configuration: configuration,
-            paths: context.paths,
-            passphrase: { passphrases[$0] },
-            keychainIdentityReference: { references[$0] },
-            keychain: keychain,
-            pkcs12Probe: pkcs12Probe
-        )
-        do {
-            return try resolver.context(host: host, port: port, verifiesServer: verifiesServer)
-        } catch {
-            throw RunFailure(kind: .tls, message: error.localizedDescription)
-        }
-    }
-
     func executor(for project: ProjectID) -> HTTPExecutor {
         if let executor = executors[project] {
             return executor
@@ -456,26 +470,5 @@ public final class RequestRunner {
         latest[RunKey(exchange.requestID, in: exchange.projectID)] = exchange
         history.record(exchange)
         return exchange
-    }
-}
-
-/// What every exchange of one run carries, whichever path produced it: a failure before sending, a response, or a
-/// live run's partial and final records.
-struct RunStamp {
-    let id: RunID
-    let startedAt: Date
-    let spec: RequestKind?
-    /// `nil` when the project is gone or the environment named for the run no longer exists.
-    let environment: RequestEnvironment?
-
-    func applied(to exchange: RequestExchange) -> RequestExchange {
-        var stamped = exchange
-        stamped.id = id
-        stamped.spec = spec
-        if let environment {
-            stamped.environmentID = environment.id
-            stamped.environmentName = environment.name
-        }
-        return stamped
     }
 }

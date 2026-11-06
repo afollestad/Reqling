@@ -271,7 +271,7 @@ final class RunHistoryViewModel {
         }
         let environment = exchange.environmentID.flatMap { app.library.document(projectID)?.environment($0)?.id }
         showLatest()
-        let options = RunOptions(environmentID: environment, spec: spec, keepsStreamOpen: spec.grpcSpec != nil)
+        let options = RunOptions(environmentID: environment, spec: spec, keepsStreamOpen: spec.grpcSpec != nil, mayPromptForTrust: true)
         await app.runner.run(requestID, in: projectID, options: options)
     }
 

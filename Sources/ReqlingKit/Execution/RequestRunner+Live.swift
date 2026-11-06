@@ -53,13 +53,18 @@ extension RequestRunner {
 
     /// Saves every open run as Reqling quits, which would otherwise end unrecorded: an established gRPC call as
     /// `CANCELLED`, an open event stream and an open WebSocket as stopped, the WebSocket closing with 1001 Going Away
-    /// as it goes (best effort: the process may end first). Runs that haven't reached a server, and unsaved ones, are
-    /// left as they are. Synchronous, for `applicationWillTerminate`; each run is detached once recorded, so a late
-    /// end can't record it again.
+    /// as it goes (best effort: the process may end first), and a run whose post-response scripts are still running as
+    /// it came back. Each carries its scripts' report, noting that post-response scripts didn't finish. Runs that
+    /// haven't reached a server, and unsaved ones, are left as they are. Synchronous, for `applicationWillTerminate`;
+    /// each run is detached once recorded, so a late end can't record it again.
     public func recordLiveRuns(now: Date = Date()) {
         for (key, stamp) in liveStamps {
-            let exchange: RequestExchange
-            if let call = liveCalls[key], call.hasReachedServer {
+            var exchange: RequestExchange
+            let report = quitReport(for: key)
+            if let pending = pendingPostExchanges[key] {
+                exchange = pending
+                detach(key)
+            } else if let call = liveCalls[key], call.hasReachedServer {
                 exchange = call.finished(.failed(.cancelled), now: now)
                 detach(key)
             } else if let stream = liveStreams[key], stream.hasOpened {
@@ -72,6 +77,7 @@ extension RequestRunner {
             } else {
                 continue
             }
+            exchange.scriptReport = report ?? exchange.scriptReport
             _ = record(stamp.applied(to: exchange))
         }
     }

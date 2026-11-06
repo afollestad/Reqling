@@ -13,11 +13,15 @@ enum AppDI {
         return AppComponent(storageProfile: .production)
     }()
 
-    /// A fresh component graph over isolated storage, with in-memory secrets unless `secretStore` stands in. Callers own
-    /// the profile's `cleanUp()`.
-    static func makeTestComponent(storageProfile: AppStorageProfile, secretStore: (any SecretStore)? = nil) -> AppComponent {
+    /// A fresh component graph over isolated storage, with in-memory secrets unless `secretStore` stands in, and no way to
+    /// run scripts unless `scriptRunner` gives one. Callers own the profile's `cleanUp()`.
+    static func makeTestComponent(
+        storageProfile: AppStorageProfile,
+        secretStore: (any SecretStore)? = nil,
+        scriptRunner: (any ScriptRunning)? = nil
+    ) -> AppComponent {
         registerNeedleProviders()
-        return AppComponent(storageProfile: storageProfile, testSecretStore: secretStore)
+        return AppComponent(storageProfile: storageProfile, testSecretStore: secretStore, testScriptRunner: scriptRunner)
     }
 
     private static func registerNeedleProviders() {

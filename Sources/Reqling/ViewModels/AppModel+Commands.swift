@@ -6,7 +6,7 @@ extension AppModel {
     // MARK: - Projects
 
     func createProject(named name: String, in directory: URL? = nil) {
-        guard let id = perform("Couldn't Create the Project", { try library.createProject(named: name, in: directory) }) else {
+        guard let id = perform("Couldn't Create the Project", { try lifecycle.createProject(named: name, in: directory) }) else {
             return
         }
         selection = .project(id)

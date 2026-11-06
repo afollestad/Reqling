@@ -194,7 +194,7 @@ final class WebSocketEditorViewModel {
         let requestID = requestID
         let projectID = projectID
         Task {
-            await runner.run(requestID, in: projectID)
+            await runner.run(requestID, in: projectID, options: RunOptions(mayPromptForTrust: true))
         }
     }
 

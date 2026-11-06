@@ -303,7 +303,8 @@ final class GraphQLSchemaServiceTests: XCTestCase {
             graphQLSchemas: GraphQLSchemaService(
                 store: GraphQLSchemaStore(directory: fixture.directory.file("Support/GraphQLSchemas")),
                 fetcher: fetcher
-            )
+            ),
+            scripts: ScriptFixtures.realRunner
         )
     }
 

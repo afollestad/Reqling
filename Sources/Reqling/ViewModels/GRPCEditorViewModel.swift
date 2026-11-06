@@ -263,7 +263,7 @@ final class GRPCEditorViewModel {
         let requestID = requestID
         let projectID = projectID
         Task {
-            await runner.run(requestID, in: projectID, options: RunOptions(keepsStreamOpen: true))
+            await runner.run(requestID, in: projectID, options: RunOptions(keepsStreamOpen: true, mayPromptForTrust: true))
         }
     }
 

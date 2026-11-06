@@ -34,9 +34,12 @@ public struct RunSummary: Hashable, Sendable, Codable, Identifiable {
     public let specKind: RequestKind.Name?
     /// The exchange's own, for the sidebar's result filter.
     public let outcomeKind: RunOutcomeKind
+    /// How the run's tests went; `nil` when it ran none. Optional, so summaries recorded before scripts decode.
+    public let tests: ScriptTestCounts?
 
     public init(_ exchange: RequestExchange) {
         id = exchange.id
+        tests = exchange.scriptReport.map(\.testCounts).flatMap { $0.total == 0 ? nil : $0 }
         startedAt = exchange.startedAt
         environmentName = exchange.environmentName
         specKind = exchange.spec?.name

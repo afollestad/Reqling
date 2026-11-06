@@ -21,6 +21,9 @@ struct ProjectDetailView: View {
                     if !project.issues.isEmpty {
                         ProjectIssues(issues: project.issues)
                     }
+                    if document.hasScripts {
+                        ProjectScriptTrustToggle(project: project.id, model: model)
+                    }
                     HStack {
                         Button("New Request") { model.newRequest(in: project.id) }
                             .buttonStyle(.borderedProminent)
@@ -42,6 +45,25 @@ struct ProjectDetailView: View {
             } actions: {
                 Button("Remove from Reqling") { model.removeProject(project.id) }
             }
+        }
+    }
+}
+
+/// Whether this project's scripts run on this Mac, the answer its trust question gave, changeable here.
+private struct ProjectScriptTrustToggle: View {
+    let project: ProjectID
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Run this project's scripts on this Mac", isOn: Binding(
+                get: { model.scriptTrust(for: project) == .trusted },
+                set: { model.setScriptTrust($0 ? .trusted : .declined, for: project) }
+            ))
+            .toggleStyle(.checkbox)
+            Text("Scripts can read this project's variables and Global's, secrets included. Off, its requests run without them.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 }

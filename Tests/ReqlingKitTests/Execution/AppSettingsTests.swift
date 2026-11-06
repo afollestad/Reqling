@@ -60,6 +60,16 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertNil(AppSettings().protocPath)
     }
 
+    func testTheScriptTimeLimitDefaultsAndClamps() throws {
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"scriptTimeLimitSeconds": 9000}"#.utf8))
+        var settings = AppSettings()
+        settings.scriptTimeLimitSeconds = 0
+
+        XCTAssertEqual(AppSettings().scriptTimeLimitSeconds, 10)
+        XCTAssertEqual(decoded.scriptTimeLimitSeconds, AppSettings.scriptTimeLimitRange.upperBound)
+        XCTAssertEqual(settings.scriptTimeLimitSeconds, AppSettings.scriptTimeLimitRange.lowerBound)
+    }
+
     @MainActor
     func testTheStorePersistsToItsDefaultsDomain() throws {
         let suite = "com.afollestad.reqling.tests.settings.\(UUID().uuidString)"

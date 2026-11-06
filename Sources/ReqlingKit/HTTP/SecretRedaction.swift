@@ -14,20 +14,27 @@ struct SecretRedaction: Sendable {
     let plainValues: [String]
 
     init(resolver: TemplateResolver) {
+        let secrets = resolver.scope.entries.values.filter(\.isSecret).flatMap { entry in
+            [entry.value, resolver.resolve(entry.value).value]
+        }
+        self.init(secrets: secrets)
+    }
+
+    /// Masks `secrets` as stored, with their encodings and hosts, as `init(resolver:)` masks a scope's: for values a
+    /// script made secret, which no scope entry may carry any more.
+    init(secrets: some Sequence<String>) {
         var values: Set<String> = []
         var plainValues: Set<String> = []
-        for entry in resolver.scope.entries.values where entry.isSecret {
-            for value in [entry.value, resolver.resolve(entry.value).value] {
-                plainValues.insert(value)
-                values.insert(value)
-                values.insert(HTTPEncoding.queryComponent(value))
-                values.insert(HTTPEncoding.formComponent(value))
-                if let encoded = value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
-                    values.insert(encoded)
-                }
-                if let host = Self.host(in: value) {
-                    values.insert(host)
-                }
+        for value in Set(secrets) {
+            plainValues.insert(value)
+            values.insert(value)
+            values.insert(HTTPEncoding.queryComponent(value))
+            values.insert(HTTPEncoding.formComponent(value))
+            if let encoded = value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                values.insert(encoded)
+            }
+            if let host = Self.host(in: value) {
+                values.insert(host)
             }
         }
         self.values = values.filter { $0.count >= VariableLayers.minimumSecretLength }.sorted { $0.count > $1.count }

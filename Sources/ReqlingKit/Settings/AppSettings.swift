@@ -11,6 +11,8 @@ public enum AppTheme: String, Hashable, Sendable, Codable, CaseIterable {
 /// clamped to their supported ranges, so a settings blob from another version cannot reset everything.
 public struct AppSettings: Hashable, Sendable, Codable {
     public static let timeoutRange: ClosedRange<Double> = 1...600
+    /// How long one phase of scripts may run before it's stopped.
+    public static let scriptTimeLimitRange: ClosedRange<Double> = 1...300
     /// Unprivileged ports only, so the MCP server never needs elevated rights.
     public static let mcpPortRange: ClosedRange<Int> = 1_024...65_535
     public static let defaultMCPPort = 39_717
@@ -38,6 +40,10 @@ public struct AppSettings: Hashable, Sendable, Codable {
     public var checksForUpdatesAutomatically = true
     public var historyRetention: HistoryRetention = .month
     public var historySizeLimit: HistorySizeLimit = .megabytes500
+    /// How long each phase of a request's scripts may run, all its levels together.
+    public var scriptTimeLimitSeconds: Double = 10 {
+        didSet { scriptTimeLimitSeconds = Self.clampScriptTimeLimit(scriptTimeLimitSeconds) }
+    }
 
     public init() {}
 
@@ -63,6 +69,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
             ?? defaults.checksForUpdatesAutomatically
         historyRetention = (try? container.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)) ?? defaults.historyRetention
         historySizeLimit = (try? container.decodeIfPresent(HistorySizeLimit.self, forKey: .historySizeLimit)) ?? defaults.historySizeLimit
+        let scriptTimeLimit = try? container.decodeIfPresent(Double.self, forKey: .scriptTimeLimitSeconds)
+        scriptTimeLimitSeconds = Self.clampScriptTimeLimit(scriptTimeLimit ?? defaults.scriptTimeLimitSeconds)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -77,10 +85,15 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case checksForUpdatesAutomatically
         case historyRetention
         case historySizeLimit
+        case scriptTimeLimitSeconds
     }
 
     private static func clamp(_ value: Double) -> Double {
         value.isFinite ? min(max(value, timeoutRange.lowerBound), timeoutRange.upperBound) : 30
+    }
+
+    private static func clampScriptTimeLimit(_ value: Double) -> Double {
+        value.isFinite ? min(max(value, scriptTimeLimitRange.lowerBound), scriptTimeLimitRange.upperBound) : 10
     }
 
     private static func clampPort(_ port: Int) -> Int {

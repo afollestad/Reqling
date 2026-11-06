@@ -27,6 +27,7 @@ final class MCPProjectToolsTests: XCTestCase {
         XCTAssertEqual(summary["environmentCount"], 1)
         XCTAssertEqual(summary["activeEnvironment"]?["name"], "Default")
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.storage.projectURL(project).appendingPathComponent("project.json").path))
+        XCTAssertEqual(fixture.workspace.projectState(project).scriptTrust, .trusted, "Whoever creates a project writes its scripts")
     }
 
     func testProjectsResolveByIDOrUniqueName() async throws {

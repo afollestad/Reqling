@@ -53,6 +53,8 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
     /// The absolute paths behind this project's `ProjectPathReference.local` references, by `LocalPathID`. Scoped to
     /// the project so forgetting it forgets them, and so pruning one project's paths never sees another's.
     public var localPaths: [String: String] = [:]
+    /// Whether this project's scripts may run on this Mac.
+    public var scriptTrust: ScriptTrust = .unknown
 
     public init() {}
 
@@ -62,6 +64,7 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
         expandedFolderIDs = try container.decodeIfPresent(Set<RequestNodeID>.self, forKey: .expandedFolderIDs) ?? []
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         localPaths = try container.decodeIfPresent([String: String].self, forKey: .localPaths) ?? [:]
+        scriptTrust = (try? container.decodeIfPresent(ScriptTrust.self, forKey: .scriptTrust)) ?? .unknown
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -69,6 +72,7 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
         case expandedFolderIDs
         case isCollapsed
         case localPaths
+        case scriptTrust
     }
 }
 

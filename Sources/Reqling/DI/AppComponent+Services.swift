@@ -42,6 +42,21 @@ extension AppComponent {
         }
     }
 
+    /// The script helper sits beside the app's executable and reads its runtime from the bundle's resources, where
+    /// `scripts/build.sh` copies both. Test graphs get the runner a test passes, or one with neither, so their scripts
+    /// fail closed instead of launching anything.
+    var scriptRunner: any ScriptRunning {
+        shared {
+            if storageProfile.isEphemeral {
+                return testScriptRunner ?? HelperScriptRunner(executable: nil, runtimeDirectory: nil) as any ScriptRunning
+            }
+            return HelperScriptRunner(
+                executable: Bundle.main.url(forAuxiliaryExecutable: "ReqlingScriptRunner"),
+                runtimeDirectory: Bundle.main.url(forResource: "ScriptRuntime", withExtension: nil)
+            ) as any ScriptRunning
+        }
+    }
+
     var projectLibrary: ProjectLibrary {
         shared {
             ProjectLibrary(configuration: .init(
@@ -79,7 +94,8 @@ extension AppComponent {
                 history: runHistory,
                 userAgent: appInfo.userAgent,
                 grpcSchemas: grpcSchema,
-                graphQLSchemas: graphQLSchemas
+                graphQLSchemas: graphQLSchemas,
+                scripts: scriptRunner
             )
         }
     }

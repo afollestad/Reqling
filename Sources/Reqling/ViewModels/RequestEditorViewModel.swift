@@ -198,7 +198,7 @@ final class RequestEditorViewModel {
         flush()
         history.showLatest()
         Task {
-            await app.runner.run(requestID, in: projectID)
+            await app.runner.run(requestID, in: projectID, options: RunOptions(mayPromptForTrust: true))
         }
     }
 

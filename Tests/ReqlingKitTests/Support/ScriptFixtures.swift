@@ -27,6 +27,11 @@ struct ScriptFixtures {
         HelperScriptRunner(executable: Self.helper, runtimeDirectory: Self.runtime, sleep: deadline.sleep)
     }
 
+    /// The real helper with a real time limit, for suites that never let a script run that long.
+    nonisolated static var realRunner: HelperScriptRunner {
+        HelperScriptRunner(executable: helper, runtimeDirectory: runtime)
+    }
+
     /// A request named Login, for `http` unless another protocol is given.
     static func request(_ protocolName: String = "http") -> ScriptRequestSnapshot {
         ScriptRequestSnapshot(

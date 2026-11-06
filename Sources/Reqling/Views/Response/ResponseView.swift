@@ -157,6 +157,7 @@ struct ResponseFailureView: View {
     private var title: String {
         switch failure.kind {
         case .invalidRequest: "The Request Couldn't Be Sent"
+        case .script: "The Pre-request Script Failed"
         case .tls: "TLS Failed"
         case .cancelled: "Cancelled"
         case .timedOut: "Timed Out"

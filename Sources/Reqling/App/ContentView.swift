@@ -66,6 +66,7 @@ struct ContentView: View {
             }
             .modifier(TrashConfirmationDialog(model: model))
             .modifier(HistoryClearConfirmation(model: model))
+            .modifier(ScriptTrustAlert(model: model))
     }
 
     static func colorScheme(for theme: AppTheme) -> ColorScheme? {
@@ -93,6 +94,34 @@ private struct TrashConfirmationDialog: ViewModifier {
         } message: { confirmation in
             Text(confirmation.consequences)
         }
+    }
+}
+
+/// Asks whether a project's scripts may run on this Mac; see `AppModel.decideScriptTrust`. Don't Run is remembered, as
+/// Trust is; closing the alert some other way decides nothing.
+private struct ScriptTrustAlert: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.alert(
+            model.scriptTrustPending?.title ?? "",
+            isPresented: isPresented,
+            presenting: model.scriptTrustPending
+        ) { _ in
+            Button("Trust Scripts") { model.answerScriptTrust(true) }
+            Button("Don't Run", role: .cancel) { model.answerScriptTrust(false) }
+        } message: { request in
+            Text(request.message)
+        }
+    }
+
+    /// Closing the alert without a button, which a button's own answer already did, leaves the question undecided.
+    private var isPresented: Binding<Bool> {
+        Binding(get: { model.scriptTrustPending != nil }, set: { isShown in
+            if !isShown, model.scriptTrustPending != nil {
+                model.answerScriptTrust(nil)
+            }
+        })
     }
 }
 

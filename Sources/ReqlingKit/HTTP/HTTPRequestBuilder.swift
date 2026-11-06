@@ -67,13 +67,27 @@ public struct ResolvedHTTPRequest: Hashable, Sendable, Codable {
     /// The body as text when it is UTF-8, truncated to `bodyPreviewLimit`.
     public var bodyPreview: String?
     public var bodyByteCount: Int
+    /// Lower-cased names of the headers a pre-request script added or replaced; `nil` when none.
+    public var scriptChangedHeaders: [String]?
+    /// Names of the query parameters a pre-request script added or replaced; `nil` when none.
+    public var scriptChangedQuery: [String]?
 
-    public init(method: String, url: String, headers: [KeyValuePair], bodyPreview: String?, bodyByteCount: Int) {
+    public init(
+        method: String,
+        url: String,
+        headers: [KeyValuePair],
+        bodyPreview: String?,
+        bodyByteCount: Int,
+        scriptChangedHeaders: [String]? = nil,
+        scriptChangedQuery: [String]? = nil
+    ) {
         self.method = method
         self.url = url
         self.headers = headers
         self.bodyPreview = bodyPreview
         self.bodyByteCount = bodyByteCount
+        self.scriptChangedHeaders = scriptChangedHeaders
+        self.scriptChangedQuery = scriptChangedQuery
     }
 }
 

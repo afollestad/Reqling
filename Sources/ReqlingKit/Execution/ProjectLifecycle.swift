@@ -17,6 +17,14 @@ public struct ProjectLifecycle {
         self.protoWorkspaces = protoWorkspaces
     }
 
+    /// Creates a project, trusting its scripts: whoever creates it writes them.
+    @discardableResult
+    public func createProject(named name: String, in directory: URL? = nil) throws -> ProjectID {
+        let id = try library.createProject(named: name, in: directory)
+        workspace.updateProject(id) { $0.scriptTrust = .trusted }
+        return id
+    }
+
     @discardableResult
     public func addProjectFolder(_ url: URL) throws -> ProjectID {
         let id = try library.addProjectFolder(url)

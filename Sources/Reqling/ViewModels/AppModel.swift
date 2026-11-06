@@ -76,6 +76,9 @@ final class AppModel {
     var kindChangePending: RequestKindChange?
     /// Run history awaiting confirmation before it is cleared, which cannot be undone.
     var historyClearPending: HistoryClearScope?
+    /// A project whose scripts await the person's trust before a run can use them (`AppModel+ScriptTrust.swift`).
+    var scriptTrustPending: ScriptTrustRequest?
+    @ObservationIgnored var trustContinuation: CheckedContinuation<Bool?, Never>?
     /// The sidebar row showing a name field in place of its name. `AppModel+Rename.swift` begins and ends it, and
     /// `SidebarView` scrolls to the row, or ends the rename while the sidebar is collapsed and the row cannot show.
     var renaming: SidebarItem?
@@ -146,6 +149,7 @@ final class AppModel {
         }
         syncProtoWorkspaces()
         mcpServer.host = self
+        runner.trustDecider = self
         if let restored = workspace.state.selection, let project = library.project(restored.projectID) {
             selection = Self.restoredSelection(restored, in: project)
             selectionDidChange(from: nil)
