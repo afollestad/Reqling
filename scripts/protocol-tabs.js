@@ -79,10 +79,42 @@
         panels[index].scrollIntoView();
     });
 
+    // Once the shown screenshot has loaded, fetch and decode the others, so
+    // switching tabs never waits on the network or a decode. Hidden panels are
+    // display: none, which keeps a lazy image from ever loading; switching it
+    // to eager is what fetches it, and its <picture> still picks the variant
+    // for the current theme, again if the theme changes.
+    var images = panels.map(function (panel) {
+        return panel.querySelector('img');
+    });
+    var prefetched = false;
+
+    function prefetchOthers() {
+        if (prefetched) return;
+        prefetched = true;
+        for (var i = 0; i < images.length; i++) {
+            var image = images[i];
+            image.loading = 'eager';
+            image.decode().catch(function () {
+                /* a failed prefetch just loads again when its tab is chosen */
+            });
+        }
+    }
+
     // The panel shows before the browser's own scroll to a fragment on load,
     // which then lands on it.
     var initial = indexForHash();
     select(initial >= 0 ? initial : 0, false);
     tablist.parentNode.classList.add('tabbed');
     tablist.hidden = false;
+
+    // Only a shown panel's lazy image loads, so whichever loads first is the
+    // one on screen, even if the tab changed before it arrived.
+    for (var j = 0; j < images.length; j++) {
+        if (images[j].complete && images[j].naturalWidth > 0) {
+            prefetchOthers();
+        } else {
+            images[j].addEventListener('load', prefetchOthers);
+        }
+    }
 })();

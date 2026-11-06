@@ -210,6 +210,10 @@
             </div>
             <figure class="protocol-panel" id="graphql">
                 <h3 class="protocol-name">GraphQL</h3>
+                <figcaption>
+                    Write queries with completion and checking from the API's schema, read by introspection or from a
+                    file, and browse every type beside the request.
+                </figcaption>
                 <picture>
                     <source srcset="images/graphql-dark.webp" type="image/webp" data-theme="dark"
                         media="(prefers-color-scheme: dark)">
@@ -217,13 +221,13 @@
                         alt="The Search products GraphQL request in the Storefront project: a Search query taking a $q variable, checked against the 17 types in storefront.graphql, with q filled from {{searchTerm}} and a 200 OK response. Beside it the schema browser shows the Product type's fields, with price deprecated in favor of priceRange."
                         width="1920" height="1248" loading="lazy" decoding="async">
                 </picture>
-                <figcaption>
-                    Write queries with completion and checking from the API's schema, read by introspection or from a
-                    file, and browse every type beside the request.
-                </figcaption>
             </figure>
             <figure class="protocol-panel" id="grpc">
                 <h3 class="protocol-name">gRPC</h3>
+                <figcaption>
+                    Call unary and streaming methods in proto3 JSON, typed by your protos, a descriptor set, or server
+                    reflection, with every message on one timeline.
+                </figcaption>
                 <picture>
                     <source srcset="images/grpc-dark.webp" type="image/webp" data-theme="dark"
                         media="(prefers-color-scheme: dark)">
@@ -231,13 +235,13 @@
                         alt="The Chat gRPC request, a bidirectional stream to acme.greeter.v1.Greeter over TLS with its schema from greeter.binpb, above a timeline of two messages sent and two greetings received, ending OK in 48 ms."
                         width="1920" height="1248" loading="lazy" decoding="async">
                 </picture>
-                <figcaption>
-                    Call unary and streaming methods in proto3 JSON, typed by your protos, a descriptor set, or server
-                    reflection, with every message on one timeline.
-                </figcaption>
             </figure>
             <figure class="protocol-panel" id="events">
                 <h3 class="protocol-name">Event streams</h3>
+                <figcaption>
+                    A <code>text/event-stream</code> response stays open, listing each event with its type, ID, and
+                    time, and a GET stream reconnects with <code>Last-Event-ID</code>.
+                </figcaption>
                 <picture>
                     <source srcset="images/events-dark.webp" type="image/webp" data-theme="dark"
                         media="(prefers-color-scheme: dark)">
@@ -245,13 +249,13 @@
                         alt="The Order updates request in Acme API's Live folder, a GET to {{baseUrl}}/orders/stream?status=open with an Accept: text/event-stream header, above its stopped 200 OK stream: an order.created event and two order.updated events, with IDs 1041 to 1043, each opened to its fields."
                         width="1920" height="1248" loading="lazy" decoding="async">
                 </picture>
-                <figcaption>
-                    A <code>text/event-stream</code> response stays open, listing each event with its type, ID, and
-                    time, and a GET stream reconnects with <code>Last-Event-ID</code>.
-                </figcaption>
             </figure>
             <figure class="protocol-panel" id="websockets">
                 <h3 class="protocol-name">WebSockets</h3>
+                <figcaption>
+                    Save the messages a connection opens with, then send more while it's live, with text, binary, pings,
+                    and close codes on one timeline.
+                </figcaption>
                 <picture>
                     <source srcset="images/websocket-dark.webp" type="image/webp" data-theme="dark"
                         media="(prefers-color-scheme: dark)">
@@ -259,10 +263,6 @@
                         alt="The Support chat WebSocket request, connected to {{baseUrl}}/support over the chat.v2 subprotocol, with “Thanks! Can you send me the tracking link?” drafted in its composer beside Ping, Save, and Send Message, above its saved auth message and that message's Send button. Below, the open connection's timeline: the auth message sent with its token masked, “Hi Grace, Ada here. How can I help?”, “Where's order 1041?”, “It ships today, tracking to follow.”, and a ping from the server, answered with a pong."
                         width="1920" height="1248" loading="lazy" decoding="async">
                 </picture>
-                <figcaption>
-                    Save the messages a connection opens with, then send more while it's live, with text, binary, pings,
-                    and close codes on one timeline.
-                </figcaption>
             </figure>
         </div>
     </section>

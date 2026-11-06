@@ -497,7 +497,7 @@ button:focus-visible,
 }
 
 .tabbed .protocol-panel {
-    margin-top: 2.5rem;
+    margin-top: 1.75rem;
 }
 
 .protocol-name {
@@ -512,13 +512,16 @@ button:focus-visible,
 }
 
 .section-centered .protocol-panel .screenshot {
-    margin-top: 0;
+    margin-top: 2.5rem;
 }
 
-/* Under the screenshot, so switching tabs never moves the window. */
+/* Just under the tabs. Every caption sets in two lines on a desktop, and the
+   minimum height holds that if one shrinks, so switching tabs doesn't move
+   the window there. */
 .protocol-panel figcaption {
     max-width: 42rem;
-    margin: 1.75rem auto 0;
+    min-height: 3.2em;
+    margin: 0 auto;
     font-size: 1rem;
     line-height: 1.6;
     color: var(--secondary);
