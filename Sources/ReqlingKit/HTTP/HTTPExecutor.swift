@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import Synchronization
 
 /// What came back from one HTTP exchange.
 public struct HTTPResponseRecord: Hashable, Sendable, Codable {
@@ -17,6 +16,8 @@ public struct HTTPResponseRecord: Hashable, Sendable, Codable {
     public var tlsVersion: String?
     public var presentedClientCertificate: Bool
     public var redirectCount: Int
+    /// The events of an event-stream response, whose `body` stays empty; `nil` for every other response.
+    public var eventStream: EventStreamRecord?
 
     public init(
         statusCode: Int,
@@ -29,7 +30,8 @@ public struct HTTPResponseRecord: Hashable, Sendable, Codable {
         protocolName: String? = nil,
         tlsVersion: String? = nil,
         presentedClientCertificate: Bool = false,
-        redirectCount: Int = 0
+        redirectCount: Int = 0,
+        eventStream: EventStreamRecord? = nil
     ) {
         self.statusCode = statusCode
         self.headers = headers
@@ -42,6 +44,7 @@ public struct HTTPResponseRecord: Hashable, Sendable, Codable {
         self.tlsVersion = tlsVersion
         self.presentedClientCertificate = presentedClientCertificate
         self.redirectCount = redirectCount
+        self.eventStream = eventStream
     }
 
     /// The standard reason phrase (RFC 9110 and friends). `HTTPURLResponse`'s localized strings are prose
@@ -123,6 +126,29 @@ public enum HTTPExecutionError: Error, Equatable, LocalizedError {
     }
 }
 
+/// What `HTTPExecutor.executeStreaming` reports while an event-stream response is open, in order.
+public enum HTTPStreamEvent: Sendable {
+    /// The response is an event stream: its head, before any event, without timing, protocol, or TLS yet. URLSession
+    /// reports a head only with the first bytes of its body, so a server that sends nothing yet hasn't opened one.
+    case opened(HTTPResponseRecord, timestamp: Date)
+    /// `sequence` counts this connection's events from 0, dropped ones included; `receivedByteCount` is every byte of
+    /// the body so far.
+    case event(ServerSentEvent, sequence: Int, receivedByteCount: Int, timestamp: Date)
+    case lastEventID(String)
+    case retry(milliseconds: Int)
+    /// Events never delivered, dropped while the receiver fell behind or skipped once stopped: a running total for the
+    /// connection, each superseding the last.
+    case omitted(Int)
+}
+
+/// How `HTTPExecutor.executeStreaming` ended.
+public enum HTTPExecution: Sendable {
+    case response(HTTPResponseRecord)
+    /// An event stream that opened, its events delivered as they came, and has now ended: its head, with the
+    /// connection's timing, why it ended, and every byte of its body.
+    case stream(head: HTTPResponseRecord, end: EventStreamRecord.End, receivedByteCount: Int)
+}
+
 /// Sends prepared requests. One executor per project, so each project keeps its own in-memory cookie jar and
 /// connection pool and never sees another project's cookies.
 ///
@@ -153,50 +179,151 @@ public final class HTTPExecutor: Sendable {
     public func execute(
         _ request: PreparedHTTPRequest,
         tls: TLSContext,
-        now: @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() }
     ) async throws(HTTPExecutionError) -> HTTPResponseRecord {
+        switch try await perform(request, tls: tls, now: now, buffer: nil) {
+        case .response(let response):
+            response
+        case .stream(let head, _, _):
+            // Unreachable: without a buffer, an event stream's body is collected like any other.
+            head
+        }
+    }
+
+    /// Sends `request` like `execute`, except that a response that turns out to be an event stream (a 200 of type
+    /// `text/event-stream`) is read as it arrives: `onEvent` gets its head, then each event, in order, and has had
+    /// them all by the time this returns, except those `HTTPStreamEvent.omitted` counts. Any other response is
+    /// collected whole, as `execute` does.
+    ///
+    /// The request's timeout keeps applying once a stream opens: URLSession's is an idle timeout, reset by every byte,
+    /// so it becomes the longest a stream may stay silent (keep-alive comments count) before it ends `.timedOut`.
+    /// Ending a stream never throws: cancelling ends it `.stopped`, and a transport error `.failed`. A server that closes
+    /// the connection mid-response reads as `.closed`: URLSession takes that as the end of the body.
+    public func executeStreaming(
+        _ request: PreparedHTTPRequest,
+        tls: TLSContext,
+        now: @escaping @Sendable () -> Date = { Date() },
+        onEvent: @escaping @Sendable (HTTPStreamEvent) async -> Void
+    ) async throws(HTTPExecutionError) -> HTTPExecution {
+        let buffer = LiveEventBuffer<HTTPStreamEvent>(messageLimit: Self.eventBufferLimit, byteLimit: Self.eventBufferByteLimit) { _, received in
+            .omitted(received)
+        }
+        // Unstructured, so stopping the stream does not cancel delivery: what was delivered stays, and the backlog is
+        // counted rather than lost silently.
+        let delivery = Task {
+            while let event = await buffer.next() {
+                await onEvent(event)
+            }
+        }
+        let result: Result<HTTPExecution, HTTPExecutionError>
+        do throws(HTTPExecutionError) {
+            result = .success(try await perform(request, tls: tls, now: now, buffer: buffer))
+        } catch {
+            result = .failure(error)
+        }
+        buffer.finish()
+        // A stop that lands while the backlog drains, after the response itself has ended, skips the rest too.
+        await withTaskCancellationHandler {
+            await delivery.value
+        } onCancel: {
+            buffer.skipBacklog()
+        }
+        return try result.get()
+    }
+
+    /// The live buffer's budget between the network and the runner, as `GRPCExecutor`'s is for a call.
+    static let eventBufferLimit = 2_000
+    static let eventBufferByteLimit = 32 * 1024 * 1024
+
+    /// One exchange, start to end. With a `buffer`, an event-stream response delivers into it instead of collecting.
+    private func perform(
+        _ request: PreparedHTTPRequest,
+        tls: TLSContext,
+        now: @escaping @Sendable () -> Date,
+        buffer: LiveEventBuffer<HTTPStreamEvent>?
+    ) async throws(HTTPExecutionError) -> HTTPExecution {
         guard let session = pool.lease(verifiesServer: request.verifyTLS, fingerprint: tls.fingerprint) else {
             throw .cancelled
         }
         defer { pool.release(session) }
+        let recording = Recording(request: request, startedAt: now(), now: now)
         let delegate = ExchangeDelegate(
             followRedirects: request.followRedirects,
             verifiesServer: request.verifyTLS,
             tls: tls,
             credentialHeaderNames: ExchangeDelegate.redirectStrippedHeaders.union(request.credentialHeaderNames),
-            pool: pool
+            stream: buffer.map { buffer in
+                ExchangeDelegate.Stream(
+                    buffer: buffer,
+                    head: { http, state in recording.record(of: http, body: Data(), state: state) },
+                    now: now
+                )
+            }
         )
-        let startedAt = now()
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request.urlRequest, delegate: delegate)
-        } catch {
-            throw delegate.translate(error)
+        let task = session.dataTask(with: request.urlRequest)
+        task.delegate = delegate
+        // A request that leased its session just before `invalidate()` must not be sent. The pool raises the flag
+        // before it cancels the session's tasks, so a task created before this check reads false is cancelled there.
+        guard !pool.isInvalidated else {
+            task.cancel()
+            throw .cancelled
         }
-        guard let http = response as? HTTPURLResponse else {
-            throw .transport("The server's response was not HTTP.")
+        // Created before the handler, so a run cancelled before it started still reaches the task.
+        await withTaskCancellationHandler {
+            await delegate.run(task)
+        } onCancel: {
+            task.cancel()
+            buffer?.skipBacklog()
         }
         let state = delegate.snapshot()
-        let transaction = state.metrics?.transactionMetrics.last
-        // Masked: the record is shown, cached on disk, and handed to agents. The URL sent is the summary's; one a redirect
-        // led to may carry the request's secrets (`?key=…` passed along), so those are masked in it.
-        let url = state.redirected ? http.url.map { request.redaction.apply(to: $0) } : nil
-        return HTTPResponseRecord(
-            statusCode: http.statusCode,
-            headers: http.allHeaderFields
-                .compactMap { key, value in (key as? String).map { KeyValuePair(key: $0, value: "\(value)") } }
-                .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending },
-            body: data,
-            url: url ?? request.summary.url,
-            startedAt: startedAt,
-            duration: state.metrics?.taskInterval.duration ?? now().timeIntervalSince(startedAt),
-            timing: transaction.map(Self.timing),
-            protocolName: transaction?.networkProtocolName,
-            tlsVersion: transaction?.negotiatedTLSProtocolVersion.map(Self.describe),
-            presentedClientCertificate: state.presentedClientCertificate,
-            redirectCount: state.metrics.map { max($0.redirectCount, 0) } ?? 0
-        )
+        if state.isStream, let http = state.response {
+            let end: EventStreamRecord.End = switch state.failure {
+            case nil: .closed
+            case .cancelled: .stopped
+            case .timedOut: .timedOut
+            case let failure?: .failed(message: request.redaction.apply(failure.localizedDescription))
+            }
+            let head = recording.record(of: http, body: Data(), state: state)
+            return .stream(head: head, end: end, receivedByteCount: state.receivedByteCount)
+        }
+        if let failure = state.failure {
+            throw failure
+        }
+        guard let http = state.response else {
+            throw .transport("The server's response was not HTTP.")
+        }
+        return .response(recording.record(of: http, body: state.body, state: state))
+    }
+
+    /// How one exchange's response is recorded.
+    private struct Recording: Sendable {
+        let request: PreparedHTTPRequest
+        let startedAt: Date
+        let now: @Sendable () -> Date
+
+        /// The response as recorded. Timing, protocol, and TLS come from the metrics, which arrive only as the task
+        /// ends: an event stream's head, built as it opens, has none yet.
+        func record(of http: HTTPURLResponse, body: Data, state: ExchangeDelegate.State) -> HTTPResponseRecord {
+            let transaction = state.metrics?.transactionMetrics.last
+            // Masked: the record is shown, cached on disk, and handed to agents. The URL sent is the summary's; one a
+            // redirect led to may carry the request's secrets (`?key=…` passed along), so those are masked in it.
+            let url = state.redirected ? http.url.map { request.redaction.apply(to: $0) } : nil
+            return HTTPResponseRecord(
+                statusCode: http.statusCode,
+                headers: http.allHeaderFields
+                    .compactMap { key, value in (key as? String).map { KeyValuePair(key: $0, value: "\(value)") } }
+                    .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending },
+                body: body,
+                url: url ?? request.summary.url,
+                startedAt: startedAt,
+                duration: state.metrics?.taskInterval.duration ?? now().timeIntervalSince(startedAt),
+                timing: transaction.map(HTTPExecutor.timing),
+                protocolName: transaction?.networkProtocolName,
+                tlsVersion: transaction?.negotiatedTLSProtocolVersion.map(HTTPExecutor.describe),
+                presentedClientCertificate: state.presentedClientCertificate,
+                redirectCount: state.metrics.map { max($0.redirectCount, 0) } ?? 0
+            )
+        }
     }
 
     private static func timing(_ transaction: URLSessionTaskTransactionMetrics) -> HTTPTiming {
@@ -226,165 +353,5 @@ public final class HTTPExecutor: Sendable {
         case .TLSv10: "TLS 1.0"
         default: "TLS"
         }
-    }
-}
-
-/// The per-exchange delegate: applies the redirect policy, evaluates server trust against the project's CAs, answers
-/// client-certificate challenges, and keeps the metrics.
-private final class ExchangeDelegate: NSObject, URLSessionTaskDelegate, Sendable {
-    struct State {
-        var metrics: URLSessionTaskMetrics?
-        var presentedClientCertificate = false
-        var trustFailure: String?
-        /// A redirect has left the original origin; credentials stay off every later hop, even one back.
-        var leftOrigin = false
-        /// A redirect was followed, so the response's URL is not the one the summary shows.
-        var redirected = false
-    }
-
-    /// Credentials URLSession would otherwise carry to whatever origin a redirect names: it forwards `Cookie` and
-    /// custom headers (an API key) to any host.
-    static let redirectStrippedHeaders: Set<String> = ["authorization", "proxy-authorization", "cookie"]
-    /// What URLSession drops on every redirect, same origin included, and a same-origin hop must put back, or Bearer
-    /// and Basic auth fail on a plain `/items` → `/items/`.
-    private static let redirectRestoredHeaders = ["Authorization", "Proxy-Authorization"]
-
-    let followRedirects: Bool
-    let verifiesServer: Bool
-    let tls: TLSContext
-    /// Lower-cased header names removed when a redirect leaves the original origin.
-    let credentialHeaderNames: Set<String>
-    private let pool: HTTPSessionPool
-    private let state = Mutex(State())
-
-    init(followRedirects: Bool, verifiesServer: Bool, tls: TLSContext, credentialHeaderNames: Set<String>, pool: HTTPSessionPool) {
-        self.followRedirects = followRedirects
-        self.verifiesServer = verifiesServer
-        self.tls = tls
-        self.credentialHeaderNames = credentialHeaderNames
-        self.pool = pool
-    }
-
-    /// Runs synchronously before the task starts, so a task created just after `HTTPExecutor.invalidate()` (by a
-    /// request that leased its session first) is cancelled rather than sent.
-    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-        if pool.isInvalidated {
-            task.cancel()
-        }
-    }
-
-    func snapshot() -> State {
-        state.withLock { $0 }
-    }
-
-    func translate(_ error: any Error) -> HTTPExecutionError {
-        if let trustFailure = state.withLock({ $0.trustFailure }) {
-            return .untrustedServer(trustFailure)
-        }
-        guard let urlError = error as? URLError else {
-            return error is CancellationError ? .cancelled : .transport(error.localizedDescription)
-        }
-        switch urlError.code {
-        case .cancelled:
-            return .cancelled
-        case .timedOut:
-            return .timedOut
-        default:
-            return .transport(urlError.localizedDescription)
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest
-    ) async -> URLRequest? {
-        // Returning nil hands back the redirect response itself, body and all.
-        guard followRedirects else {
-            return nil
-        }
-        state.withLock { $0.redirected = true }
-        guard let originalRequest = task.originalRequest, let original = originalRequest.url, let target = request.url else {
-            return request
-        }
-        // Compared with the original request, as cURL does, and remembered, so a hop back cannot reclaim them.
-        let leftOrigin = state.withLock { state in
-            state.leftOrigin = state.leftOrigin || !Self.sameOrigin(original, target)
-            return state.leftOrigin
-        }
-        var next = request
-        if leftOrigin {
-            for name in (request.allHTTPHeaderFields ?? [:]).keys where credentialHeaderNames.contains(name.lowercased()) {
-                next.setValue(nil, forHTTPHeaderField: name)
-            }
-        } else {
-            for name in Self.redirectRestoredHeaders where next.value(forHTTPHeaderField: name) == nil {
-                if let value = originalRequest.value(forHTTPHeaderField: name) {
-                    next.setValue(value, forHTTPHeaderField: name)
-                }
-            }
-        }
-        return next
-    }
-
-    private static func sameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
-        Origin(lhs) == Origin(rhs)
-    }
-
-    /// Scheme, host, and port, with the scheme's default port filled in so `https://a` and `https://a:443` match.
-    private struct Origin: Equatable {
-        let scheme: String
-        let host: String
-        let port: Int?
-
-        init(_ url: URL) {
-            scheme = url.scheme?.lowercased() ?? ""
-            host = url.host?.lowercased() ?? ""
-            port = url.port ?? (scheme == "https" ? 443 : scheme == "http" ? 80 : nil)
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didReceive challenge: URLAuthenticationChallenge
-    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-        let space = challenge.protectionSpace
-        switch space.authenticationMethod {
-        case NSURLAuthenticationMethodServerTrust:
-            guard let trust = space.serverTrust else {
-                return (.performDefaultHandling, nil)
-            }
-            if !verifiesServer {
-                return (.useCredential, URLCredential(trust: trust))
-            }
-            guard !tls.anchors.isEmpty else {
-                return (.performDefaultHandling, nil)
-            }
-            switch TLSTrustEvaluator.evaluate(trust, host: space.host, anchors: tls.anchors) {
-            case .success:
-                return (.useCredential, URLCredential(trust: trust))
-            case .failure(let error):
-                state.withLock { $0.trustFailure = error.localizedDescription }
-                return (.cancelAuthenticationChallenge, nil)
-            }
-        case NSURLAuthenticationMethodClientCertificate:
-            guard let identity = tls.clientIdentity(space.host, space.port > 0 ? space.port : nil) else {
-                // Proceed without a certificate; a server that requires one rejects the handshake itself.
-                return (.performDefaultHandling, nil)
-            }
-            state.withLock { $0.presentedClientCertificate = true }
-            // `.none`: each new connection asks again, so the credential store never answers for the delegate. No
-            // intermediates must be `nil`, not empty: CFNetwork reads the first element of any array it gets and traps.
-            let intermediates = identity.intermediates.isEmpty ? nil : identity.intermediates
-            return (.useCredential, URLCredential(identity: identity.identity, certificates: intermediates, persistence: .none))
-        default:
-            return (.performDefaultHandling, nil)
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        state.withLock { $0.metrics = metrics }
     }
 }

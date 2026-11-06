@@ -95,7 +95,7 @@ final class HTTPSessionPool: Sendable {
     }
 
     /// Cancels every request and closes every session. Busy sessions cancel their tasks now and close on their last
-    /// release; a task created after this cancels itself through `isInvalidated` (see `ExchangeDelegate`).
+    /// release; a task created after this is cancelled before it starts, through `isInvalidated` (see `HTTPExecutor.perform`).
     func invalidate() {
         let (idle, busy) = state.withLock { state -> ([URLSession], [URLSession]) in
             state.isInvalidated = true

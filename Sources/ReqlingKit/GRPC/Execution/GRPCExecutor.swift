@@ -45,7 +45,7 @@ public struct GRPCExecutor: Sendable {
         guard !request.service.isEmpty, !request.method.isEmpty else {
             return .failed(.invalidRequest("Choose a service and method to call."))
         }
-        let buffer = GRPCEventBuffer(messageLimit: Self.eventBufferLimit, byteLimit: Self.eventBufferByteLimit)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: Self.eventBufferLimit, byteLimit: Self.eventBufferByteLimit)
         let recorder = GRPCCallRecorder(buffer: buffer, now: now)
         // Unstructured, so cancelling the call does not cancel delivery: what was already delivered stays, and the
         // backlog is counted rather than lost silently.
@@ -85,7 +85,7 @@ public struct GRPCExecutor: Sendable {
     }
 
     /// The buffer interleaves `.omitted` with the rest, so the totals arrive while the call is still open.
-    private static func deliver(_ buffer: GRPCEventBuffer, to onEvent: @Sendable (GRPCCallEvent) async -> Void) async {
+    private static func deliver(_ buffer: LiveEventBuffer<GRPCCallEvent>, to onEvent: @Sendable (GRPCCallEvent) async -> Void) async {
         while let event = await buffer.next() {
             await onEvent(event)
         }
@@ -191,15 +191,22 @@ extension GRPCMethodKind {
     }
 }
 
+extension LiveEventBuffer where Event == GRPCCallEvent {
+    /// A call's buffer, reporting drops as `.omitted` with each direction's total.
+    convenience init(messageLimit: Int, byteLimit: Int) {
+        self.init(messageLimit: messageLimit, byteLimit: byteLimit) { .omitted(sent: $0, received: $1) }
+    }
+}
+
 /// Turns one call's responses into events and its outcome. Both the send side (through the serializer) and the
 /// receive side report here, from different tasks, so events go through `buffer` to reach the caller in order.
 private final class GRPCCallRecorder: Sendable {
-    private let buffer: GRPCEventBuffer
+    private let buffer: LiveEventBuffer<GRPCCallEvent>
     private let now: @Sendable () -> Date
     private let sentCount = Mutex(0)
     private let isOpen = Mutex(false)
 
-    init(buffer: GRPCEventBuffer, now: @escaping @Sendable () -> Date) {
+    init(buffer: LiveEventBuffer<GRPCCallEvent>, now: @escaping @Sendable () -> Date) {
         self.buffer = buffer
         self.now = now
     }

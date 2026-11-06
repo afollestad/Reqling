@@ -22,6 +22,8 @@ final class TestHTTPServer: Sendable {
         case reply(status: HTTPResponseStatus, headers: [(String, String)] = [], body: Data = Data())
         /// Never answers, for timeout tests.
         case hang
+        /// Sends the head without a `Content-Length`, so the body goes out chunked, then whatever `feed` is given.
+        case stream(status: HTTPResponseStatus = .ok, headers: [(String, String)], feed: StreamFeed)
 
         static func text(_ text: String, status: HTTPResponseStatus = .ok, headers: [(String, String)] = []) -> Response {
             .reply(status: status, headers: headers, body: Data(text.utf8))
@@ -129,14 +131,76 @@ private final class RequestHandler: ChannelInboundHandler {
                 body: body
             )
             record(request)
-            guard case .reply(let status, let headers, let responseBody) = respond(request) else {
-                return
+            switch respond(request) {
+            case .reply(let status, let headers, let responseBody):
+                var responseHeaders = HTTPHeaders(headers)
+                responseHeaders.replaceOrAdd(name: "Content-Length", value: String(responseBody.count))
+                context.write(wrapOutboundOut(.head(HTTPResponseHead(version: head.version, status: status, headers: responseHeaders))), promise: nil)
+                context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: responseBody)))), promise: nil)
+                context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+            case .stream(let status, let headers, let feed):
+                let responseHead = HTTPResponseHead(version: head.version, status: status, headers: HTTPHeaders(headers))
+                context.writeAndFlush(wrapOutboundOut(.head(responseHead)), promise: nil)
+                feed.attach(context.channel)
+            case .hang:
+                break
             }
-            var responseHeaders = HTTPHeaders(headers)
-            responseHeaders.replaceOrAdd(name: "Content-Length", value: String(responseBody.count))
-            context.write(wrapOutboundOut(.head(HTTPResponseHead(version: head.version, status: status, headers: responseHeaders))), promise: nil)
-            context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: responseBody)))), promise: nil)
-            context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
         }
+    }
+}
+
+/// What a test writes to a `.stream` response once its head is out: chunks of body, then the end, or nothing, for an
+/// idle timeout.
+final class StreamFeed: Sendable {
+    private struct State {
+        var channel: (any Channel)?
+        var waiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    private let state = Mutex(State())
+
+    init() {}
+
+    fileprivate func attach(_ channel: any Channel) {
+        let waiters = state.withLock { state in
+            state.channel = channel
+            defer { state.waiters = [] }
+            return state.waiters
+        }
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    /// Waits until the server has sent the head.
+    func opened() async {
+        await withCheckedContinuation { continuation in
+            let isOpen = state.withLock { state in
+                if state.channel == nil {
+                    state.waiters.append(continuation)
+                }
+                return state.channel != nil
+            }
+            if isOpen {
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Writes `text` as one chunk and waits until it is on the wire.
+    func send(_ text: String) async throws {
+        try await channel().writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(string: text)))).get()
+    }
+
+    /// Ends the response cleanly; the connection stays open for the next request.
+    func end() async throws {
+        try await channel().writeAndFlush(HTTPServerResponsePart.end(nil)).get()
+    }
+
+    private func channel() throws -> any Channel {
+        guard let channel = state.withLock({ $0.channel }) else {
+            throw ChannelError.ioOnClosedChannel
+        }
+        return channel
     }
 }

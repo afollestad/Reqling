@@ -5,7 +5,7 @@ import Synchronization
 import XCTest
 
 final class HTTPExecutorTests: XCTestCase {
-    private var servers: [TestHTTPServer] = []
+    var servers: [TestHTTPServer] = []
 
     override func tearDown() async throws {
         for server in servers {
@@ -14,7 +14,7 @@ final class HTTPExecutorTests: XCTestCase {
         servers = []
     }
 
-    private func start(
+    func start(
         tls: Bool = false,
         requireClientCertificate: Bool = false,
         respond: @escaping @Sendable (TestHTTPServer.Request) -> TestHTTPServer.Response
@@ -25,7 +25,7 @@ final class HTTPExecutorTests: XCTestCase {
         return server
     }
 
-    private func prepare(
+    func prepare(
         _ spec: HTTPRequestSpec,
         timeout: Double = 10,
         followRedirects: Bool = true,

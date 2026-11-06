@@ -2,12 +2,12 @@ import Foundation
 @testable import ReqlingKit
 import XCTest
 
-/// The executor's event buffer: lossy for messages only, within a count and a byte budget.
-final class GRPCEventBufferTests: XCTestCase {
+/// The live event buffer, through gRPC's events: lossy for messages only, within a count and a byte budget.
+final class LiveEventBufferTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 0)
 
     func testMessagesStayWithinBothBudgetsAndOtherEventsAreNeverDropped() async {
-        let buffer = GRPCEventBuffer(messageLimit: 3, byteLimit: 100)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: 3, byteLimit: 100)
         buffer.appendControl(.opened(timestamp: start))
         buffer.appendMessage(bytes: 0, isSent: true) { .sent(index: 0, sequence: $0, timestamp: .distantPast) }
         buffer.appendControl(.initialMetadata([], timestamp: start))
@@ -29,7 +29,7 @@ final class GRPCEventBufferTests: XCTestCase {
 
     /// An open stream that overflows reports its running totals right away, not only when it ends.
     func testDropsAreReportedWhileTheStreamIsOpen() async {
-        let buffer = GRPCEventBuffer(messageLimit: 2, byteLimit: 1_000)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: 2, byteLimit: 1_000)
         func receive(_ count: Int) {
             for _ in 0..<count {
                 buffer.appendMessage(bytes: 1, isSent: false) { .received([], sequence: $0, timestamp: .distantPast) }
@@ -51,7 +51,7 @@ final class GRPCEventBufferTests: XCTestCase {
     }
 
     func testOneMessageLargerThanTheBudgetStillComesThrough() async {
-        let buffer = GRPCEventBuffer(messageLimit: 10, byteLimit: 100)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: 10, byteLimit: 100)
         buffer.appendMessage(bytes: 500, isSent: false) { .received([], sequence: $0, timestamp: .distantPast) }
         buffer.finish()
 
@@ -61,7 +61,7 @@ final class GRPCEventBufferTests: XCTestCase {
     }
 
     func testSkippingTheBacklogDropsMessagesButKeepsOtherEvents() async {
-        let buffer = GRPCEventBuffer(messageLimit: 10, byteLimit: 1_000)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: 10, byteLimit: 1_000)
         for _ in 0..<3 {
             buffer.appendMessage(bytes: 1, isSent: false) { .received([], sequence: $0, timestamp: .distantPast) }
         }
@@ -80,7 +80,7 @@ final class GRPCEventBufferTests: XCTestCase {
     }
 
     func testAWaitingReceiverGetsEventsAsTheyArrive() async {
-        let buffer = GRPCEventBuffer(messageLimit: 10, byteLimit: 1_000)
+        let buffer = LiveEventBuffer<GRPCCallEvent>(messageLimit: 10, byteLimit: 1_000)
         let receiving = Task { await Self.drain(buffer) }
         buffer.appendMessage(bytes: 1, isSent: false) { .received([], sequence: $0, timestamp: .distantPast) }
         buffer.appendControl(.opened(timestamp: start))
@@ -91,7 +91,7 @@ final class GRPCEventBufferTests: XCTestCase {
         XCTAssertEqual(events?.count, 2)
     }
 
-    private static func drain(_ buffer: GRPCEventBuffer) async -> [GRPCCallEvent] {
+    private static func drain(_ buffer: LiveEventBuffer<GRPCCallEvent>) async -> [GRPCCallEvent] {
         var events: [GRPCCallEvent] = []
         while let event = await buffer.next() {
             events.append(event)

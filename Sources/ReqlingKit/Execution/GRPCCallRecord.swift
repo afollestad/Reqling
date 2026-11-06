@@ -127,7 +127,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         var record = self
         var wasCut = false
         for index in record.events.indices where record.events[index].json.utf8.count > messageLimit {
-            record.events[index].json = Self.prefix(record.events[index].json, utf8Count: messageLimit)
+            record.events[index].json = record.events[index].json.prefix(utf8Count: messageLimit)
             wasCut = true
         }
         var total = 0
@@ -146,16 +146,6 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
             wasCut = true
         }
         return (record, wasCut)
-    }
-
-    /// The longest prefix of `text` within `utf8Count` bytes that ends on a Unicode scalar boundary.
-    private static func prefix(_ text: String, utf8Count: Int) -> String {
-        let utf8 = text.utf8
-        var end = utf8.index(utf8.startIndex, offsetBy: utf8Count)
-        while end > utf8.startIndex, end.samePosition(in: text.unicodeScalars) == nil {
-            end = utf8.index(before: end)
-        }
-        return String(text.unicodeScalars[..<end])
     }
 }
 
