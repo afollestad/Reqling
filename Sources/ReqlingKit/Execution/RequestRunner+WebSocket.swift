@@ -38,23 +38,52 @@ extension RequestRunner {
         let environmentName: String
         let resolver: TemplateResolver
         let redaction: SecretRedaction
+        let scriptReport: ScriptReport?
+    }
+
+    /// The whole of a WebSocket run, inside the run's task so `cancel` and `forget` reach every await: its pre-request
+    /// scripts, preparing the handshake with what they left, and the connection until it closes.
+    func executeWebSocket(_ key: RunKey, options: RunOptions, stamp: RunStamp, session: ScriptSession?) async -> RequestExchange {
+        let request = key.requestID
+        let project = key.projectID
+        if let session, let failure = await runPreRequestScripts(session, key: key, options: options) {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, failure)
+        }
+        // A newer run replaced this one while its scripts ran; it must not take the newer run's place.
+        guard !Task.isCancelled else {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, Self.failure(for: HTTPExecutionError.cancelled))
+        }
+        let preparation: PreparedWebSocket
+        do {
+            preparation = try prepareWebSocket(request, in: project, options: options, session: session)
+        } catch {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, error)
+        }
+        return await connectWebSocket(preparation, key: key, options: options, stamp: stamp)
     }
 
     /// Resolves the handshake and the on-connect messages, failing before any network use on unresolved names, a URL
     /// a WebSocket can't use, or a message that can't be encoded, as HTTP fails before sending.
-    func prepareWebSocket(_ request: RequestNodeID, in project: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedWebSocket {
-        let context = try runContext(request, in: project, options: options)
+    func prepareWebSocket(
+        _ request: RequestNodeID,
+        in project: ProjectID,
+        options: RunOptions,
+        session: ScriptSession?
+    ) throws(RunFailure) -> PreparedWebSocket {
+        let context = try runContext(request, in: project, options: options, session: session)
         do throws(RunFailure) {
             guard let spec = context.item.kind.webSocketSpec?.normalized() else {
                 throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a WebSocket request.")
             }
-            let prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+            var prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+            if let session {
+                prepared.markScriptChanges(session.changes, redaction: context.redaction)
+            }
             var handshake = prepared.urlRequest
             handshake.url = try Self.webSocketURL(handshake.url)
             var summary = prepared.summary
             summary.url = Self.webSocketURL(shown: summary.url)
-            let isTLS = handshake.url?.scheme == "wss"
-            let tls = isTLS ? try tlsContext(
+            let tls = handshake.url?.scheme == "wss" ? try tlsContext(
                 host: handshake.url?.host(percentEncoded: false) ?? "",
                 port: handshake.url?.port ?? 443,
                 verifiesServer: prepared.verifyTLS,
@@ -69,16 +98,11 @@ extension RequestRunner {
             if !options.allowUnresolved, !templates.unresolved.isEmpty {
                 throw RunFailure.undefinedVariables(templates.unresolved)
             }
-            // What was offered, typed or from the subprotocols list, is what the server's choice must be among.
-            let offered = (handshake.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") ?? "")
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
             return PreparedWebSocket(
                 connect: WebSocketConnectRequest(
                     handshake: handshake,
                     shownURL: summary.url,
-                    subprotocols: offered,
+                    subprotocols: Self.offeredSubprotocols(handshake),
                     tls: tls,
                     cookies: executor(for: project).cookies,
                     keepalive: Self.keepalive(seconds: spec.options.keepaliveSeconds)
@@ -88,33 +112,37 @@ extension RequestRunner {
                 unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) },
                 environmentName: context.environmentName,
                 resolver: context.resolver,
-                redaction: context.redaction
+                redaction: context.redaction,
+                scriptReport: session?.shownReport
             )
         } catch {
             throw error.redacting(context.redaction)
         }
     }
 
-    func webSocketTask(
-        _ preparation: PreparedWebSocket,
-        key: RunKey,
-        options: RunOptions,
-        id: RunID,
-        startedAt: Date
-    ) -> Task<RequestExchange, Never> {
+    /// What the handshake offers, typed or from the subprotocols list: the server's choice must be among them.
+    private static func offeredSubprotocols(_ handshake: URLRequest) -> [String] {
+        (handshake.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func connectWebSocket(_ preparation: PreparedWebSocket, key: RunKey, options: RunOptions, stamp: RunStamp) async -> RequestExchange {
         let live = WebSocketLive(
             context: WebSocketLive.Context(
-                runID: id,
+                runID: stamp.id,
                 projectID: key.projectID,
                 requestID: key.requestID,
-                startedAt: startedAt,
+                startedAt: stamp.startedAt,
                 environmentName: preparation.environmentName,
                 request: preparation.summary,
                 unresolvedVariables: preparation.unresolvedVariables,
                 resolver: preparation.resolver,
                 redaction: preparation.redaction,
                 allowUnresolved: options.allowUnresolved,
-                limit: options.streamLimit
+                limit: options.streamLimit,
+                scriptReport: preparation.scriptReport
             ),
             seeds: preparation.seeds
         )
@@ -124,17 +152,14 @@ extension RequestRunner {
             latest[key] = live.exchange
             followSavedKeepalive(key, on: live)
         }
-        let executor = WebSocketExecutor(sleep: sleep)
-        return Task {
-            let outcome = await executor.execute(preparation.connect, outbox: live.outbox) { event in
-                await self.receive(event, on: live, key: key, publishes: publishes)
-            }
-            if self.liveSockets[key] === live {
-                self.liveSockets[key] = nil
-                self.openSockets.remove(key)
-            }
-            return live.finished(outcome, stopped: Task.isCancelled)
+        let outcome = await WebSocketExecutor(sleep: sleep).execute(preparation.connect, outbox: live.outbox) { event in
+            await self.receive(event, on: live, key: key, publishes: publishes)
         }
+        if liveSockets[key] === live {
+            liveSockets[key] = nil
+            openSockets.remove(key)
+        }
+        return live.finished(outcome, stopped: Task.isCancelled)
     }
 
     /// `publishes` is false for an unsaved run, which records its events without showing them.

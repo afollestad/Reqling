@@ -40,19 +40,28 @@ extension RequestRunner {
         return try await schema(for: spec, context: context, project: project, endpoint: endpoint)
     }
 
-    /// The whole of a gRPC run, inside the run's task so `cancel` and `forget` reach every await.
-    /// `id` is the run's, which every partial record it publishes carries.
-    func runGRPC(_ request: RequestNodeID, in project: ProjectID, options: RunOptions, id: RunID, startedAt: Date) async -> RequestExchange {
-        let key = RunKey(request, in: project)
+    /// The whole of a gRPC run, inside the run's task so `cancel` and `forget` reach every await: its pre-request
+    /// scripts, preparing the call with what they left, and the call. Every partial record it publishes carries the
+    /// stamp's run ID.
+    func executeGRPC(_ key: RunKey, options: RunOptions, stamp: RunStamp, session: ScriptSession?) async -> RequestExchange {
+        let request = key.requestID
+        let project = key.projectID
+        if let session, let failure = await runPreRequestScripts(session, key: key, options: options) {
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, failure)
+        }
         let live: GRPCLiveCall
         let call: GRPCCallRequest
-        do {
-            (live, call) = try await prepareGRPC(request, in: project, options: options, id: id, startedAt: startedAt)
+        do throws(RunFailure) {
+            // Checked first too, so a run replaced while its scripts ran never asks the server for its schema.
+            guard !Task.isCancelled else {
+                throw RunFailure(GRPCCallError.cancelled)
+            }
+            (live, call) = try await prepareGRPC(key, options: options, stamp: stamp, session: session)
         } catch {
-            return failedExchange(request, in: project, startedAt: startedAt, error)
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, error)
         }
         guard !Task.isCancelled else {
-            return failedExchange(request, in: project, startedAt: startedAt, RunFailure(GRPCCallError.cancelled))
+            return failedExchange(request, in: project, startedAt: stamp.startedAt, RunFailure(GRPCCallError.cancelled))
         }
         liveCalls[key] = live
         if live.method.kind.clientStreams, options.keepsStreamOpen {
@@ -87,33 +96,28 @@ extension RequestRunner {
     }
 
     private func prepareGRPC(
-        _ request: RequestNodeID,
-        in project: ProjectID,
+        _ key: RunKey,
         options: RunOptions,
-        id: RunID,
-        startedAt: Date
+        stamp: RunStamp,
+        session: ScriptSession?
     ) async throws(RunFailure) -> (GRPCLiveCall, GRPCCallRequest) {
-        let context = try runContext(request, in: project, options: options)
+        let request = key.requestID
+        let project = key.projectID
+        let context = try runContext(request, in: project, options: options, session: session)
         do throws(RunFailure) {
             guard let spec = context.item.kind.grpcSpec else {
                 throw RunFailure(kind: .invalidRequest, message: "The request no longer exists.")
             }
-            let endpoint = try connection(for: spec, context: context, project: project, options: options)
+            var endpoint = try connection(for: spec, context: context, project: project, options: options)
+            if let session {
+                endpoint.resolved.markScriptChanges(session.changes, redaction: context.redaction)
+            }
             let schema = try await schema(for: spec, context: context, project: project, endpoint: endpoint)
             if Task.isCancelled {
                 throw RunFailure(GRPCCallError.cancelled)
             }
-            let timeout = GRPCRequestResolution.timeout(
-                for: endpoint.resolved,
-                kind: schema.registry.method(spec.methodPath)?.kind,
-                keepsStreamOpen: options.keepsStreamOpen
-            )
-            guard !spec.service.isEmpty, !spec.method.isEmpty else {
-                throw RunFailure(kind: .invalidRequest, message: "Choose a service and method to call.")
-            }
-            guard let method = schema.registry.method(spec.methodPath) else {
-                throw Self.missingMethod(spec.methodPath, in: schema)
-            }
+            let method = try Self.method(spec, in: schema)
+            let timeout = GRPCRequestResolution.timeout(for: endpoint.resolved, kind: method.kind, keepsStreamOpen: options.keepsStreamOpen)
             var templates = endpoint.templates
             let codec = ProtobufJSONCodec(registry: schema.registry)
             let seeds = try Self.seeds(spec, method: method, codec: codec, templates: &templates)
@@ -122,15 +126,16 @@ extension RequestRunner {
             }
             let live = GRPCLiveCall(
                 context: GRPCLiveCall.Context(
-                    runID: id,
+                    runID: stamp.id,
                     projectID: project,
                     requestID: request,
-                    startedAt: startedAt,
+                    startedAt: stamp.startedAt,
                     environmentName: context.environmentName,
                     unresolvedVariables: templates.unresolved,
                     resolver: context.resolver,
                     redaction: context.redaction,
-                    allowUnresolved: options.allowUnresolved
+                    allowUnresolved: options.allowUnresolved,
+                    scriptReport: session?.shownReport
                 ),
                 method: method,
                 endpoint: endpoint.resolved,
@@ -141,6 +146,17 @@ extension RequestRunner {
         } catch {
             throw error.redacting(context.redaction)
         }
+    }
+
+    /// The method the spec names, from the schema; its kind decides how the call runs, never the spec.
+    private static func method(_ spec: GRPCRequestSpec, in schema: GRPCSchema) throws(RunFailure) -> GRPCMethodDescriptor {
+        guard !spec.service.isEmpty, !spec.method.isEmpty else {
+            throw RunFailure(kind: .invalidRequest, message: "Choose a service and method to call.")
+        }
+        guard let method = schema.registry.method(spec.methodPath) else {
+            throw missingMethod(spec.methodPath, in: schema)
+        }
+        return method
     }
 
     /// The spec's messages for the method's kind, resolved and encoded; an error names the message by position.
@@ -161,7 +177,7 @@ extension RequestRunner {
     /// A request's resolved endpoint with its TLS policy, and the templates it resolved (so its unresolved names
     /// carry into the messages').
     private struct Connection {
-        let resolved: GRPCEndpoint
+        var resolved: GRPCEndpoint
         let security: GRPCTransportSecurity
         let templates: RunTemplates
     }

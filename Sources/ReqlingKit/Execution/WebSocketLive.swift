@@ -21,6 +21,8 @@ final class WebSocketLive: LiveRun {
         let redaction: SecretRedaction
         let allowUnresolved: Bool
         let limit: StreamLimit?
+        /// The pre-request phase's masked report, which every partial exchange carries until post-response scripts run.
+        var scriptReport: ScriptReport?
     }
 
     let context: Context
@@ -256,7 +258,8 @@ final class WebSocketLive: LiveRun {
             environmentName: context.environmentName,
             request: context.request,
             outcome: outcome,
-            unresolvedVariables: context.unresolvedVariables
+            unresolvedVariables: context.unresolvedVariables,
+            scriptReport: context.scriptReport
         )
     }
 }

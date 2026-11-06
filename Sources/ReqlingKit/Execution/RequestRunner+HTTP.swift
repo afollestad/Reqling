@@ -65,7 +65,8 @@ extension RequestRunner {
             environmentName: preparation.environmentName,
             request: preparation.prepared.summary,
             unresolvedVariables: preparation.prepared.unresolvedVariables,
-            limit: options.streamLimit
+            limit: options.streamLimit,
+            scriptReport: session?.shownReport
         ))
         liveStreams[key] = live
         let run = HTTPRun(preparation: preparation, live: live, key: key, publishes: options.unsaved == nil)

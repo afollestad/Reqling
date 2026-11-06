@@ -205,23 +205,16 @@ public final class RequestRunner {
         let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
         let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
         // Taken now, so editing a script while the run waits on its response never changes what runs.
-        let session = item.flatMap { $0.kind.httpSpec == nil ? nil : scriptSession(for: $0, in: project, options: options, mode: .run) }
-        let task: Task<RequestExchange, Never>
-        do throws(RunFailure) {
-            switch item?.kind {
-            case .grpc:
-                // Inside the task, unlike the others' preparation: finding the schema can compile protos or ask the
-                // server, so it must count as in flight and be cancellable.
-                task = Task { await self.runGRPC(request, in: project, options: options, id: stamp.id, startedAt: stamp.startedAt) }
-            case .webSocket:
-                let preparation = try prepareWebSocket(request, in: project, options: options)
-                task = webSocketTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
-            case .http, nil:
-                task = Task { await self.executeHTTP(key, options: options, stamp: stamp, session: session) }
-            }
-        } catch {
-            let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
-            return options.unsaved == nil ? record(failed) : failed
+        let session = item.flatMap { scriptSession(for: $0, in: project, options: options, mode: .run) }
+        // Every kind runs its pre-request scripts and prepares inside its task, so both count as in flight and can be
+        // cancelled; finding a gRPC schema can also compile protos or ask the server.
+        let task: Task<RequestExchange, Never> = switch item?.kind {
+        case .grpc:
+            Task { await self.executeGRPC(key, options: options, stamp: stamp, session: session) }
+        case .webSocket:
+            Task { await self.executeWebSocket(key, options: options, stamp: stamp, session: session) }
+        case .http, nil:
+            Task { await self.executeHTTP(key, options: options, stamp: stamp, session: session) }
         }
         tasks[key] = task
         inFlight.insert(key)

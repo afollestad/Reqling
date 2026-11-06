@@ -7,7 +7,7 @@ import XCTest
 /// Disconnect, an agent's bounds, and what the history keeps.
 @MainActor
 extension RequestRunnerTests {
-    private func socketServer(
+    func socketServer(
         behavior: TestWebSocketServer.Behavior = TestWebSocketServer.Behavior(),
         answer: @escaping @Sendable (TestWebSocketServer.Handshake) -> TestWebSocketServer.Answer = { _ in .accept() }
     ) async throws -> TestWebSocketServer {
@@ -17,7 +17,7 @@ extension RequestRunnerTests {
     }
 
     /// A project with one WebSocket request to `url`, `{{token}}` a secret.
-    private func makeSocketProject(url: String, _ configure: (inout WebSocketRequestSpec) -> Void = { _ in }) throws -> RunKey {
+    func makeSocketProject(url: String, _ configure: (inout WebSocketRequestSpec) -> Void = { _ in }) throws -> RunKey {
         let project = try fixture.library.createProject(named: "Sockets")
         var spec = WebSocketRequestSpec(url: url)
         configure(&spec)
@@ -33,11 +33,11 @@ extension RequestRunnerTests {
     }
 
     /// Never returns on its own, so a handshake's deadline never passes mid-test.
-    private var patientSleeper: TestSleeper {
+    var patientSleeper: TestSleeper {
         TestSleeper(returnsAtOnce: false)
     }
 
-    private func texts(_ record: WebSocketRecord?, _ direction: MessageDirection) -> [String] {
+    func texts(_ record: WebSocketRecord?, _ direction: MessageDirection) -> [String] {
         record?.entries.compactMap { $0.message?.direction == direction ? $0.message?.text : nil } ?? []
     }
 

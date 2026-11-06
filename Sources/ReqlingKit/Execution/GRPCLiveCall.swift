@@ -16,6 +16,8 @@ final class GRPCLiveCall: LiveRun {
         let resolver: TemplateResolver
         let redaction: SecretRedaction
         let allowUnresolved: Bool
+        /// The pre-request phase's masked report, which every partial exchange carries until post-response scripts run.
+        var scriptReport: ScriptReport?
     }
 
     let outbox: GRPCOutbox
@@ -58,7 +60,13 @@ final class GRPCLiveCall: LiveRun {
         self.endpoint = endpoint
         self.codec = codec
         self.seeds = seeds
-        base = GRPCCallRecord(target: endpoint.shownTarget, method: method.path, kind: method.kind, sentMetadata: endpoint.shownMetadata)
+        base = GRPCCallRecord(
+            target: endpoint.shownTarget,
+            method: method.path,
+            kind: method.kind,
+            sentMetadata: endpoint.shownMetadata,
+            scriptChangedMetadata: endpoint.scriptChangedMetadata
+        )
         queued = seeds.map { ($0.shown, $0.bytes.count) }
         outbox = GRPCOutbox(seeds.map(\.bytes))
     }
@@ -208,7 +216,8 @@ final class GRPCLiveCall: LiveRun {
             environmentName: context.environmentName,
             request: nil,
             outcome: outcome,
-            unresolvedVariables: context.unresolvedVariables
+            unresolvedVariables: context.unresolvedVariables,
+            scriptReport: context.scriptReport
         )
     }
 }

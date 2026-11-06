@@ -244,6 +244,45 @@ extension RequestRunnerTests {
         XCTAssertEqual(recorded.scriptReport?.phase(.postResponse)?.skipReason, .quit)
     }
 
+    func testScriptsRunAroundAWebSocketConnection() async throws {
+        let server = try await socketServer()
+        let key = try makeSocketProject(url: "\(server.url)/chat") { spec in
+            spec.queryParameters = [KeyValuePair(key: "room", value: "{{room}}")]
+            spec.messages = [WebSocketMessage(text: "hello")]
+        }
+        workspace.updateProject(key.projectID) { $0.scriptTrust = .trusted }
+        try fixture.library.mutate(key.projectID) { document in
+            try document.updateRequest(key.requestID) { request in
+                request.scripts = ScriptSet(
+                    preRequest: """
+                    rq.request.headers.upsert("Authorization", "Bearer " + rq.environment.get("token"))
+                    rq.request.query.upsert("room", "vip")
+                    console.log("connecting")
+                    """,
+                    postResponse: """
+                    const received = rq.response.messages.filter((message) => message.direction === "received")
+                    rq.test("echoed", () => rq.expect(received.map((message) => message.text)).to.eql(["hello"]))
+                    rq.test("stopped", () => rq.expect(rq.response.end).to.equal("stopped"))
+                    """
+                )
+            }
+        }
+        let runner = makeRunner(sleep: patientSleeper)
+
+        let run = Task { await runner.run(key.requestID, in: key.projectID) }
+        await waitUntil("the echo arrives") { self.texts(runner.latest[key]?.webSocket, .received).count == 1 }
+        let open = try XCTUnwrap(runner.latest[key])
+        runner.cancel(key.requestID, in: key.projectID)
+        let exchange = await run.value
+
+        XCTAssertEqual(open.scriptReport?.phase(.preRequest)?.console.first?.text, "connecting", "An open connection shows its pre-request report")
+        XCTAssertEqual(server.handshakes.first?.uri, "/chat?room=vip")
+        XCTAssertEqual(server.handshakes.first?.header("Authorization"), "Bearer s3cr3t-token")
+        XCTAssertEqual(exchange.request?.headers.first { $0.key == "Authorization" }?.value, "Bearer \(TemplateResolver.mask)")
+        XCTAssertEqual(exchange.request?.scriptChangedQuery, ["room"])
+        XCTAssertEqual(exchange.scriptReport?.testCounts, ScriptTestCounts(passed: 2))
+    }
+
     private func runner(exchange: RequestExchange) -> RunOutcomeKind {
         RunSummary(exchange).outcomeKind
     }

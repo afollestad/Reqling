@@ -13,6 +13,8 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
     public var kind: GRPCMethodKind
     /// Request metadata as sent, masked.
     public var sentMetadata: [KeyValuePair]
+    /// Lower-cased names of the metadata a pre-request script added or replaced; `nil` when none.
+    public var scriptChangedMetadata: [String]?
     public var initialMetadata: [KeyValuePair]
     public var trailers: [KeyValuePair]
     /// Messages both ways, in the order they crossed the wire: all of them, or the newest when some were omitted.
@@ -40,6 +42,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         method: String,
         kind: GRPCMethodKind,
         sentMetadata: [KeyValuePair] = [],
+        scriptChangedMetadata: [String]? = nil,
         initialMetadata: [KeyValuePair] = [],
         trailers: [KeyValuePair] = [],
         events: [GRPCMessageEvent] = [],
@@ -54,6 +57,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         self.method = method
         self.kind = kind
         self.sentMetadata = sentMetadata
+        self.scriptChangedMetadata = scriptChangedMetadata
         self.initialMetadata = initialMetadata
         self.trailers = trailers
         self.events = events
@@ -66,7 +70,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case target, method, kind, sentMetadata, initialMetadata, trailers, events, status, duration
+        case target, method, kind, sentMetadata, scriptChangedMetadata, initialMetadata, trailers, events, status, duration
         case sentCount, receivedCount, trimmedEventCount, droppedEventCount
         /// Read only: a record cached before the split had one count of oldest-first omissions.
         case omittedEventCount
@@ -81,6 +85,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         method = try container.decode(String.self, forKey: .method)
         kind = try container.decode(GRPCMethodKind.self, forKey: .kind)
         sentMetadata = try container.decode([KeyValuePair].self, forKey: .sentMetadata)
+        scriptChangedMetadata = try container.decodeIfPresent([String].self, forKey: .scriptChangedMetadata)
         initialMetadata = try container.decode([KeyValuePair].self, forKey: .initialMetadata)
         trailers = try container.decode([KeyValuePair].self, forKey: .trailers)
         status = try container.decodeIfPresent(GRPCStatusRecord.self, forKey: .status)
@@ -105,6 +110,7 @@ public struct GRPCCallRecord: Hashable, Sendable, Codable {
         try container.encode(method, forKey: .method)
         try container.encode(kind, forKey: .kind)
         try container.encode(sentMetadata, forKey: .sentMetadata)
+        try container.encodeIfPresent(scriptChangedMetadata, forKey: .scriptChangedMetadata)
         try container.encode(initialMetadata, forKey: .initialMetadata)
         try container.encode(trailers, forKey: .trailers)
         try container.encode(events, forKey: .events)

@@ -143,7 +143,7 @@ extension RequestRunner {
                 session.skip(.postResponse, reason: .requestFailed)
             }
         }
-        finished.scriptReport = session.report.isEmpty ? nil : session.maskedReport()
+        finished.scriptReport = session.shownReport
         return finished
     }
 
@@ -153,6 +153,6 @@ extension RequestRunner {
             return nil
         }
         session.skip(.postResponse, reason: .quit)
-        return session.report.isEmpty ? nil : session.maskedReport()
+        return session.shownReport
     }
 }

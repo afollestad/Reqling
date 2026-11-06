@@ -174,6 +174,11 @@ final class ScriptSession {
         }
     }
 
+    /// `maskedReport()`, or `nil` while no phase has anything to say.
+    var shownReport: ScriptReport? {
+        report.isEmpty ? nil : maskedReport()
+    }
+
     /// The report with every secret the run touched masked in what scripts printed, named, or threw.
     func maskedReport() -> ScriptReport {
         let redaction = SecretRedaction(secrets: allSecretValues)

@@ -7,7 +7,9 @@ struct GRPCEndpoint {
     let shownTarget: String
     /// Request metadata, auth included, as sent; `shownMetadata` is the same rows masked.
     let metadata: [KeyValuePair]
-    let shownMetadata: [KeyValuePair]
+    var shownMetadata: [KeyValuePair]
+    /// Lower-cased names of the metadata a pre-request script added or replaced; `nil` when none.
+    var scriptChangedMetadata: [String]?
     /// The request's own deadline, if it sets one; `timeout(for:kind:keepsStreamOpen:)` decides what a call uses.
     let requestedTimeout: Duration?
     /// The Settings deadline.
@@ -52,6 +54,7 @@ enum GRPCRequestResolution {
             shownTarget: text.shown.trimmingCharacters(in: .whitespacesAndNewlines),
             metadata: rows.map { KeyValuePair(key: $0.key.sent, value: $0.value.sent) },
             shownMetadata: rows.map { KeyValuePair(key: $0.key.shown.lowercased(), value: $0.value.shown) },
+            scriptChangedMetadata: nil,
             requestedTimeout: spec.deadlineSeconds.flatMap(duration),
             defaultTimeout: duration(defaults.grpcDeadlineSeconds) ?? .seconds(30),
             verifiesServer: spec.verifyTLS ?? defaults.verifyTLS

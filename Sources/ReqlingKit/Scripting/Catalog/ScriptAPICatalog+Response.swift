@@ -14,7 +14,7 @@ extension ScriptAPICatalog {
         ]),
         ScriptType("GRPCStatus", "How the call ended.", members: [
             .property("code", .optional(.number), "The status code; 0 is OK."),
-            .property("name", .optional(.string), "The status's name, such as `ok` or `notFound`."),
+            .property("name", .optional(.string), "The status's canonical name, such as `OK` or `NOT_FOUND`."),
             .property("message", .optional(.string), "The server's message.")
         ]),
         ScriptType("GRPCMessage", "One message the call received.", members: [
