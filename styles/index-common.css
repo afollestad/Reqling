@@ -134,7 +134,8 @@ button:focus-visible {
     animation: trail-flow 4s linear infinite;
 }
 
-.trails rect {
+/* By class, since the mask's backing rect must stay white. */
+.trails .packet {
     fill: currentColor;
 }
 

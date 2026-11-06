@@ -89,11 +89,24 @@
     <section class="section-hero">
         <div class="hero-sky" aria-hidden="true">
             <svg class="trails" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMin slice" focusable="false">
-                <path d="M-40 700 C80 620 150 520 170 420 S230 250 330 200"/>
-                <path d="M1240 620 C1120 560 1060 470 1040 380 S980 220 880 170"/>
-                <path d="M-20 420 C60 360 90 300 120 220"/>
-                <rect x="322" y="180" width="34" height="24" rx="7" transform="rotate(-24 339 192)"/>
-                <rect x="852" y="152" width="34" height="24" rx="7" transform="rotate(24 869 164)"/>
+                <defs>
+                    <radialGradient id="packet-fade">
+                        <stop offset=".7" stop-color="#000"/>
+                        <stop offset="1" stop-color="#fff"/>
+                    </radialGradient>
+                    <mask id="trail-fade" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="760">
+                        <rect width="1200" height="760" fill="#fff"/>
+                        <circle cx="339" cy="192" r="30" fill="url(#packet-fade)"/>
+                        <circle cx="869" cy="164" r="30" fill="url(#packet-fade)"/>
+                    </mask>
+                </defs>
+                <g mask="url(#trail-fade)">
+                    <path d="M-40 700 C80 620 150 520 170 420 S230 250 330 200"/>
+                    <path d="M1240 620 C1120 560 1060 470 1040 380 S980 220 880 170"/>
+                    <path d="M-20 420 C60 360 90 300 120 220"/>
+                </g>
+                <rect class="packet" x="322" y="180" width="34" height="24" rx="7" transform="rotate(-24 339 192)"/>
+                <rect class="packet" x="852" y="152" width="34" height="24" rx="7" transform="rotate(24 869 164)"/>
             </svg>
         </div>
 
