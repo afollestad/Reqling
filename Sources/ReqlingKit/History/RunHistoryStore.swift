@@ -10,10 +10,11 @@ import Foundation
 /// one queue. Tests and the screenshot mode seed it directly. A file that fails to decode reads as absent: the history
 /// is what this Mac saw, never the only copy of anything.
 public struct RunHistoryStore: Sendable {
-    /// Each stored HTTP body, and all of a gRPC call's stored messages together, are cut to this.
+    /// Each stored HTTP body, and all of a gRPC call's stored messages or an event stream's stored events together,
+    /// are cut to this.
     public static let bodyLimit = 5 * 1024 * 1024
-    /// Each stored gRPC message's JSON is cut to this.
-    public static let grpcMessageLimit = 64 * 1024
+    /// Each stored gRPC message's JSON, and each stored event's data, is cut to this.
+    public static let messageLimit = 64 * 1024
 
     /// A run as its request's index lists it.
     struct Entry: Hashable, Sendable, Codable {
@@ -163,12 +164,18 @@ public struct RunHistoryStore: Sendable {
     private static func fitted(_ exchange: RequestExchange) -> RequestExchange {
         var stored = exchange
         switch exchange.outcome {
+        case .response(var response) where response.eventStream != nil:
+            if let fitted = response.eventStream?.fittingCache(dataLimit: messageLimit, totalLimit: bodyLimit), fitted.wasCut {
+                response.eventStream = fitted.record
+                stored.outcome = .response(response)
+                stored.isBodyTruncated = true
+            }
         case .response(var response) where response.body.count > bodyLimit:
             response.body = response.body.prefix(bodyLimit)
             stored.outcome = .response(response)
             stored.isBodyTruncated = true
         case .grpc(let call):
-            let fitted = call.fittingCache(messageLimit: grpcMessageLimit, totalLimit: bodyLimit)
+            let fitted = call.fittingCache(messageLimit: messageLimit, totalLimit: bodyLimit)
             if fitted.wasCut {
                 stored.outcome = .grpc(fitted.record)
                 stored.isBodyTruncated = true

@@ -3,12 +3,12 @@ import Foundation
 /// Clearing and moving the run history, and keeping `latest` in step with what the history drops: the paths
 /// `Sources/ReqlingKit/History/AGENTS.md` sends every change through.
 extension RequestRunner {
-    /// Clears one request's history, leaving a run in flight to record when it finishes; an open gRPC call keeps
-    /// showing as it goes.
+    /// Clears one request's history, leaving a run in flight to record when it finishes; an open gRPC call or event
+    /// stream keeps showing as it goes.
     public func clearHistory(for request: RequestNodeID, in project: ProjectID) {
         let key = RunKey(request, in: project)
         history.clear(for: request, in: project)
-        if liveCalls[key] == nil {
+        if !isLive(key) {
             latest[key] = nil
         }
     }
@@ -16,13 +16,13 @@ extension RequestRunner {
     /// Clears every request's history in a project, as `clearHistory(for:in:)` does one's.
     public func clearHistory(in project: ProjectID) {
         history.clear(in: project)
-        latest = latest.filter { $0.key.projectID != project || liveCalls[$0.key] != nil }
+        latest = latest.filter { $0.key.projectID != project || isLive($0.key) }
     }
 
     /// Clears every project's history, as `clearHistory(for:in:)` does one request's.
     public func clearAllHistory() {
         history.clearAll()
-        latest = latest.filter { liveCalls[$0.key] != nil }
+        latest = latest.filter { isLive($0.key) }
     }
 
     /// Carries requests' history into another project, as when they move there keeping their IDs. Their runs in flight
@@ -37,9 +37,9 @@ extension RequestRunner {
     }
 
     /// Drops runs the size limit or retention took from `latest`, so the window never shows a run its history dropped. An
-    /// open gRPC call showing there is left alone: it is newer than anything pruned.
+    /// open gRPC call or event stream showing there is left alone: it is newer than anything pruned.
     func dropPruned(_ removal: RunHistoryWriter.Removal) {
-        for (key, runs) in removal where liveCalls[key] == nil {
+        for (key, runs) in removal where !isLive(key) {
             if let shown = latest[key], runs.contains(shown.id) {
                 latest[key] = nil
             }

@@ -1,8 +1,8 @@
 import Foundation
 
-/// How two runs of one request differ, section by section: for HTTP, the response body, the response headers, and the
-/// request sent; for gRPC, the messages, the metadata and status, and the call sent. Everything compared is what the
-/// history stores, so it is masked like the runs themselves.
+/// How two runs of one request differ, section by section: for HTTP, the response body (an event stream's events),
+/// the response headers, and the request sent; for gRPC, the messages, the metadata and status, and the call sent.
+/// Everything compared is what the history stores, so it is masked like the runs themselves.
 public struct RunComparison: Sendable {
     public let sections: [RunComparisonSection]
 }
@@ -91,8 +91,8 @@ private struct Facets {
                 .text(call.map(Self.callRequest) ?? "", .plainText)
             ]
         } else {
-            titles = ["Body", "Headers", "Request"]
             let response = exchange.response
+            titles = [response?.eventStream == nil ? "Body" : "Events", "Headers", "Request"]
             sections = [
                 try response.map(Self.body) ?? .text(Self.failureText(exchange), .plainText),
                 .text(response.map { Self.headerLines($0.headers) } ?? "", .plainText),
@@ -106,6 +106,9 @@ private struct Facets {
     }
 
     private static func body(_ response: HTTPResponseRecord) throws(CancellationError) -> Body {
+        if let stream = response.eventStream {
+            return .text(events(stream), .plainText)
+        }
         let contentType = response.header("Content-Type")
         switch ResponseBodyShaper.classify(response.body, contentType: contentType) {
         case .empty:
@@ -149,6 +152,20 @@ private struct Facets {
         call.events.map { event in
             let heading = event.direction == .sent ? "→ Sent #\(event.sequence + 1)" : "← Received #\(event.sequence + 1)"
             return heading + "\n" + (JSONFormatter.pretty(event.json) ?? event.json)
+        }
+        .joined(separator: "\n\n")
+    }
+
+    /// Each event under a line naming its type and ID, its data re-indented when it is JSON, with the notes between.
+    private static func events(_ stream: EventStreamRecord) -> String {
+        stream.entries.map { entry in
+            switch entry.kind {
+            case .event(let event):
+                let heading = "event: \(event.type)" + (event.id.map { " · id: \($0)" } ?? "")
+                return heading + "\n" + (JSONFormatter.pretty(event.data) ?? event.data)
+            case .note(let note):
+                return "— \(note)"
+            }
         }
         .joined(separator: "\n\n")
     }

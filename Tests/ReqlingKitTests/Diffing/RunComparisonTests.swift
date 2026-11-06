@@ -18,6 +18,31 @@ final class RunComparisonTests: XCTestCase {
         XCTAssertEqual([body.addedCount, body.removedCount], [1, 1])
     }
 
+    /// A stream compares as its events, one heading per event with its JSON re-indented, and the notes between.
+    func testEventStreamsCompareTheirEvents() throws {
+        func stream(_ data: String) -> RequestExchange {
+            var exchange = exchange(body: Data(), headers: [KeyValuePair(key: "Content-Type", value: "text/event-stream")])
+            if case .response(var response) = exchange.outcome {
+                response.eventStream = EventStreamRecord(entries: [
+                    EventStreamEntry(sequence: 0, offset: 0, kind: .event(ServerSentEvent(type: "tick", id: "7", data: data))),
+                    EventStreamEntry(sequence: 1, offset: 1, kind: .note("Reconnected"))
+                ])
+                exchange.outcome = .response(response)
+            }
+            return exchange
+        }
+
+        let comparison = try RunComparer.compare(stream(#"{"n":1}"#), stream("{\n  \"n\": 2\n}"))
+
+        XCTAssertEqual(comparison.sections.map(\.title), ["Events", "Headers", "Request"])
+        guard case .diff(let events) = comparison.sections[0].content else {
+            return XCTFail("Events diff as text")
+        }
+        let lines = String(bytes: events.text.bytes, encoding: .utf8)?.components(separatedBy: "\n")
+        XCTAssertEqual(lines, ["event: tick · id: 7", "{", "  \"n\": 1", "  \"n\": 2", "}", "", "— Reconnected"])
+        XCTAssertEqual([events.addedCount, events.removedCount], [1, 1])
+    }
+
     func testBinaryBodiesSayOnlyWhetherTheyMatch() throws {
         let png = Data([0x89, 0x50, 0x4E, 0x47, 0xFF, 0xFE])
         let comparison = try RunComparer.compare(

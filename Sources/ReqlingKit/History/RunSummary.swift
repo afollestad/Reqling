@@ -16,8 +16,8 @@ public struct RunSummary: Hashable, Sendable, Codable, Identifiable {
     public let status: Status
     /// `nil` for a run that failed before a response.
     public let duration: TimeInterval?
-    /// The response as received, before the history cut it: an HTTP body's bytes, or the bytes of every message a gRPC
-    /// call kept; `nil` for a failure.
+    /// The response as received, before the history cut it: an HTTP body's bytes, every byte of an event stream's
+    /// bodies, or the bytes of every message a gRPC call kept; `nil` for a failure.
     public let responseByteCount: Int?
     /// The protocol of the template the run sent, which re-running and restoring it need; `nil` when it kept none.
     public let specKind: RequestKind.Name?
@@ -34,7 +34,7 @@ public struct RunSummary: Hashable, Sendable, Codable, Identifiable {
         case .response(let response):
             status = .http(code: response.statusCode)
             duration = response.duration
-            responseByteCount = response.body.count
+            responseByteCount = response.eventStream?.receivedByteCount ?? response.body.count
         case .grpc(let call):
             status = .grpc(code: call.status?.code, name: call.status?.name)
             duration = call.duration

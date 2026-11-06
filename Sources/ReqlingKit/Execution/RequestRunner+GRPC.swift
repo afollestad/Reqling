@@ -74,10 +74,6 @@ extension RequestRunner {
         return live.finished(outcome)
     }
 
-    /// How often a live call republishes into `latest`. Each publish copies its record, so publishing per event would
-    /// make a fast stream's cost grow with every message; between publishes, events only accumulate.
-    static let livePublishInterval: Duration = .milliseconds(100)
-
     /// `publishes` is false for an unsaved run, which records its events without showing them.
     private func receive(_ event: GRPCCallEvent, on live: GRPCLiveCall, key: RunKey, publishes: Bool) {
         // A replaced or forgotten run keeps streaming until its cancellation lands; it must not publish.
@@ -85,31 +81,9 @@ extension RequestRunner {
             return
         }
         live.apply(event)
-        guard publishes else {
-            return
+        if publishes {
+            publishThrottled(live, key: key) { [weak self] in self?.liveCalls[key] === live }
         }
-        let now = ContinuousClock.now
-        guard let last = live.lastPublished, now - last < Self.livePublishInterval else {
-            publish(live, key: key, at: now)
-            return
-        }
-        // Throttled: one trailing publish shows whatever arrived in between, so the last events never wait for more.
-        guard !live.isPublishPending else {
-            return
-        }
-        live.isPublishPending = true
-        Task {
-            try? await Task.sleep(until: last + Self.livePublishInterval)
-            live.isPublishPending = false
-            if self.liveCalls[key] === live {
-                self.publish(live, key: key, at: .now)
-            }
-        }
-    }
-
-    private func publish(_ live: GRPCLiveCall, key: RunKey, at instant: ContinuousClock.Instant) {
-        live.lastPublished = instant
-        latest[key] = live.exchange
     }
 
     private func prepareGRPC(

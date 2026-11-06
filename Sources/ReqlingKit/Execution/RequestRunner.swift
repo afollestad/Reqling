@@ -16,19 +16,23 @@ public struct RunOptions: Sendable {
     /// messages, for `RequestRunner.sendMessage` and `endStream`. The editor sets it; agents and tests leave it off, so
     /// a call runs to completion unattended.
     public var keepsStreamOpen: Bool
+    /// Stops an event-stream response early, so an agent's run returns; `nil` lets it run until stopped.
+    public var streamLimit: StreamLimit?
 
     public init(
         environmentID: EnvironmentID? = nil,
         variableOverrides: [String: String] = [:],
         spec: RequestKind? = nil,
         allowUnresolved: Bool = false,
-        keepsStreamOpen: Bool = false
+        keepsStreamOpen: Bool = false,
+        streamLimit: StreamLimit? = nil
     ) {
         self.environmentID = environmentID
         self.variableOverrides = variableOverrides
         self.spec = spec
         self.allowUnresolved = allowUnresolved
         self.keepsStreamOpen = keepsStreamOpen
+        self.streamLimit = streamLimit
     }
 
     /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
@@ -55,10 +59,13 @@ public struct RunKey: Hashable, Sendable {
 @Observable
 public final class RequestRunner {
     public internal(set) var inFlight: Set<RunKey> = []
-    /// The latest exchange per run; an open gRPC call publishes partial ones (status still `nil`) as it goes.
+    /// The latest exchange per run; an open gRPC call (status still `nil`) or event stream (`end` still `nil`)
+    /// publishes partial ones as it goes.
     public internal(set) var latest: [RunKey: RequestExchange] = [:]
     /// gRPC calls whose request stream is open for `sendMessage`; `endStream` closes one.
     public internal(set) var openStreams: Set<RunKey> = []
+    /// Requests whose response is an event stream still open, which Stop (`cancel`) ends.
+    public internal(set) var eventStreams: Set<RunKey> = []
 
     @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored let workspace: WorkspaceStateStore
@@ -82,6 +89,11 @@ public final class RequestRunner {
     /// Each running gRPC call's timeline and outbox, by run. A run only touches its own entry (checked by identity),
     /// so a replaced or forgotten run's late events never reach the newer one.
     @ObservationIgnored var liveCalls: [RunKey: GRPCLiveCall] = [:]
+    /// Each HTTP run's event stream, by run, from the moment it is sent: identity-checked like `liveCalls`, and open
+    /// only once its response turns out to be one.
+    @ObservationIgnored var liveStreams: [RunKey: EventStreamLive] = [:]
+    /// Waits out an event stream's reconnect delay and time limit; tests inject one that needs no wall clock.
+    @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
 
     public init(
         library: ProjectLibrary,
@@ -94,7 +106,8 @@ public final class RequestRunner {
         dynamic: DynamicVariables = .live,
         grpcSchemas: GRPCSchemaService? = nil,
         graphQLSchemas: GraphQLSchemaService? = nil,
-        makeExecutor: @escaping @MainActor () -> HTTPExecutor = { HTTPExecutor() }
+        makeExecutor: @escaping @MainActor () -> HTTPExecutor = { HTTPExecutor() },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.library = library
         self.workspace = workspace
@@ -107,6 +120,7 @@ public final class RequestRunner {
         self.grpcSchemas = grpcSchemas
         self.graphQLSchemas = graphQLSchemas
         self.makeExecutor = makeExecutor
+        self.sleep = sleep
         history.onPrune = { [weak self] removal in
             self?.dropPruned(removal)
         }
@@ -154,8 +168,7 @@ public final class RequestRunner {
         // Detach the earlier run before anything can fail, so its late completion can never overwrite this one.
         tasks.removeValue(forKey: key)?.cancel()
         inFlight.remove(key)
-        liveCalls[key] = nil
-        openStreams.remove(key)
+        dropLive(key)
         let item = item(request, in: project, options: options)
         let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
         let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
@@ -172,7 +185,7 @@ public final class RequestRunner {
                 let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
                 return options.unsaved == nil ? record(failed) : failed
             }
-            task = httpTask(preparation, request: request, in: project, startedAt: stamp.startedAt)
+            task = httpTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
         }
         tasks[key] = task
         inFlight.insert(key)
@@ -222,32 +235,6 @@ public final class RequestRunner {
         )
     }
 
-    private func httpTask(
-        _ preparation: PreparedRun,
-        request: RequestNodeID,
-        in project: ProjectID,
-        startedAt: Date
-    ) -> Task<RequestExchange, Never> {
-        let executor = executor(for: project)
-        return Task<RequestExchange, Never> {
-            let outcome: RequestExchange.Outcome
-            do {
-                outcome = .response(try await executor.execute(preparation.prepared, tls: preparation.tls))
-            } catch {
-                outcome = .failure(Self.failure(for: error).redacting(preparation.prepared.redaction))
-            }
-            return RequestExchange(
-                projectID: project,
-                requestID: request,
-                startedAt: startedAt,
-                environmentName: preparation.environmentName,
-                request: preparation.prepared.summary,
-                outcome: outcome,
-                unresolvedVariables: preparation.prepared.unresolvedVariables
-            )
-        }
-    }
-
     public func isInFlight(_ request: RequestNodeID, in project: ProjectID) -> Bool {
         inFlight.contains(RunKey(request, in: project))
     }
@@ -263,8 +250,7 @@ public final class RequestRunner {
         for key in tasks.keys where key.projectID == project {
             detach(key)
         }
-        liveCalls = liveCalls.filter { $0.key.projectID != project }
-        openStreams = openStreams.filter { $0.projectID != project }
+        dropLive(in: project)
         grpcSchemas?.refreshReflection(in: project)
         graphQLSchemas?.forget(project)
         executors.removeValue(forKey: project)?.invalidate()
@@ -285,11 +271,10 @@ public final class RequestRunner {
     func detach(_ key: RunKey) {
         tasks.removeValue(forKey: key)?.cancel()
         inFlight.remove(key)
-        liveCalls[key] = nil
-        openStreams.remove(key)
+        dropLive(key)
     }
 
-    private struct PreparedRun {
+    struct PreparedRun {
         var prepared: PreparedHTTPRequest
         var tls: TLSContext
         var environmentName: String?
@@ -444,21 +429,6 @@ public final class RequestRunner {
         latest[RunKey(exchange.requestID, in: exchange.projectID)] = exchange
         history.record(exchange)
         return exchange
-    }
-
-    nonisolated static func failure(for error: any Error) -> RunFailure {
-        switch error as? HTTPExecutionError {
-        case .cancelled:
-            RunFailure(kind: .cancelled, message: HTTPExecutionError.cancelled.localizedDescription)
-        case .timedOut:
-            RunFailure(kind: .timedOut, message: HTTPExecutionError.timedOut.localizedDescription)
-        case .untrustedServer(let reason):
-            RunFailure(kind: .tls, message: reason)
-        case .transport(let message):
-            RunFailure(kind: .transport, message: message)
-        case nil:
-            RunFailure(kind: .transport, message: error.localizedDescription)
-        }
     }
 }
 

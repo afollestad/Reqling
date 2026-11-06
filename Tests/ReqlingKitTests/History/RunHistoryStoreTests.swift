@@ -43,6 +43,30 @@ final class RunHistoryStoreTests: XCTestCase {
         XCTAssertEqual(entry.summary.responseByteCount, RunHistoryStore.bodyLimit + 10)
     }
 
+    /// Each event's data is cut, then the oldest events dropped, keeping the newest; the summary keeps every byte.
+    func testAStreamIsCutToFitButItsSummaryKeepsEveryByte() throws {
+        let key = RunKey(RequestNodeID(), in: ProjectID())
+        let data = String(repeating: "é", count: RunHistoryStore.messageLimit)
+        let entries = (0..<100).map { EventStreamEntry(sequence: $0, offset: Double($0), kind: .event(ServerSentEvent(data: data))) }
+        var exchange = HistoryFixtures.exchange(key, statusCode: 200, at: 1, body: Data())
+        if case .response(var response) = exchange.outcome {
+            response.eventStream = EventStreamRecord(entries: entries, receivedByteCount: 13_000_000, end: .closed)
+            exchange.outcome = .response(response)
+        }
+
+        let entry = try XCTUnwrap(store.insert(exchange))
+        let stored = try XCTUnwrap(store.load(exchange.id, for: key.requestID, in: key.projectID))
+
+        let stream = try XCTUnwrap(stored.response?.eventStream)
+        XCTAssertTrue(stored.isBodyTruncated)
+        XCTAssertTrue(stream.events.allSatisfy { $0.data.utf8.count <= RunHistoryStore.messageLimit })
+        XCTAssertLessThanOrEqual(stream.events.reduce(0) { $0 + $1.data.utf8.count }, RunHistoryStore.bodyLimit)
+        XCTAssertEqual(stream.entries.last?.sequence, 99, "The newest events are kept")
+        XCTAssertEqual(stream.trimmedEntryCount, 100 - stream.entries.count)
+        XCTAssertEqual(stream.entries.first?.byteCount, data.utf8.count, "Each event keeps its size as received")
+        XCTAssertEqual(entry.summary.responseByteCount, 13_000_000)
+    }
+
     /// The outcome index follows each request's newest run as runs go, and forgets the request with its last one.
     func testOutcomesFollowEachRequestsNewestRun() {
         let key = RunKey(RequestNodeID(), in: ProjectID())

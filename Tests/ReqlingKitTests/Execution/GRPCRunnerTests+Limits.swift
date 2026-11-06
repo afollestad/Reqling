@@ -65,7 +65,7 @@ extension GRPCRunnerTests {
 
     func testTheHistoryCutsLargeGRPCRecordsToItsLimits() throws {
         let history = RunHistoryStore(directory: fixture.directory.file("Support/History"))
-        let big = String(repeating: "é", count: RunHistoryStore.grpcMessageLimit)
+        let big = String(repeating: "é", count: RunHistoryStore.messageLimit)
         let events = (0..<100).map { GRPCMessageEvent(direction: .received, offset: Double($0), json: big, byteCount: 1) }
         let record = GRPCCallRecord(target: "t:1", method: "a.B/C", kind: .serverStreaming, events: events, trimmedEventCount: 3)
         let exchange = RequestExchange(
@@ -77,7 +77,7 @@ extension GRPCRunnerTests {
 
         let call = try XCTUnwrap(stored.grpc)
         XCTAssertTrue(stored.isBodyTruncated)
-        XCTAssertTrue(call.events.allSatisfy { $0.json.utf8.count <= RunHistoryStore.grpcMessageLimit })
+        XCTAssertTrue(call.events.allSatisfy { $0.json.utf8.count <= RunHistoryStore.messageLimit })
         XCTAssertLessThanOrEqual(call.events.reduce(0) { $0 + $1.json.utf8.count }, RunHistoryStore.bodyLimit)
         XCTAssertEqual(call.events.count + call.trimmedEventCount, 103, "Cut messages are the oldest, so trimmed")
         XCTAssertEqual(call.receivedCount, 100, "Totals survive the cut")

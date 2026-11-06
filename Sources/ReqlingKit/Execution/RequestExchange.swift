@@ -2,7 +2,7 @@ import Foundation
 
 /// One run of a request: what was sent (masked) and what came back, or why it failed.
 public struct RequestExchange: Hashable, Sendable, Codable {
-    /// Shared by every partial exchange an open gRPC call publishes and the one it finishes with.
+    /// Shared by every partial exchange an open gRPC call or event stream publishes and the one it finishes with.
     public var id: RunID
     public var projectID: ProjectID
     public var requestID: RequestNodeID
@@ -17,8 +17,8 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     public var request: ResolvedHTTPRequest?
     public var outcome: Outcome
     public var unresolvedVariables: [String]
-    /// The stored HTTP body, or the stored gRPC messages, were cut to fit the history (`RunHistoryStore.bodyLimit` and
-    /// `grpcMessageLimit`); the run itself saw them all.
+    /// The stored HTTP body, gRPC messages, or stream events were cut to fit the history (`RunHistoryStore.bodyLimit`
+    /// and `messageLimit`); the run itself saw them all.
     public var isBodyTruncated: Bool
 
     public enum Outcome: Hashable, Sendable, Codable {
@@ -77,7 +77,8 @@ public struct RequestExchange: Hashable, Sendable, Codable {
 
     public var outcomeKind: RunOutcomeKind {
         switch outcome {
-        case .response(let response): response.statusCode < 400 ? .succeeded : .failed
+        // A stream that timed out or failed never answered with an error status, but still went wrong.
+        case .response(let response): response.statusCode < 400 && response.eventStream?.end?.isFailure != true ? .succeeded : .failed
         case .grpc(let call): call.status?.isOK == true ? .succeeded : .failed
         case .failure: .failed
         }

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Main-actor isolated like the runner, so each event's record goes straight into `RequestRunner.latest`.
 @MainActor
-final class GRPCLiveCall {
+final class GRPCLiveCall: LiveRun {
     struct Context {
         let runID: RunID
         let projectID: ProjectID
@@ -27,14 +27,12 @@ final class GRPCLiveCall {
     private let seeds: [EncodedMessage]
     /// Every message queued so far, masked, with its encoded size; a `sent` event's index points into it.
     private var queued: [(json: String, byteCount: Int)]
-    /// Everything but the events, which `recent` holds.
+    /// Everything but the events, which `window` holds.
     private var base: GRPCCallRecord
-    /// The newest events, up to half again `GRPCCallRecord.eventLimit` before a trim, so trimming (which shifts the
-    /// array) happens once per many events rather than on each.
-    private var recent: [GRPCMessageEvent] = []
-    private var recentBytes = 0
-    /// Oldest events trimmed from `recent`, and messages the executor never delivered, by direction.
-    private var trimmed = 0
+    private var window = LiveWindow<GRPCMessageEvent>(limit: GRPCCallRecord.eventLimit, byteLimit: GRPCLiveCall.byteLimit) {
+        $0.json.utf8.count
+    }
+    /// Messages the executor never delivered, by direction.
     private var droppedSent = 0
     private var droppedReceived = 0
     private var appliedSent = 0
@@ -45,7 +43,7 @@ final class GRPCLiveCall {
     var lastPublished: ContinuousClock.Instant?
     var isPublishPending = false
 
-    /// Bounds the JSON a live record holds, since `eventLimit` alone allows thousands of multi-megabyte messages.
+    /// Bounds the JSON a live record holds (`LiveWindow`).
     static let byteLimit = 32 * 1024 * 1024
 
     /// `seeds` are queued first, ahead of anything `send` adds.
@@ -139,9 +137,9 @@ final class GRPCLiveCall {
     /// `finished`.
     var record: GRPCCallRecord {
         var record = base
-        let kept = recent.suffix(GRPCCallRecord.eventLimit)
-        record.events = Array(kept)
-        record.trimmedEventCount = trimmed + recent.count - kept.count
+        let newest = window.newest
+        record.events = newest.entries
+        record.trimmedEventCount = newest.trimmedCount
         record.droppedEventCount = droppedSent + droppedReceived
         record.sentCount = appliedSent + droppedSent
         record.receivedCount = appliedReceived + droppedReceived
@@ -192,23 +190,8 @@ final class GRPCLiveCall {
     }
 
     private func append(_ event: GRPCMessageEvent) {
-        recent.append(event)
-        recentBytes += event.json.utf8.count
+        window.append(event)
         base.duration = event.offset
-        let limit = GRPCCallRecord.eventLimit
-        guard recent.count > limit + limit / 2 || recentBytes > Self.byteLimit else {
-            return
-        }
-        // Down to the count limit, then to three quarters of the byte budget, so the next trim is far off either way.
-        var drop = max(0, recent.count - limit)
-        var bytes = recent[drop...].reduce(0) { $0 + $1.json.utf8.count }
-        while bytes > Self.byteLimit * 3 / 4, drop < recent.count - 1 {
-            bytes -= recent[drop].json.utf8.count
-            drop += 1
-        }
-        recent.removeFirst(drop)
-        recentBytes = bytes
-        trimmed += drop
     }
 
     private func exchange(_ outcome: RequestExchange.Outcome) -> RequestExchange {

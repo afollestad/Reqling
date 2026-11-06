@@ -25,7 +25,7 @@ final class RequestRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    func makeRunner(library: ProjectLibrary? = nil) -> RequestRunner {
+    func makeRunner(library: ProjectLibrary? = nil, sleep: TestSleeper = TestSleeper(returnsAtOnce: true)) -> RequestRunner {
         RequestRunner(
             library: library ?? fixture.library,
             workspace: workspace,
@@ -33,7 +33,8 @@ final class RequestRunnerTests: XCTestCase {
             keychain: EmptyKeychain(),
             pkcs12Probe: TLSFixtures.probe,
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
-            userAgent: "Reqling/1.0"
+            userAgent: "Reqling/1.0",
+            sleep: sleep.sleep
         )
     }
 
