@@ -113,6 +113,21 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertTrue(record.entries.last?.isServerPing == true, "The server's ping, answered, ends the timeline")
     }
 
+    /// Create user's scripts, run in a trusted project: the post-response script beside its run's tests, one failing.
+    func testScriptsSceneOpensCreateUsersScriptBesideItsTests() throws {
+        try ScreenshotDemoProject.seed(.scripts, into: component)
+
+        let editor = try XCTUnwrap(component.appModel.editor?.asHTTP)
+        let acme = try XCTUnwrap(component.projectLibrary.projects.first { $0.name == "Acme API" }?.id)
+        XCTAssertEqual(component.appModel.selectedNode()?.name, "Create user")
+        XCTAssertEqual(editor.tab, .scripts)
+        XCTAssertEqual(editor.scriptsEditor.phase, .postResponse)
+        XCTAssertEqual(editor.scriptsEditor.alsoRuns.map(\.title), ["Users"])
+        XCTAssertEqual(editor.response.shownTab, .tests)
+        XCTAssertEqual(editor.response.scripts?.tabTitle, "Tests 3/4")
+        XCTAssertEqual(component.workspaceState.projectState(acme).scriptTrust, .trusted)
+    }
+
     /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, and only the live scenes
     /// add Acme API's Live folder, so neither changes another capture.
     func testOtherScenesKeepStorefrontCollapsedTheInspectorClosedAndNoLiveFolder() throws {
@@ -124,6 +139,7 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertTrue(component.workspaceState.projectState(storefront).isCollapsed)
         XCTAssertFalse(component.appModel.isInspectorShown)
         XCTAssertEqual(library.document(acme)?.items.map(\.name), ["Users", "Orders", "Greeter", "Health check", "Purge cache"])
+        XCTAssertFalse(library.document(acme)?.hasScripts ?? true, "Only the scripts scene's sidebar shows script badges")
     }
 
     func testTheStorageIsWipedOnEveryLaunch() throws {

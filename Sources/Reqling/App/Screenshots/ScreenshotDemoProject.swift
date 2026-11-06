@@ -46,11 +46,19 @@ enum ScreenshotDemoProject {
                 // Below Greeter, beside the other folders.
                 try document.insert(.folder(live.folder), into: nil, at: 3)
             }
+            if scene == .scripts {
+                try ScreenshotScripts.apply(to: &document, users: requests.users, createUser: requests.createUser)
+            }
+        }
+        if scene == .scripts {
+            // Created outside Reqling's own flow, so it would otherwise ask before running them.
+            component.workspaceState.updateProject(acme) { $0.scriptTrust = .trusted }
         }
         // The live scenes open only Live, so the sidebar fits without scrolling.
         component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = live.map { [$0.folder.id] } ?? requests.expandedFolderIDs }
 
-        let acmeRuns = requests.cachedRuns + [live?.cachedRun(for: scene, startedAt: startedAt)].compactMap(\.self)
+        let scriptsRun = scene == .scripts ? ScreenshotScripts.cachedRun(of: requests.createUser, startedAt: startedAt) : nil
+        let acmeRuns = requests.cachedRuns + [live?.cachedRun(for: scene, startedAt: startedAt), scriptsRun].compactMap(\.self)
         save(acmeRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))], in: component)
 
         let shown = switch scene {
@@ -59,6 +67,7 @@ enum ScreenshotDemoProject {
         case .graphql: WorkspaceSelection(projectID: storefront, nodeID: search.id)
         case .events: WorkspaceSelection(projectID: acme, nodeID: live?.orderUpdates)
         case .websocket: WorkspaceSelection(projectID: acme, nodeID: live?.supportChat)
+        case .scripts: WorkspaceSelection(projectID: acme, nodeID: requests.createUser)
         }
         show(shown, for: scene, in: component)
         guard scene == .websocket, let editor = component.appModel.editor?.asWebSocket else {
@@ -76,7 +85,8 @@ enum ScreenshotDemoProject {
                 startedAt: startedAt,
                 environmentName: "Default",
                 request: run.sent,
-                outcome: run.outcome
+                outcome: run.outcome,
+                scriptReport: run.scriptReport
             ))
         }
     }
@@ -130,6 +140,10 @@ enum ScreenshotDemoProject {
             model.editor?.asHTTP?.tab = .headers
         case .websocket:
             model.editor?.asWebSocket?.tab = .messages
+        case .scripts:
+            model.editor?.asHTTP?.tab = .scripts
+            model.editor?.asHTTP?.scriptsEditor.phase = .postResponse
+            model.editor?.asHTTP?.response.tab = .tests
         }
     }
 }
@@ -188,6 +202,7 @@ struct CachedRun {
     let request: RequestNodeID
     let sent: ResolvedHTTPRequest?
     let outcome: RequestExchange.Outcome
+    var scriptReport: ScriptReport?
 }
 
 /// Acme API's folders and requests, and the runs cached for the ones a scene opens.
@@ -195,6 +210,8 @@ struct CachedRun {
 private struct DemoRequests {
     let getUser: RequestNodeID
     let chat: RequestNodeID
+    let users: RequestNodeID
+    let createUser: RequestNodeID
     let nodes: [RequestNode]
     let expandedFolderIDs: Set<RequestNodeID>
     let cachedRuns: [CachedRun]
@@ -202,10 +219,11 @@ private struct DemoRequests {
     init() {
         let getUser = Self.getUserRequest
         let chat = Self.grpc("Chat", method: "Chat")
+        let createUser = Self.http("Create user", .post, url: "{{baseUrl}}/users")
         let users = RequestFolder(name: "Users", auth: .bearer(token: "{{token}}"), children: [
             .request(Self.http("List users", url: "{{baseUrl}}/users")),
             .request(getUser),
-            .request(Self.http("Create user", .post, url: "{{baseUrl}}/users")),
+            .request(createUser),
             .request(Self.http("Delete user", .delete, url: "{{baseUrl}}/users/{{userId}}"))
         ])
         let orders = RequestFolder(name: "Orders", children: [
@@ -215,6 +233,8 @@ private struct DemoRequests {
         let greeter = RequestFolder(name: "Greeter", children: [.request(Self.grpc("Say hello", method: "SayHello")), .request(chat)])
         self.getUser = getUser.id
         self.chat = chat.id
+        self.users = users.id
+        self.createUser = createUser.id
         nodes = [
             .folder(users),
             .folder(orders),

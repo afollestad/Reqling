@@ -16,6 +16,44 @@ In each phase, the project's script runs first, then each folder's from the oute
 - **Runs after** lists the scripts that run before the one you're editing. Click one to open it.
 - **Run inherited scripts**, turned off on a request, runs only that request's own scripts. Turned off on a folder, it stops the scripts above that folder for every request inside it.
 
+## When scripts run
+
+- **Pre-request** scripts run before the request is resolved, so they can set the variables and headers it uses. If one throws or runs past its time limit, the request isn't sent.
+- **Post-response** scripts run once the response arrives, or once an event stream, gRPC call, or WebSocket connection ends, including when you stop it. A request that gets no response, such as one that can't connect, runs none.
+- **Previews.** Copy as cURL, GraphQL introspection, and gRPC reflection run pre-request scripts too, so they send what a run would. Nothing those scripts set is kept, and a cached schema runs none.
+
+## Writing scripts
+
+Scripts are JavaScript, with top-level `await`. Reqling's API is `rq`:
+
+```js
+// Pre-request: send a timestamp with every request.
+rq.request.headers.upsert("X-Request-Time", new Date().toISOString())
+
+// Pre-request: sign the request with an HMAC.
+const timestamp = Date.now().toString()
+rq.request.headers.upsert("X-Timestamp", timestamp)
+rq.request.headers.upsert("X-Signature", rq.crypto.hmac("sha256", rq.environment.get("apiSecret"), timestamp))
+
+// Post-response, on a login: save its token for the requests after it, which send {{token}}.
+rq.environment.set("token", rq.response.json().token, { secret: true })
+
+// Post-response: test what came back.
+rq.test("returns the user", () => {
+  rq.expect(rq.response.code).to.equal(200)
+  rq.expect(rq.response.json().name).to.be.a("string")
+})
+```
+
+`{{name}}` inside a script is plain text. Read a variable with `rq.variables.get("name")`, or resolve text the way a request does with `rq.variables.replaceIn("{{baseUrl}}/users")`.
+
+## Variables
+
+- **`rq.environment`** is the active environment, **`rq.defaultEnvironment`** the project's Default, and **`rq.globals`** Global. A value set through them is kept on this Mac as a [current value](projects.md#current-values), which overrides the saved one and never goes into the project.
+- **`rq.variables`** reads every variable as `{{name}}` resolves it. A value set through it lasts only for the run, and beats every environment's.
+- **Secrets.** Scripts can read secret values. A value set with `{ secret: true }`, under a secret variable's name, or containing another secret is masked wherever it shows, and an environment's or Global's is kept in the Keychain.
+- **Partial runs.** Values a script sets before it throws or is stopped are kept.
+
 ## Results
 
 - **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON.
@@ -30,6 +68,27 @@ In each phase, the project's script runs first, then each folder's from the oute
 - **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
 - **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of the other phase, or one of another protocol. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
+
+## Scripts from Postman
+
+Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.cookies`, `pm.vault`, `pm.iterationData`, `pm.execution`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
+
+## Trust
+
+Scripts can read a project's variables and Global's, secrets included, so a project's scripts run on this Mac only once you trust them.
+
+- **The first time** a request with scripts is sent in a project you didn't create here, Reqling lists its script files and asks. **Trust Scripts** and **Don't Run** are both remembered on this Mac.
+- **Projects you create** in Reqling, or that an agent creates through MCP, are trusted from the start.
+- **Without trust,** requests go out without their scripts, and the response says so, with a **Trust Scripts** button for the next run. Agents' runs and background schema lookups never ask; they skip the scripts.
+- **Change it** in the project's pane, under its scripts.
+
+## Libraries and limits
+
+- **Built in:** `rq.crypto` for MD5, SHA, and HMAC digests, `btoa` and `atob`, `crypto.getRandomValues` and `crypto.randomUUID`, `console`, `setTimeout`, and `setInterval`.
+- **Libraries:** crypto-js as `CryptoJS` and lodash as `_`, also through `require("crypto-js")` and `require("lodash")`.
+- **Not available:** network calls, files, and the cookie jar.
+- **Time limit.** Each phase may run for 10 seconds by default; change it in **Settings ▸ Requests**. Scripts run in a separate process, which Reqling stops at the limit.
+- **Responses** reach scripts whole, up to 64 MB.
 
 ## API reference
 

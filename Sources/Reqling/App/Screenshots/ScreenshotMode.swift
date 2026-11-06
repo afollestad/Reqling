@@ -19,6 +19,8 @@ struct ScreenshotMode {
         case events
         /// A live WebSocket connection (`ScreenshotLiveChat`): its composer, saved messages, and timeline both ways.
         case websocket
+        /// A POST's post-response script (`ScreenshotScripts`), and its run's tests, one failing, and console.
+        case scripts
     }
 
     let scene: Scene
