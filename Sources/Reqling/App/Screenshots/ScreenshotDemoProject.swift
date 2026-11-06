@@ -7,15 +7,17 @@ import ReqlingKit
 /// Storefront, holds the GraphQL scene's request and stays collapsed in every other scene, where its row still shows
 /// how many requests it holds: keep that at two, or every other capture changes.
 /// Its Live folder (`ScreenshotLiveRequests`) exists only in the scenes that open it, so it never changes the others.
-/// Every value is fixed, so the light and dark captures of a scene match and one `alt` describes both. The website's
-/// alt text (the `gh-pages` branch) describes this data, so recapture with `scripts/screenshots.sh` and update it there
-/// when it changes.
+/// Every value is fixed, so the light and dark captures of a scene match and one `alt` describes both; only the live
+/// chat's timings (`ScreenshotLiveChat`) vary. The website's alt text (the `gh-pages` branch) describes this data, so
+/// recapture with `scripts/screenshots.sh` and update it there when it changes.
 @MainActor
 enum ScreenshotDemoProject {
     /// When every cached run started; the panes show durations and offsets, never this date.
     fileprivate static let startedAt = Date(timeIntervalSince1970: 1_793_000_000)
 
-    static func seed(_ scene: ScreenshotMode.Scene, into component: AppComponent) throws {
+    /// Returns the `websocket` scene's live chat, which the caller keeps for as long as the connection should stay open.
+    @discardableResult
+    static func seed(_ scene: ScreenshotMode.Scene, into component: AppComponent) throws -> ScreenshotLiveChat? {
         let library = component.projectLibrary
         let storefront = try seedStorefront(expanded: scene == .graphql, into: component)
         let search = StorefrontSearch.request
@@ -48,19 +50,8 @@ enum ScreenshotDemoProject {
         // The live scenes open only Live, so the sidebar fits without scrolling.
         component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = live.map { [$0.folder.id] } ?? requests.expandedFolderIDs }
 
-        let history = RunHistoryStore(directory: component.storageProfile.historyDirectory)
         let acmeRuns = requests.cachedRuns + [live?.cachedRun(for: scene, startedAt: startedAt)].compactMap(\.self)
-        let runs = acmeRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))]
-        for (project, run) in runs {
-            history.save(RequestExchange(
-                projectID: project,
-                requestID: run.request,
-                startedAt: startedAt,
-                environmentName: "Default",
-                request: run.sent,
-                outcome: run.outcome
-            ))
-        }
+        save(acmeRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))], in: component)
 
         let shown = switch scene {
         case .request: WorkspaceSelection(projectID: acme, nodeID: requests.getUser)
@@ -71,6 +62,24 @@ enum ScreenshotDemoProject {
         case .websocket: WorkspaceSelection(projectID: acme, nodeID: live?.supportChat)
         }
         show(shown, for: scene, in: component)
+        guard scene == .websocket, let editor = component.appModel.editor?.asWebSocket else {
+            return nil
+        }
+        return try ScreenshotLiveChat(editor: editor, project: acme, library: library)
+    }
+
+    private static func save(_ runs: [(ProjectID, CachedRun)], in component: AppComponent) {
+        let history = RunHistoryStore(directory: component.storageProfile.historyDirectory)
+        for (project, run) in runs {
+            history.save(RequestExchange(
+                projectID: project,
+                requestID: run.request,
+                startedAt: startedAt,
+                environmentName: "Default",
+                request: run.sent,
+                outcome: run.outcome
+            ))
+        }
     }
 
     private static func show(_ shown: WorkspaceSelection, for scene: ScreenshotMode.Scene, in component: AppComponent) {

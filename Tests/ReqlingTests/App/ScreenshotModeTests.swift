@@ -4,7 +4,8 @@ import XCTest
 @testable import Reqling
 
 /// Screenshot mode only runs from `scripts/screenshots.sh`, so these keep its seeding from breaking unnoticed: each
-/// scene opens its request with a cached run, on the tabs the website's captures show.
+/// scene opens its request with a cached run, or the `websocket` scene with a live one, on the tabs the website's
+/// captures show.
 @MainActor
 final class ScreenshotModeTests: XCTestCase {
     private var profile: AppStorageProfile!
@@ -87,14 +88,39 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertEqual(editor.response.exchange?.response?.eventStream?.entries.count, 3)
     }
 
-    func testWebSocketSceneOpensTheConnectionWithItsTimeline() throws {
-        try ScreenshotDemoProject.seed(.websocket, into: component)
-
+    /// The chat runs for real against its loopback server, so this proves the capture shows an open connection with
+    /// every step of the conversation, the token masked.
+    func testWebSocketSceneHoldsALiveConversation() async throws {
+        let chat = try XCTUnwrap(try ScreenshotDemoProject.seed(.websocket, into: component))
+        defer { chat.stop() }
         let editor = try XCTUnwrap(component.appModel.editor?.asWebSocket)
+        defer { editor.cancel() }
+        let finished = expectation(description: "the chat's last step")
+        Task {
+            do {
+                try await chat.script?.value
+            } catch {
+                XCTFail("The chat stopped: \(error)")
+            }
+            finished.fulfill()
+        }
+        await fulfillment(of: [finished], timeout: 30)
+
         XCTAssertEqual(component.appModel.selectedNode()?.name, "Support chat")
         XCTAssertEqual(editor.tab, .messages)
-        XCTAssertEqual(editor.response.record?.close?.code, 1000)
-        XCTAssertEqual(editor.response.record?.subprotocol, "chat.v2")
+        XCTAssertTrue(editor.isOpen)
+        XCTAssertEqual(editor.liveMessage.text, ScreenshotLiveChat.draft)
+        let record = try XCTUnwrap(editor.response.record)
+        XCTAssertEqual(record.subprotocol, "chat.v2")
+        let messages = record.entries.compactMap(\.message)
+        XCTAssertEqual(messages.map(\.direction), [.sent, .received, .sent, .received])
+        XCTAssertEqual(messages.map(\.text), [
+            "{\n  \"type\": \"auth\",\n  \"token\": \"••••••\"\n}",
+            ScreenshotLiveChat.replies[0],
+            "Where's order 1041?",
+            ScreenshotLiveChat.replies[1]
+        ])
+        XCTAssertTrue(record.entries.last?.isServerPing == true, "The server's ping, answered, ends the timeline")
     }
 
     /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, and only the live scenes

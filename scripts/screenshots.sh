@@ -92,7 +92,26 @@ trap cleanup EXIT
 rm -rf "$work_dir"
 mkdir -p "$work_dir/frames" "$output_dir"
 xcrun swiftc -O "$repo_root/scripts/lib/screenshot-window.swift" -o "$work_dir/screenshot-window"
+xcrun swiftc -O "$repo_root/scripts/lib/screenshot-diff.swift" -o "$work_dir/screenshot-diff"
 helper="$work_dir/screenshot-window"
+differ="$work_dir/screenshot-diff"
+
+# The widest a live indicator may be, in pixels at 2x: a spinner (16pt) with room to spare, and far smaller than any
+# change while the window settles.
+spot_limit=48
+
+# Succeeds when `$1` and `$2`, two `screenshot-diff` boxes in a row, both fall inside one spot no wider or taller than
+# `spot_limit`: something animating in place, like a spinner, rather than a one-off change, which never repeats there.
+is_spot() {
+  local ax ay aw ah bx by bw bh
+  case "$1$2" in *same*|*resized*) return 1 ;; esac
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  read -r ax ay aw ah <<<"$1"
+  read -r bx by bw bh <<<"$2"
+  local left=$((ax < bx ? ax : bx)) top=$((ay < by ? ay : by))
+  local right=$((ax + aw > bx + bw ? ax + aw : bx + bw)) bottom=$((ay + ah > by + bh ? ay + ah : by + bh))
+  [ $((right - left)) -le "$spot_limit" ] && [ $((bottom - top)) -le "$spot_limit" ]
+}
 
 # A copy under its own bundle identifier keeps its window frame and saved state out of the dev build's preferences.
 # Re-identifying breaks the signature, so it is signed again ad hoc; screenshot mode never reaches the Keychain.
@@ -119,12 +138,13 @@ wait_for_window() {
 }
 
 # Captures process `$1`'s main window to `$2` once it stops changing: two frames a second apart that match, at the same
-# width. The window still grows to its default size after it first appears, so it is looked up again for every frame.
-# Prints the window's final width in points. Gives up after 30 seconds.
+# width, or that differ only where something animates in place (`is_spot`), as a live connection's spinner does. The
+# window still grows to its default size after it first appears, so it is looked up again for every frame. Prints the
+# window's final width in points. Gives up after 30 seconds.
 capture_settled() {
   local pid=$1 destination=$2
   local previous="$work_dir/frames/previous.png" current="$work_dir/frames/current.png"
-  local attempt window previous_window="" window_id width
+  local attempt window previous_window="" window_id width difference previous_difference=""
   for attempt in $(seq 1 30); do
     sleep 1
     # Checked explicitly: this runs inside `$(...)`, where bash 3.2 ignores `set -e`.
@@ -137,11 +157,18 @@ capture_settled() {
       echo "error: screencapture failed; give the terminal Screen Recording access" >&2
       return 1
     fi
-    if [ "$window" = "$previous_window" ] && cmp -s "$previous" "$current"; then
-      mv "$current" "$destination"
-      echo "$width"
-      return 0
+    difference=""
+    if [ "$window" = "$previous_window" ]; then
+      if ! difference=$("$differ" "$previous" "$current"); then
+        return 1
+      fi
+      if [ "$difference" = same ] || is_spot "$difference" "$previous_difference"; then
+        mv "$current" "$destination"
+        echo "$width"
+        return 0
+      fi
     fi
+    previous_difference=$difference
     mv "$current" "$previous"
     previous_window=$window
   done

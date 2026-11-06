@@ -3,9 +3,9 @@ import Foundation
 import ReqlingKit
 
 /// Acme API's Live folder, which only the `events` and `websocket` scenes seed, so every other capture keeps its
-/// sidebar: an event stream of order updates, and a WebSocket support chat, each with a cached run. Byte counts are
-/// real (each entry's data, and the stream's total as it would arrive on the wire), and offsets are fixed, so both
-/// appearances match one `alt`.
+/// sidebar: an event stream of order updates with a cached run, and a WebSocket support chat that
+/// `ScreenshotLiveChat` connects live. The stream's byte counts are real (each entry's data, and the total as it would
+/// arrive on the wire), and its offsets are fixed, so both appearances match one `alt`.
 @MainActor
 struct ScreenshotLiveRequests {
     let folder: RequestFolder
@@ -19,7 +19,9 @@ struct ScreenshotLiveRequests {
             headers: [KeyValuePair(key: "Accept", value: "text/event-stream")]
         )))
         let supportChat = RequestItem(name: "Support chat", kind: .webSocket(WebSocketRequestSpec(
-            url: "wss://api.acme.dev/support",
+            // Like Acme API's other requests; `ScreenshotLiveChat` points `baseUrl` at its loopback server, and an
+            // http(s) URL connects as ws(s).
+            url: "{{baseUrl}}/support",
             subprotocols: ["chat.v2"],
             messages: [
                 WebSocketMessage(text: "{\n  \"type\": \"auth\",\n  \"token\": \"{{token}}\"\n}"),
@@ -31,18 +33,14 @@ struct ScreenshotLiveRequests {
         self.supportChat = supportChat.id
     }
 
-    /// The run the scene opens, cached as if it had just finished.
+    /// The run the scene opens, cached as if it had just finished; the WebSocket's is live instead.
     func cachedRun(for scene: ScreenshotMode.Scene, startedAt: Date) -> CachedRun? {
         switch scene {
         case .events:
             let url = "https://api.acme.dev/orders/stream?status=open"
             let sent = ResolvedHTTPRequest(method: "GET", url: url, headers: [], bodyPreview: nil, bodyByteCount: 0)
             return CachedRun(request: orderUpdates, sent: sent, outcome: .response(Self.orderStream(url: url, startedAt: startedAt)))
-        case .websocket:
-            let url = "wss://api.acme.dev/support"
-            let sent = ResolvedHTTPRequest(method: "GET", url: url, headers: [], bodyPreview: nil, bodyByteCount: 0)
-            return CachedRun(request: supportChat, sent: sent, outcome: .webSocket(Self.chatRecord(url: url, startedAt: startedAt)))
-        case .request, .body, .grpc, .graphql:
+        case .request, .body, .grpc, .graphql, .websocket:
             return nil
         }
     }
@@ -79,46 +77,6 @@ struct ScreenshotLiveRequests {
             end: .stopped
         )
         return response
-    }
-
-    private static func chatRecord(url: String, startedAt: Date) -> WebSocketRecord {
-        func message(_ sequence: Int, _ offset: TimeInterval, _ direction: MessageDirection, _ text: String) -> WebSocketEntry {
-            WebSocketEntry(
-                sequence: sequence,
-                offset: offset,
-                kind: .message(WebSocketMessageRecord(direction: direction, format: .text, text: text)),
-                byteCount: text.utf8.count
-            )
-        }
-        var record = WebSocketRecord(
-            url: url,
-            subprotocol: "chat.v2",
-            // Plain-text chat after the JSON auth, one row each, so the whole timeline fits the pane.
-            entries: [
-                message(0, 0.052, .sent, "{\n  \"type\": \"auth\",\n  \"token\": \"••••••\"\n}"),
-                message(1, 0.067, .received, "Hi Grace, Ada here. How can I help?"),
-                message(2, 3.12, .sent, "Where's order 1041?"),
-                message(3, 5.48, .received, "It ships today, tracking to follow."),
-                WebSocketEntry(sequence: 4, offset: 15.0, kind: .control(direction: .received, text: "Ping from the server, answered with a pong")),
-                WebSocketEntry(sequence: 5, offset: 18.3, kind: .control(direction: .sent, text: "Close 1000 Normal Closure")),
-                WebSocketEntry(sequence: 6, offset: 18.31, kind: .control(direction: .received, text: "Close 1000 Normal Closure"))
-            ],
-            close: WebSocketRecord.Close(code: 1000, byServer: false),
-            end: .stopped,
-            duration: 18.31
-        )
-        record.handshake = HTTPResponseRecord(
-            statusCode: 101,
-            headers: [KeyValuePair(key: "Upgrade", value: "websocket"), KeyValuePair(key: "Sec-WebSocket-Protocol", value: "chat.v2")],
-            body: Data(),
-            url: url,
-            startedAt: startedAt,
-            duration: 0.049,
-            timing: HTTPTiming(connect: 0.011, tlsHandshake: 0.021, waiting: 0.017),
-            protocolName: "http/1.1",
-            tlsVersion: "TLS 1.3"
-        )
-        return record
     }
 }
 #endif

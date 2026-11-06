@@ -19,12 +19,15 @@ struct ScreenshotMode {
         case graphql
         /// A GET whose response is an event stream, and its events as a tree.
         case events
-        /// A WebSocket's saved messages, and its connection's timeline both ways.
+        /// A live WebSocket connection (`ScreenshotLiveChat`): its composer, saved messages, and timeline both ways.
         case websocket
     }
 
     let scene: Scene
     let theme: AppTheme
+
+    /// The `websocket` scene's chat, kept for the whole run so its connection stays open until the capture.
+    @MainActor private static var liveChat: ScreenshotLiveChat?
 
     /// `nil` for an ordinary launch. Read once, so `AppDI` and the window agree for the whole run; launch arguments
     /// land in `UserDefaults`' argument domain.
@@ -48,9 +51,18 @@ struct ScreenshotMode {
             settings.checksForUpdatesAutomatically = false
         }
         do {
-            try ScreenshotDemoProject.seed(scene, into: component)
+            Self.liveChat = try ScreenshotDemoProject.seed(scene, into: component)
         } catch {
             fatalError("Couldn't seed the screenshot demo project: \(error)")
+        }
+        if let script = Self.liveChat?.script {
+            Task {
+                do {
+                    try await script.value
+                } catch {
+                    fatalError("Couldn't run the screenshot chat: \(error)")
+                }
+            }
         }
         return component
     }
