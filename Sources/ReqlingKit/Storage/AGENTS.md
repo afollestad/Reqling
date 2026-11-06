@@ -8,4 +8,5 @@ These instructions cover `Sources/ReqlingKit/Storage/`: the on-disk project form
 - Keep per-user state (active environment, expansion, selection, run history, current values) out of project folders, so using the app never shows up in `git status`.
 - **Write current values only through `CurrentValueStore`.** Saved-value edits drop them inside `mutate` and `mutateGlobalEnvironment` (`ProjectLibrary+CurrentValues.swift`); never drop them on `reload`, or a `git pull` would discard what scripts set.
 - **Deletes go to the Trash** through `FileTrashing`, never `removeItem`.
+- **Move, trash, and reserve a request's script files with its JSON** (`ProjectWriter+Scripts.swift`); any code that relocates a request file outside `ProjectWriter+Moves.swift` must carry them, or they orphan and reserve the slug.
 - **Refuse to save a newer `formatVersion`.** Such a project opens read-only; rewriting it would drop fields this version does not understand. Bump `ProjectDocument.currentFormatVersion` only with a reader that still loads every older version.

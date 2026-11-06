@@ -5,8 +5,8 @@ import XCTest
 
 @MainActor
 final class MCPRequestToolsTests: XCTestCase {
-    private var fixture: MCPFixture!
-    private var project: ProjectID!
+    var fixture: MCPFixture!
+    var project: ProjectID!
 
     override func setUp() async throws {
         fixture = try MCPFixture()
@@ -17,11 +17,11 @@ final class MCPRequestToolsTests: XCTestCase {
         fixture.cleanUp()
     }
 
-    private var projectArgument: Value {
+    var projectArgument: Value {
         .string(project.description)
     }
 
-    private func create(_ name: String, _ spec: Value? = nil, folder: String? = nil) async throws -> String {
+    func create(_ name: String, _ spec: Value? = nil, folder: String? = nil) async throws -> String {
         var arguments: [String: Value] = ["project": projectArgument, "name": .string(name)]
         arguments["http"] = spec
         arguments["folder"] = folder.map(Value.string)

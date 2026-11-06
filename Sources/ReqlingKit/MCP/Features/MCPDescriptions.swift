@@ -95,6 +95,8 @@ enum MCPDescriptions {
         guard case .object(var description) = try MCPJSON.encode(request) else {
             return [:]
         }
+        description["scripts"] = MCPScripts.describe(request.scripts)
+        description["inheritScripts"] = .bool(request.runsInheritedScripts)
         description["folderPath"] = .array(document.ancestors(of: request.id).map { Value.string($0.name) })
         description["parentFolder"] = document.parentID(of: request.id).map { .string($0.description) } ?? .null
         return description
@@ -107,13 +109,20 @@ enum MCPDescriptions {
             case .request(let request):
                 return requestSummary(request, folderPath: path)
             case .folder(let folder):
-                return [
+                var description: [String: Value] = [
                     "id": .string(folder.id.description),
                     "name": .string(folder.name),
                     "kind": "folder",
                     "auth": (try? MCPJSON.encode(folder.auth)) ?? .null,
                     "children": tree(folder.children, path: path + [folder.name])
                 ]
+                if !folder.scripts.isEmpty {
+                    description["scripts"] = MCPScripts.describe(folder.scripts)
+                }
+                if !folder.runsInheritedScripts {
+                    description["inheritScripts"] = false
+                }
+                return .object(description)
             }
         })
     }

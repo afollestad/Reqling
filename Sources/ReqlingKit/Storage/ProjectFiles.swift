@@ -4,12 +4,16 @@ import Foundation
 ///
 ///     <Name>.reqling/
 ///       project.json
+///       project.pre.js, project.post.js          (scripts, when not empty)
 ///       environments/default.json   (always present)
 ///       environments/<slug>.json
 ///       requests/<folder-slug>/_folder.json
+///       requests/<folder-slug>/_folder.pre.js     (and .post.js)
 ///       requests/**/<slug>.json
+///       requests/**/<slug>.pre.js                 (and .post.js)
 ///
-/// Paths in `ProjectDiskIndex` are relative to the project folder and use `/`.
+/// A script travels with the file it sits beside: renamed, moved, and trashed with it. Paths in `ProjectDiskIndex` are
+/// relative to the project folder and use `/`.
 enum ProjectLayout {
     static let projectFile = "project.json"
     static let environmentsDirectory = "environments"
@@ -27,6 +31,41 @@ enum ProjectLayout {
 
     static func join(_ parent: String, _ name: String) -> String {
         parent.isEmpty ? name : "\(parent)/\(name)"
+    }
+
+    static let scriptExtension = "js"
+
+    /// The project's script file for `phase`, beside `project.json`.
+    static func projectScriptPath(_ phase: ScriptPhase) -> String {
+        "project.\(phase.fileSuffix).\(scriptExtension)"
+    }
+
+    /// A request's script file for `phase`: `list-users.pre.js` beside `list-users.json`.
+    static func scriptPath(forRequestAt path: String, _ phase: ScriptPhase) -> String {
+        let jsonSuffix = ".\(jsonExtension)"
+        let stem = path.hasSuffix(jsonSuffix) ? String(path.dropLast(jsonSuffix.count)) : path
+        return "\(stem).\(phase.fileSuffix).\(scriptExtension)"
+    }
+
+    /// A folder's script file for `phase`, inside it beside `_folder.json`.
+    static func scriptPath(forFolderAt path: String, _ phase: ScriptPhase) -> String {
+        join(path, folderScriptName(phase))
+    }
+
+    static func folderScriptName(_ phase: ScriptPhase) -> String {
+        "_folder.\(phase.fileSuffix).\(scriptExtension)"
+    }
+
+    /// The slug and phase a request's script file name belongs to (`list-users.pre.js` → `list-users`, pre-request);
+    /// `nil` for any other name.
+    static func scriptOwner(ofFileNamed name: String) -> (slug: String, phase: ScriptPhase)? {
+        for phase in ScriptPhase.allCases {
+            let suffix = ".\(phase.fileSuffix).\(scriptExtension)"
+            if name.hasSuffix(suffix), name.count > suffix.count {
+                return (String(name.dropLast(suffix.count)), phase)
+            }
+        }
+        return nil
     }
 }
 
@@ -109,12 +148,14 @@ struct FolderFile: Codable, Equatable {
     /// Slugs of the children, in display order.
     var order: [String]
     var auth: HTTPAuth
+    var inheritScripts: Bool
 
-    init(id: RequestNodeID, name: String, order: [String], auth: HTTPAuth) {
+    init(id: RequestNodeID, name: String, order: [String], auth: HTTPAuth, inheritScripts: Bool = true) {
         self.id = id
         self.name = name
         self.order = order
         self.auth = auth
+        self.inheritScripts = inheritScripts
     }
 
     init(from decoder: any Decoder) throws {
@@ -123,6 +164,19 @@ struct FolderFile: Codable, Equatable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         order = try container.decodeIfPresent([String].self, forKey: .order) ?? []
         auth = try container.decodeIfPresent(HTTPAuth.self, forKey: .auth) ?? .inherit
+        inheritScripts = try container.decodeIfPresent(Bool.self, forKey: .inheritScripts) ?? true
+    }
+
+    /// `inheritScripts` is written only when off, so folder files from before scripts stay byte for byte the same.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(order, forKey: .order)
+        try container.encode(auth, forKey: .auth)
+        if !inheritScripts {
+            try container.encode(false, forKey: .inheritScripts)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -130,6 +184,7 @@ struct FolderFile: Codable, Equatable {
         case name
         case order
         case auth
+        case inheritScripts
     }
 }
 

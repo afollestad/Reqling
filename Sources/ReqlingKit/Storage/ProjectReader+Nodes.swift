@@ -13,6 +13,7 @@ extension ProjectReader {
         let statedID: RequestNodeID?
         let rank: NodeRank
         let item: RequestItem
+        let scripts: ScriptSet
     }
 
     struct LoadedFolder {
@@ -20,6 +21,7 @@ extension ProjectReader {
         let statedID: RequestNodeID?
         let rank: NodeRank
         let file: FolderFile
+        let scripts: ScriptSet
         let children: [LoadedNode]
     }
 
@@ -31,8 +33,13 @@ extension ProjectReader {
         return loadChildren(named: names, in: directory, order: order, state: &state)
     }
 
+    /// A request's scripts are paired with it only when its JSON loads; any other script file is left untracked, which
+    /// reserves its name (`ProjectSaveLayout`) so no new item adopts it.
     private func loadChildren(named names: [String], in directory: String, order: [String], state: inout ReadState) -> [LoadedNode] {
         var loaded: [(slug: String, node: LoadedNode)] = []
+        let siblings = Set(names)
+        var paired: Set<String> = []
+        var scripts: [String] = []
         for name in names {
             let path = ProjectLayout.join(directory, name)
             if name == ProjectLayout.folderFile {
@@ -43,12 +50,17 @@ extension ProjectReader {
                 }
             } else if name.hasSuffix(".\(ProjectLayout.jsonExtension)") {
                 let slug = String(name.dropLast(ProjectLayout.jsonExtension.count + 1))
-                if let request = loadRequest(path: path, isListed: order.contains(slug), state: &state) {
+                if let request = loadRequest(path: path, isListed: order.contains(slug), siblings: siblings, paired: &paired, state: &state) {
                     loaded.append((slug, .request(request)))
                 }
+            } else if ProjectLayout.scriptOwner(ofFileNamed: name) != nil {
+                scripts.append(name)
             } else {
                 state.index.untrackedPaths.insert(path)
             }
+        }
+        for name in scripts where !paired.contains(name) {
+            state.index.untrackedPaths.insert(ProjectLayout.join(directory, name))
         }
         return loaded.sorted { lhs, rhs in
             let lhsIndex = order.firstIndex(of: lhs.slug) ?? Int.max
@@ -89,11 +101,22 @@ extension ProjectReader {
             return nil
         }
         let rank = state.nodeRank(statedID: statedID, path: path, name: folderFile.name, isFolder: true, isListed: isListed)
-        let children = loadChildren(named: names, in: path, order: folderFile.order, state: &state)
-        return LoadedFolder(path: path, statedID: statedID, rank: rank, file: folderFile, children: children)
+        var scripts = ScriptSet()
+        for phase in ScriptPhase.allCases where names.contains(ProjectLayout.folderScriptName(phase)) {
+            scripts[phase] = readScript(ProjectLayout.scriptPath(forFolderAt: path, phase), state: &state)
+        }
+        let folderScripts = Set(ScriptPhase.allCases.map(ProjectLayout.folderScriptName))
+        let children = loadChildren(named: names.filter { !folderScripts.contains($0) }, in: path, order: folderFile.order, state: &state)
+        return LoadedFolder(path: path, statedID: statedID, rank: rank, file: folderFile, scripts: scripts, children: children)
     }
 
-    private func loadRequest(path: String, isListed: Bool, state: inout ReadState) -> LoadedRequest? {
+    private func loadRequest(
+        path: String,
+        isListed: Bool,
+        siblings: Set<String>,
+        paired: inout Set<String>,
+        state: inout ReadState
+    ) -> LoadedRequest? {
         guard let data = readTrackedFile(path, state: &state) else {
             return nil
         }
@@ -104,11 +127,21 @@ extension ProjectReader {
         }
         let statedID = (try? ProjectJSON.decode(IDProbe.self, from: data))?.id == nil ? nil : item.id
         state.cache(path, raw: data, decoded: item)
+        var scripts = ScriptSet()
+        for phase in ScriptPhase.allCases {
+            let scriptPath = ProjectLayout.scriptPath(forRequestAt: path, phase)
+            let name = (scriptPath as NSString).lastPathComponent
+            if siblings.contains(name) {
+                paired.insert(name)
+                scripts[phase] = readScript(scriptPath, state: &state)
+            }
+        }
         return LoadedRequest(
             path: path,
             statedID: statedID,
             rank: state.nodeRank(statedID: statedID, path: path, name: item.name, isFolder: false, isListed: isListed),
-            item: item
+            item: item,
+            scripts: scripts
         )
     }
 
@@ -172,7 +205,13 @@ extension ProjectReader {
                     state.issues.append(ProjectLoadIssue(path: loaded.path, message: "A duplicate request ID was replaced."))
                 }
                 state.index.nodePaths[id] = loaded.path
-                result.append(.request(RequestItem(id: id, name: loaded.item.name, kind: loaded.item.kind)))
+                result.append(.request(RequestItem(
+                    id: id,
+                    name: loaded.item.name,
+                    kind: loaded.item.kind,
+                    scripts: loaded.scripts,
+                    runsInheritedScripts: loaded.item.runsInheritedScripts
+                )))
             case .folder(let loaded):
                 let id = settled.id(for: loaded.path)
                 if settled.replaced.contains(loaded.path) {
@@ -181,7 +220,14 @@ extension ProjectReader {
                 }
                 state.index.nodePaths[id] = loaded.path
                 let children = build(loaded.children, settled: settled, state: &state)
-                result.append(.folder(RequestFolder(id: id, name: loaded.file.name, auth: loaded.file.auth, children: children)))
+                result.append(.folder(RequestFolder(
+                    id: id,
+                    name: loaded.file.name,
+                    auth: loaded.file.auth,
+                    scripts: loaded.scripts,
+                    runsInheritedScripts: loaded.file.inheritScripts,
+                    children: children
+                )))
             }
         }
         return result

@@ -41,6 +41,10 @@ struct ProjectReader {
         state.cache(ProjectLayout.projectFile, raw: projectData, decoded: projectFile)
         state.index.orders[ProjectLayout.requestsDirectory] = projectFile.rootOrder
 
+        var projectScripts = ScriptSet()
+        for phase in ScriptPhase.allCases {
+            projectScripts[phase] = readScript(ProjectLayout.projectScriptPath(phase), state: &state)
+        }
         let storedEnvironments = loadEnvironments(in: ProjectLayout.environmentsDirectory, state: &state)
         let storedNodes = loadChildren(directory: ProjectLayout.requestsDirectory, order: projectFile.rootOrder, state: &state) ?? []
         let scratch = loadScratch(state: &state)
@@ -58,6 +62,7 @@ struct ProjectReader {
             auth: projectFile.auth,
             tls: projectFile.tls,
             grpc: projectFile.grpc,
+            scripts: projectScripts,
             defaultEnvironment: environments.defaultEnvironment,
             environments: environments.others,
             items: settleNodes(storedNodes + scratch.nodes, state: &state)
@@ -224,6 +229,23 @@ struct ProjectReader {
             state.issues.append(ProjectLoadIssue(path: path, message: "This file could not be read."))
             return nil
         }
+    }
+
+    /// A script file's text, or `""` when there is none. One that can't be read, or isn't UTF-8, is untracked with an
+    /// issue, so a save refuses to write over it rather than replace what Reqling couldn't show. Its bytes are cached
+    /// as they are, since a script's encoding is its text: it round-trips byte for byte.
+    func readScript(_ path: String, state: inout ReadState) -> String {
+        guard let data = readTrackedFile(path, state: &state) else {
+            return ""
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            state.index.untrackedPaths.insert(path)
+            state.issues.append(ProjectLoadIssue(path: path, message: "This script isn't UTF-8 text, so Reqling leaves it alone."))
+            return ""
+        }
+        state.index.diskContents[path] = data
+        state.index.contents[path] = data
+        return text
     }
 
     /// The visible entries of `relativeDirectory`, sorted; empty when it does not exist, and `nil` (with the

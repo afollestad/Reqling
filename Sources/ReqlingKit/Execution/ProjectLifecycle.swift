@@ -92,9 +92,20 @@ extension RequestNode {
     public func copy(named name: String? = nil) -> RequestNode {
         switch self {
         case .request(let request):
-            return .request(RequestItem(name: name ?? request.name, kind: request.kind))
+            return .request(RequestItem(
+                name: name ?? request.name,
+                kind: request.kind,
+                scripts: request.scripts,
+                runsInheritedScripts: request.runsInheritedScripts
+            ))
         case .folder(let folder):
-            return .folder(RequestFolder(name: name ?? folder.name, auth: folder.auth, children: folder.children.map { $0.copy() }))
+            return .folder(RequestFolder(
+                name: name ?? folder.name,
+                auth: folder.auth,
+                scripts: folder.scripts,
+                runsInheritedScripts: folder.runsInheritedScripts,
+                children: folder.children.map { $0.copy() }
+            ))
         }
     }
 }

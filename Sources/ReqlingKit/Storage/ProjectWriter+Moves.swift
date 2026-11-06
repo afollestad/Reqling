@@ -69,6 +69,10 @@ extension ProjectWriter {
             if exists(path) {
                 try trasher.trash(url(path))
             }
+            for script in Self.scriptPaths(ofRequestAt: path, phases: live.scripts[id]) where exists(script) {
+                try trasher.trash(url(script))
+            }
+            live.scripts[id] = nil
             let prefix = path + "/"
             live.nodes = live.nodes.filter { $0.value != path && !$0.value.hasPrefix(prefix) }
         }
@@ -137,9 +141,17 @@ extension ProjectWriter {
         }
     }
 
-    /// Moves a file or folder and re-points every live node path beneath it.
+    /// Moves a file or folder, a request's scripts with it, and re-points every live node path beneath it.
     private func move(_ source: String, to destination: String, live: inout LivePaths) throws {
         try fileManager.moveItem(at: url(source), to: url(destination))
+        if let id = live.nodes.first(where: { $0.value == source })?.key {
+            for phase in live.scripts[id] ?? [] {
+                let script = ProjectLayout.scriptPath(forRequestAt: source, phase)
+                if exists(script) {
+                    try fileManager.moveItem(at: url(script), to: url(ProjectLayout.scriptPath(forRequestAt: destination, phase)))
+                }
+            }
+        }
         let prefix = source + "/"
         live.nodes = live.nodes.mapValues { path in
             if path == source {
@@ -157,13 +169,21 @@ extension ProjectWriter {
         live.environments[id] = destination
     }
 
-    /// `name`, or `<stem>-2.<ext>` and so on when it is taken.
+    /// `name`, or `<stem>-2.<ext>` and so on when it, or a request's script file beside it, is taken.
     private func availableName(_ name: String, in directory: String) -> String {
         let stem = (name as NSString).deletingPathExtension
         let pathExtension = (name as NSString).pathExtension
+        func isTaken(_ candidate: String) -> Bool {
+            let path = ProjectLayout.join(directory, candidate)
+            guard !exists(path) else {
+                return true
+            }
+            return pathExtension == ProjectLayout.jsonExtension
+                && ScriptPhase.allCases.contains { exists(ProjectLayout.scriptPath(forRequestAt: path, $0)) }
+        }
         var candidate = name
         var suffix = 2
-        while exists(ProjectLayout.join(directory, candidate)) {
+        while isTaken(candidate) {
             candidate = pathExtension.isEmpty ? "\(stem)-\(suffix)" : "\(stem)-\(suffix).\(pathExtension)"
             suffix += 1
         }

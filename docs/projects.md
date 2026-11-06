@@ -5,11 +5,15 @@ A project is a folder of small JSON files, so it diffs cleanly and can live in y
 ```
 My API.reqling/
   project.json
+  project.pre.js
   environments/default.json
   environments/staging.json
   requests/users/_folder.json
   requests/users/list-users.json
+  requests/users/list-users.post.js
 ```
+
+Scripts sit beside the file they belong to, as `.pre.js` (before the request) and `.post.js` (after the response), and move with it when it's renamed or moved.
 
 ## Working with projects
 

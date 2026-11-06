@@ -3,16 +3,30 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
     public let id: RequestNodeID
     public var name: String
     public var kind: RequestKind
+    /// Not coded: the reader and writer keep them in `.js` files beside the request's JSON. Here rather than on the
+    /// spec, so they survive a switch of protocol.
+    public var scripts: ScriptSet
+    /// Whether the scripts of enclosing folders and the project run around this request's own.
+    public var runsInheritedScripts: Bool
 
-    public init(id: RequestNodeID = RequestNodeID(), name: String, kind: RequestKind) {
+    public init(
+        id: RequestNodeID = RequestNodeID(),
+        name: String,
+        kind: RequestKind,
+        scripts: ScriptSet = ScriptSet(),
+        runsInheritedScripts: Bool = true
+    ) {
         self.id = id
         self.name = name
         self.kind = kind
+        self.scripts = scripts
+        self.runsInheritedScripts = runsInheritedScripts
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case name
+        case inheritScripts
     }
 
     /// The kind's keys sit beside `id` and `name` (`RequestKind`'s coding), so a request file stays one flat object.
@@ -21,12 +35,18 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
         id = try container.decodeIfPresent(RequestNodeID.self, forKey: .id) ?? RequestNodeID()
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         kind = try RequestKind(from: decoder)
+        scripts = ScriptSet()
+        runsInheritedScripts = try container.decodeIfPresent(Bool.self, forKey: .inheritScripts) ?? true
     }
 
+    /// `inheritScripts` is written only when off, so request files from before scripts stay byte for byte the same.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+        if !runsInheritedScripts {
+            try container.encode(false, forKey: .inheritScripts)
+        }
         try kind.encode(to: encoder)
     }
 }
@@ -121,17 +141,30 @@ extension RequestKind: Codable {
     }
 }
 
-/// A folder of requests and subfolders. Its `auth` applies to descendants that inherit.
+/// A folder of requests and subfolders. Its `auth` applies to descendants that inherit, and its scripts run around
+/// theirs.
 public struct RequestFolder: Hashable, Sendable, Identifiable {
     public let id: RequestNodeID
     public var name: String
     public var auth: HTTPAuth
+    public var scripts: ScriptSet
+    /// Whether the scripts of enclosing folders and the project run around this folder's and its descendants'.
+    public var runsInheritedScripts: Bool
     public var children: [RequestNode]
 
-    public init(id: RequestNodeID = RequestNodeID(), name: String, auth: HTTPAuth = .inherit, children: [RequestNode] = []) {
+    public init(
+        id: RequestNodeID = RequestNodeID(),
+        name: String,
+        auth: HTTPAuth = .inherit,
+        scripts: ScriptSet = ScriptSet(),
+        runsInheritedScripts: Bool = true,
+        children: [RequestNode] = []
+    ) {
         self.id = id
         self.name = name
         self.auth = auth
+        self.scripts = scripts
+        self.runsInheritedScripts = runsInheritedScripts
         self.children = children
     }
 }

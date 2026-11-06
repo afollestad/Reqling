@@ -160,12 +160,20 @@ struct ProjectSaveLayout {
 
     /// Reservations for the unreadable entries directly inside `directory`: lower-cased and without a `.json`
     /// extension, so neither a request (`<slug>.json`) nor a folder (`<slug>`) can take a name that resolves to one.
+    /// A script file left untracked reserves the slug it would belong to, so no new request adopts it, unless the
+    /// request with that slug is tracked: that one keeps its name.
     private func untrackedNames(in directory: String) -> Set<String> {
         let jsonSuffix = ".\(ProjectLayout.jsonExtension)"
+        let requestSlugs = Set(previous.nodePaths.values
+            .filter { ($0 as NSString).deletingLastPathComponent == directory && $0.hasSuffix(jsonSuffix) }
+            .map { Self.slug(ofPath: $0).lowercased() })
         return Set(previous.untrackedPaths
             .filter { ($0 as NSString).deletingLastPathComponent == directory }
-            .map { path in
+            .compactMap { path in
                 let name = (path as NSString).lastPathComponent.lowercased()
+                if let owner = ProjectLayout.scriptOwner(ofFileNamed: name) {
+                    return requestSlugs.contains(owner.slug) ? nil : owner.slug
+                }
                 return name.hasSuffix(jsonSuffix) ? String(name.dropLast(jsonSuffix.count)) : name
             })
     }

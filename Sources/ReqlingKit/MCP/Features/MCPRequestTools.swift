@@ -68,7 +68,8 @@ struct MCPRequestTools {
         MCPTool(
             "get_request",
             title: "Get request",
-            description: "A saved request's whole spec, `{{variables}}` unresolved, in the JSON create_request and update_request take.",
+            description: "A saved request's whole spec, `{{variables}}` unresolved, in the JSON create_request and update_request take, "
+                + "with its scripts.",
             properties: ["project": MCPSchema.project, "request": MCPSchema.request],
             required: ["project", "request"],
             annotations: .read
@@ -93,6 +94,8 @@ struct MCPRequestTools {
                 "http": Self.httpSpecSchema,
                 "grpc": Self.grpcSpecSchema,
                 "websocket": Self.webSocketSpecSchema,
+                "scripts": MCPScripts.schema,
+                "inheritScripts": MCPScripts.inheritSchema,
                 "folder": MCPSchema.folder,
                 "index": MCPSchema.index
             ],
@@ -101,7 +104,9 @@ struct MCPRequestTools {
         ) { arguments in
             let (project, document) = try context.document(try arguments.string("project"))
             let kind = try Self.kind(from: arguments)
-            let request = RequestItem(name: try arguments.string("name"), kind: kind)
+            var request = RequestItem(name: try arguments.string("name"), kind: kind)
+            try MCPScripts.apply(arguments, to: &request.scripts)
+            request.runsInheritedScripts = try arguments.bool("inheritScripts", default: true)
             let parent = try arguments.optionalString("folder").map { try context.folder($0, in: document).id }
             let index = try arguments.optionalInteger("index", in: 0...Int.max)
             try context.mutate(project.id) { try $0.insert(.request(request), into: parent, at: index) }
@@ -123,7 +128,9 @@ struct MCPRequestTools {
                 "project": MCPSchema.project,
                 "request": MCPSchema.request,
                 "name": MCPSchema.string("A new name."),
-                "spec": MCPSchema.openObject(#"The fields to change, such as {"method": "POST", "body": {"raw": {"text": "{}"}}}."#)
+                "spec": MCPSchema.openObject(#"The fields to change, such as {"method": "POST", "body": {"raw": {"text": "{}"}}}."#),
+                "scripts": MCPScripts.schema,
+                "inheritScripts": MCPScripts.inheritSchema
             ],
             required: ["project", "request"],
             annotations: .edit
@@ -134,6 +141,8 @@ struct MCPRequestTools {
             if let name = try arguments.optionalString("name") {
                 updated.name = name
             }
+            try MCPScripts.apply(arguments, to: &updated.scripts)
+            updated.runsInheritedScripts = try arguments.optionalBool("inheritScripts") ?? updated.runsInheritedScripts
             if let patch = try arguments.optionalObject("spec") {
                 updated.kind = try Self.patched(original.kind, with: .object(patch))
             }

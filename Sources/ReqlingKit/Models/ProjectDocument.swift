@@ -12,6 +12,8 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
     public var auth: HTTPAuth
     public var tls: ProjectTLSConfiguration
     public var grpc: ProjectGRPCConfiguration
+    /// Scripts every request in the project runs around its own, unless something between turns inheriting off.
+    public var scripts: ScriptSet
     public var defaultEnvironment: RequestEnvironment
     public var environments: [RequestEnvironment]
     public var items: [RequestNode]
@@ -23,6 +25,7 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
         auth: HTTPAuth = .none,
         tls: ProjectTLSConfiguration = ProjectTLSConfiguration(),
         grpc: ProjectGRPCConfiguration = ProjectGRPCConfiguration(),
+        scripts: ScriptSet = ScriptSet(),
         defaultEnvironment: RequestEnvironment = RequestEnvironment(name: RequestEnvironment.defaultName),
         environments: [RequestEnvironment] = [],
         items: [RequestNode] = []
@@ -33,6 +36,7 @@ public struct ProjectDocument: Hashable, Sendable, Identifiable {
         self.auth = auth
         self.tls = tls
         self.grpc = grpc
+        self.scripts = scripts
         self.defaultEnvironment = defaultEnvironment
         self.environments = environments
         self.items = items

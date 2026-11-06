@@ -24,13 +24,16 @@ struct ProjectWriter {
         let requests = ProjectLayout.requestsDirectory
         let rootOrder = layout.assignChildren(document.items, parentPath: requests, previousPath: requests)
         layout.assignEnvironments(document.environments, defaultID: document.defaultEnvironment.id)
-        let files = try plannedFiles(document, layout: layout, rootOrder: rootOrder, previous: previous)
+        let scripts = plannedScripts(document, layout: layout, previous: previous)
+        let files = try plannedFiles(document, layout: layout, rootOrder: rootOrder, previous: previous) + scripts.files
         let untracked = layout.projectedUntrackedPaths()
         try checkTargets(files, layout: layout, untracked: untracked)
         try checkUnchangedOnDisk(files, previous: previous)
-        try checkNewFilesHaveRoom(files, vacating: vacatedPaths(document: document, layout: layout, previous: previous), previous: previous)
+        try checkUnchangedOnDisk(scripts.removals, previous: previous)
+        let vacated = vacatedPaths(document: document, layout: layout, previous: previous) + scripts.removals.map { $0.source.lowercased() }
+        try checkNewFilesHaveRoom(files, vacating: vacated, previous: previous)
 
-        var live = LivePaths(nodes: previous.nodePaths, environments: previous.environmentPaths)
+        var live = LivePaths(nodes: previous.nodePaths, environments: previous.environmentPaths, scripts: Self.trackedScripts(in: previous))
         var lifted: [LiftedItem] = []
         defer {
             removeEmptyScratch()
@@ -42,6 +45,7 @@ struct ProjectWriter {
             try createDirectory(ProjectLayout.environmentsDirectory)
             try placeNodes(document.items, layout: layout, live: &live)
             try placeEnvironments(document: document, layout: layout, live: &live)
+            try trashEmptiedScripts(scripts.removals, live: &live)
         } catch {
             restoreFromScratch(lifted, live: &live)
             throw error
@@ -102,7 +106,13 @@ struct ProjectWriter {
             case .request(let request):
                 files.append(PlannedFile(path: path, data: try ProjectJSON.encode(request), source: source))
             case .folder(let folder):
-                let folderFile = FolderFile(id: folder.id, name: folder.name, order: layout.childOrder[folder.id] ?? [], auth: folder.auth)
+                let folderFile = FolderFile(
+                    id: folder.id,
+                    name: folder.name,
+                    order: layout.childOrder[folder.id] ?? [],
+                    auth: folder.auth,
+                    inheritScripts: folder.runsInheritedScripts
+                )
                 files.append(PlannedFile(
                     path: ProjectLayout.join(path, ProjectLayout.folderFile),
                     data: try ProjectJSON.encode(folderFile),
@@ -154,14 +164,18 @@ struct ProjectWriter {
         }
     }
 
-    /// The current, lower-cased paths of every tracked item this save lifts out or trashes; their contents go with them.
+    /// The current, lower-cased paths of every tracked item this save lifts out or trashes; their contents, and a
+    /// request's scripts, go with them.
     private func vacatedPaths(document: ProjectDocument, layout: ProjectSaveLayout, previous: ProjectDiskIndex) -> [String] {
         let live = LivePaths(nodes: previous.nodePaths, environments: previous.environmentPaths)
         let lifted = liftedItems(document: document, layout: layout, live: live)
-        let removedNodes = previous.nodePaths.filter { document.node($0.key) == nil }.values
+        let removedNodes = previous.nodePaths.filter { document.node($0.key) == nil }
         let validEnvironments = Set(document.allEnvironments.map(\.id))
         let removedEnvironments = previous.environmentPaths.filter { !validEnvironments.contains($0.key) }.values
-        return (Array(lifted.nodes.values) + Array(lifted.environments.values) + removedNodes + removedEnvironments).map { $0.lowercased() }
+        let tracked = Self.trackedScripts(in: previous)
+        let scripts = (Array(lifted.nodes) + Array(removedNodes)).flatMap { id, path in Self.scriptPaths(ofRequestAt: path, phases: tracked[id]) }
+        let items = Array(lifted.nodes.values) + Array(lifted.environments.values) + Array(removedNodes.values) + removedEnvironments
+        return (items + scripts).map { $0.lowercased() }
     }
 
     // MARK: - Writing
@@ -226,4 +240,6 @@ struct PlannedFile {
 struct LivePaths {
     var nodes: [RequestNodeID: String]
     var environments: [EnvironmentID: String]
+    /// The phases whose script file sits beside each request's JSON, which move and go to the Trash with it.
+    var scripts: [RequestNodeID: Set<ScriptPhase>] = [:]
 }

@@ -34,6 +34,7 @@ struct MCPProjectTools {
             let active = context.workspace.activeEnvironment(in: document).id
             var description = MCPDescriptions.project(project, workspace: context.workspace)
             description["auth"] = try MCPJSON.encode(document.auth)
+            description["scripts"] = MCPScripts.describe(document.scripts)
             description["environments"] = .array(document.allEnvironments.map {
                 .object(MCPDescriptions.environment($0, in: document, active: active))
             })
@@ -69,22 +70,27 @@ struct MCPProjectTools {
         MCPTool(
             "update_project",
             title: "Update project",
-            description: "Renames a project or sets the auth its requests inherit. Omitted fields keep their value.",
+            description: "Renames a project, or sets the auth its requests inherit or the scripts every request runs. Omitted fields "
+                + "keep their value.",
             properties: [
                 "project": MCPSchema.project,
                 "name": MCPSchema.string("A new name. The project folder keeps its name."),
                 "auth": MCPSchema.openObject("Auth for requests that inherit it, as get_project returns it: "
                     + #"{"type": "none"}, {"type": "bearer", "token": "{{token}}"}, "#
                     + #"{"type": "basic", "username": "…", "password": "…"}, or "#
-                    + #"{"type": "apiKey", "name": "X-API-Key", "value": "…", "location": "header" | "query"}."#)
+                    + #"{"type": "apiKey", "name": "X-API-Key", "value": "…", "location": "header" | "query"}."#),
+                "scripts": MCPScripts.schema
             ],
             required: ["project"],
             annotations: .edit
         ) { arguments in
-            let (project, _) = try context.document(try arguments.string("project"))
+            let (project, current) = try context.document(try arguments.string("project"))
             let name = try arguments.optionalString("name")
             let auth = try arguments.optionalObject("auth").map { try MCPJSON.decode(HTTPAuth.self, from: .object($0), path: "auth") }
+            var scripts = current.scripts
+            try MCPScripts.apply(arguments, to: &scripts)
             try context.mutate(project.id) { document in
+                document.scripts = scripts
                 if let name {
                     document.name = name
                 }
