@@ -70,8 +70,8 @@ final class AppModel {
         }
     }
     var alert: AppAlert?
-    /// A project awaiting confirmation before its folder moves to the Trash.
-    var projectPendingDeletion: ProjectID?
+    /// A project, folder, or request awaiting confirmation before it moves to the Trash.
+    var trashPending: TrashConfirmation?
     /// A protocol switch awaiting confirmation because it would discard part of the request.
     var kindChangePending: RequestKindChange?
     /// Run history awaiting confirmation before it is cleared, which cannot be undone.

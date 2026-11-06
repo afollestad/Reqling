@@ -102,7 +102,7 @@ private struct SidebarProjectMenu: View {
         Button("Reveal in Finder") { model.revealProject(project.id) }
         Button("Remove from Reqling") { model.removeProject(project.id) }
         if project.document != nil {
-            Button("Move to Trash…", role: .destructive) { model.projectPendingDeletion = project.id }
+            Button("Move to Trash…", role: .destructive) { model.requestTrash(.project(project.id)) }
         }
     }
 }
@@ -219,7 +219,7 @@ private struct SidebarItemMenu: View {
             Button("Clear Run History…") { model.requestClearHistory(of: nodeID, in: projectID) }
         }
         Divider()
-        Button("Move to Trash", role: .destructive) { model.delete(nodeID, in: projectID) }
+        Button("Move to Trash…", role: .destructive) { model.requestTrash(.node(projectID, nodeID)) }
     }
 }
 

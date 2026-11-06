@@ -64,17 +64,7 @@ struct ContentView: View {
             } message: { change in
                 Text(change.consequences)
             }
-            .confirmationDialog(
-                "Move this project to the Trash?",
-                isPresented: Binding(get: { model.projectPendingDeletion != nil }, set: { if !$0 { model.projectPendingDeletion = nil } }),
-                titleVisibility: .visible,
-                // The action takes the ID from here, not the model: dismissal may clear `projectPendingDeletion` first.
-                presenting: model.projectPendingDeletion
-            ) { project in
-                Button("Move to Trash", role: .destructive) { model.deleteProject(project) }
-            } message: { _ in
-                Text("Its folder goes to the Trash, where Finder can put it back. Its secret values are removed from your Keychain.")
-            }
+            .modifier(TrashConfirmationDialog(model: model))
             .modifier(HistoryClearConfirmation(model: model))
     }
 
@@ -83,6 +73,25 @@ struct ContentView: View {
         case .system: nil
         case .light: .light
         case .dark: .dark
+        }
+    }
+}
+
+/// Asks before a project, folder, or request moves to the Trash; see `AppModel.requestTrash(_:)`.
+private struct TrashConfirmationDialog: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            model.trashPending?.title ?? "",
+            isPresented: Binding(get: { model.trashPending != nil }, set: { if !$0 { model.trashPending = nil } }),
+            titleVisibility: .visible,
+            // The action takes the item from here, not the model: dismissal may clear `trashPending` first.
+            presenting: model.trashPending
+        ) { confirmation in
+            Button("Move to Trash", role: .destructive) { model.trash(confirmation) }
+        } message: { confirmation in
+            Text(confirmation.consequences)
         }
     }
 }

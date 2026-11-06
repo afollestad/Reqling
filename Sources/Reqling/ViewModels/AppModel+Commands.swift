@@ -165,7 +165,7 @@ extension AppModel {
 
     /// Moves the item to the Trash with its file, dropping its requests' history; Finder's Put Back restores the file.
     /// A selection on or inside the item moves to its parent first, so a pending edit there saves before its file goes
-    /// instead of failing after.
+    /// instead of failing after. Views ask first through `requestTrash(_:)` rather than calling this.
     func delete(_ node: RequestNodeID, in project: ProjectID) {
         let document = library.document(project)
         if selection?.projectID == project, let selected = selection?.nodeID,
@@ -174,6 +174,45 @@ extension AppModel {
         }
         perform("Couldn't Delete the Item") {
             try lifecycle.deleteNode(node, in: project)
+        }
+    }
+
+    // MARK: - Trash
+
+    /// Asks before an item moves to the Trash, from the Delete key and the context menus alike: Put Back restores its
+    /// files but not its requests' run history.
+    func requestTrash(_ item: SidebarItem) {
+        if let confirmation = trashConfirmation(for: item) {
+            trashPending = confirmation
+        }
+    }
+
+    /// An agent or a `git pull` can delete the item while its confirmation is up; confirming then drops it quietly
+    /// rather than alerting that it is missing.
+    func trash(_ confirmation: TrashConfirmation) {
+        trashPending = nil
+        guard trashConfirmation(for: confirmation.item) != nil else {
+            return
+        }
+        switch confirmation.item {
+        case .project(let project):
+            deleteProject(project)
+        case .node(let project, let node):
+            delete(node, in: project)
+        }
+    }
+
+    /// `nil` for an item already gone, or one in a project that is not loaded: the window offers to trash a project
+    /// only while it loads, as `SidebarProjectMenu` does.
+    private func trashConfirmation(for item: SidebarItem) -> TrashConfirmation? {
+        guard let document = library.document(item.projectID) else {
+            return nil
+        }
+        switch item {
+        case .project:
+            return TrashConfirmation(item: item, name: document.name, kind: .project)
+        case .node(_, let id):
+            return document.node(id).map { TrashConfirmation(item: item, name: $0.name, kind: $0.isFolder ? .folder : .request) }
         }
     }
 

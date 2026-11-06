@@ -68,16 +68,11 @@ struct SidebarView: View {
         }
     }
 
-    /// The Delete key and Edit ▸ Delete take the same path as the row's context menu: an item goes straight to the
-    /// Trash, and a project asks first, so the keyboard reaches what was otherwise mouse-only.
+    /// The Delete key and Edit ▸ Delete take the same path as the row's context menu, asking before anything moves to
+    /// the Trash, so the keyboard reaches what was otherwise mouse-only.
     private func moveSelectionToTrash() {
-        switch model.selection {
-        case .node(let project, let node)?:
-            model.delete(node, in: project)
-        case .project(let project)? where model.library.document(project) != nil:
-            model.projectPendingDeletion = project
-        default:
-            break
+        if let selection = model.selection {
+            model.requestTrash(selection)
         }
     }
 }
