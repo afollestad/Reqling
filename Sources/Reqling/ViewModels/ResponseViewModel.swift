@@ -61,6 +61,8 @@ final class ResponseViewModel {
     var tab: ResponseTab = .body
     /// The format the person picked; a body that doesn't offer it shows its first one instead (`body.mode`).
     var bodyMode: ResponseBodyMode = .tree
+    /// How an event-stream response's Events tab shows them.
+    var eventsMode: MessageTimelineMode = .tree
 
     let requestID: RequestNodeID
     let projectID: ProjectID
@@ -78,6 +80,8 @@ final class ResponseViewModel {
     @ObservationIgnored var shapingKey: ResponseShapeKey?
     @ObservationIgnored var shapingTask: Task<ShapedBody, any Error>?
     @ObservationIgnored private var sentBodyCache: (startedAt: Date, document: TextDocument?)?
+    @ObservationIgnored var eventCache = MessageTimelineCache()
+    @ObservationIgnored var eventTreeCache = MessageTreeCache()
 
     init(requestID: RequestNodeID, projectID: ProjectID, runner: RequestRunner, history: RunHistoryViewModel) {
         self.requestID = requestID
@@ -99,7 +103,9 @@ final class ResponseViewModel {
         // Read every observable input before consulting a cache, so observation keeps tracking them.
         let preference = bodyMode
         let shaped = shapedBodies
-        guard let exchange, let response = exchange.response else {
+        // An event stream has no body to shape; its Events tab reads `eventTimeline` and `eventTree` instead, and
+        // classifying its empty body would latch `.empty` for the run's every later update.
+        guard let exchange, let response = exchange.response, response.eventStream == nil else {
             return .empty
         }
         return presentation(of: response, in: exchange, preference: preference, shaped: shaped)
@@ -136,7 +142,7 @@ final class ResponseViewModel {
     }
 
     func copyBody(to system: any SystemIntegration) {
-        guard let body = exchange?.response?.body, let text = String(bytes: body, encoding: .utf8) else {
+        guard let body = exchange?.response.map({ Self.content(of: $0) }), let text = String(bytes: body, encoding: .utf8) else {
             return
         }
         system.copyToPasteboard(text)
@@ -147,7 +153,12 @@ final class ResponseViewModel {
               let url = system.chooseSaveLocation(suggestedName: Self.suggestedFileName(for: response)) else {
             return
         }
-        try? response.body.write(to: url, options: .atomic)
+        try? Self.content(of: response).write(to: url, options: .atomic)
+    }
+
+    /// The body, or an event stream's events written back out as one.
+    private static func content(of response: HTTPResponseRecord) -> Data {
+        response.eventStream.map { Data(eventStreamText($0).utf8) } ?? response.body
     }
 
     private static func suggestedFileName(for response: HTTPResponseRecord) -> String {

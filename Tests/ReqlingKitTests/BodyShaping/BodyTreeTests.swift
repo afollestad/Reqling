@@ -130,6 +130,24 @@ final class BodyTreeTests: XCTestCase {
         XCTAssertEqual(try BodyStructure.messages(timeline).find("hi").matches.map(\.path), [[0, 0], [2, 0, 0]])
     }
 
+    /// An event's row matches its type and ID, and data or a note that isn't JSON matches as text.
+    func testATimelineRowMatchesWhatItsTreeDoesNotIndex() throws {
+        let entries = [
+            EventStreamEntry(sequence: 0, offset: 0, kind: .event(ServerSentEvent(type: "update", id: "abc", data: #"{"n": 1}"#))),
+            EventStreamEntry(sequence: 1, offset: 0, kind: .event(ServerSentEvent(data: "plain update"))),
+            EventStreamEntry(sequence: 2, offset: 0, kind: .note("Reconnected"))
+        ]
+        let messages = entries.map { entry in
+            let item = TimelineItem(entry)
+            return MessageTimeline.Message(item: item, index: item.isJSON ? try? JSONStructureIndex.build(Data(item.text.utf8)) : nil)
+        }
+        let structure = BodyStructure.messages(MessageTimeline(id: UUID(), messages: messages))
+
+        XCTAssertEqual(try structure.find("update").matches.map(\.path), [[0], [1]])
+        XCTAssertEqual(try structure.find("ABC").matches.map(\.path), [[0]])
+        XCTAssertEqual(try structure.find("reconnect").matches.map(\.path), [[2]])
+    }
+
     /// A body cut to fit the response cache keeps everything before the cut; without being told, it is an error.
     func testACutBodyClosesAtItsLastCompleteValue() throws {
         let cut = #"{"a": [1, 2, {"b": "xy"#

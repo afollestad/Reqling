@@ -70,8 +70,18 @@ struct ResponseStatusBar: View {
         HStack(spacing: 12) {
             if let record = exchange?.response {
                 StatusBadge(statusCode: record.statusCode, reason: record.reasonPhrase)
+                if let stream = record.eventStream {
+                    if stream.end == nil {
+                        Label("Streaming…", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.teal)
+                    }
+                    // Every event the stream dispatched; the timeline says which it leaves out and why.
+                    ResponseMetric(label: "Events", value: "\(stream.eventCount)")
+                }
                 ResponseMetric(label: "Time", value: Self.duration(record.duration))
-                ResponseMetric(label: "Size", value: ByteCountFormatter.string(fromByteCount: Int64(record.body.count), countStyle: .file))
+                let size = record.eventStream?.receivedByteCount ?? record.body.count
+                ResponseMetric(label: "Size", value: ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
                 if let protocolName = record.protocolName {
                     ResponseMetric(label: "Protocol", value: protocolName.uppercased())
                 }

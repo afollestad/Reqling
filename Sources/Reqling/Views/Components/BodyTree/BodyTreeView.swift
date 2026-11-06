@@ -11,6 +11,8 @@ struct BodyTreeView: NSViewRepresentable {
     var accessibilityLabel: String
     /// The Find menu reaching the tree while it has focus.
     var onFind: ((NSTextFinder.Action) -> Void)?
+    /// A timeline scrolled to its end stays there as rows arrive; off while a search moves through its matches.
+    var followsNewest = false
 
     /// How far a row's text starts inside its cell.
     static let cellTextInset: CGFloat = 2
@@ -68,6 +70,7 @@ struct BodyTreeView: NSViewRepresentable {
         coordinator.accent = context.environment.appAccent
         controller?.coordinator = coordinator
         coordinator.outline?.onFind = onFind
+        coordinator.followsNewest = followsNewest
         coordinator.outline?.setAccessibilityLabel(accessibilityLabel)
         coordinator.show(structure)
         coordinator.reveal(currentMatch)
@@ -101,6 +104,7 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
     /// How many top-level values there are: one for a document, more for newline-delimited JSON.
     private(set) var rootCount = 0
     private var revealed: BodyTreeMatch?
+    var followsNewest = false
 
     // MARK: - Content
 
@@ -126,8 +130,8 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         openSingleRoot()
     }
 
-    /// Opens the top-level value of a single document, and every message of a call, whose fields are what its
-    /// timeline is for; a sequence of documents starts closed.
+    /// Opens the top-level value of a single document, and every message or event of a timeline, whose fields are what
+    /// it is for; a sequence of documents starts closed.
     private func openSingleRoot() {
         if case .messages = structure {
             openMessages(roots)
@@ -140,7 +144,7 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         guard let outline else {
             return
         }
-        // One batch: a call can hold thousands of messages.
+        // One batch: a timeline can hold thousands of entries.
         outline.beginUpdates()
         for item in items where isExpandable(item) {
             outline.expandOne(item)
@@ -148,28 +152,29 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         outline.endUpdates()
     }
 
-    /// Applies a newer update of the same call's timeline: adds its new messages and drops the trimmed ones, keeping
-    /// the rest, and what is expanded in them, as they are.
+    /// Applies a newer update of the same timeline: adds its new rows and drops the trimmed ones, keeping the rest, and
+    /// what is expanded in them, as they are.
     private func updateMessages(_ timeline: MessageTimeline) {
         guard let outline else {
             return
         }
+        let follows = followsNewest && isScrolledToEnd(outline)
         var existing: [Int: BodyTreeItem] = [:]
         for item in roots {
             if case .message(let message) = item.node {
-                existing[message.event.sequence] = item
+                existing[message.item.sequence] = item
             }
         }
-        let kept = Set(timeline.messages.map(\.event.sequence))
+        let kept = Set(timeline.messages.map(\.item.sequence))
         let removed = IndexSet(roots.indices.filter { index in
             guard case .message(let message) = roots[index].node else {
                 return true
             }
-            return !kept.contains(message.event.sequence)
+            return !kept.contains(message.item.sequence)
         })
         var inserted = IndexSet()
         let items = timeline.messages.enumerated().map { position, message in
-            if let item = existing[message.event.sequence] {
+            if let item = existing[message.item.sequence] {
                 item.range = position..<position + 1
                 return item
             }
@@ -188,6 +193,10 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         outline.insertItems(at: inserted, inParent: nil, withAnimation: [])
         outline.endUpdates()
         openMessages(inserted.map { items[$0] })
+        // After opening the new rows, so their fields show too.
+        if follows, !inserted.isEmpty {
+            scrollToEnd(outline)
+        }
     }
 
     /// True for the top-level value of a single document, which reads as the whole document rather than an item.
@@ -429,7 +438,8 @@ struct BodyTreePane: View {
                 currentMatch: search.isPresented ? search.currentTreeMatch : nil,
                 controller: controller,
                 accessibilityLabel: accessibilityLabel,
-                onFind: { search.perform($0) }
+                onFind: { search.perform($0) },
+                followsNewest: !search.isPresented
             )
             .editorChrome()
         }

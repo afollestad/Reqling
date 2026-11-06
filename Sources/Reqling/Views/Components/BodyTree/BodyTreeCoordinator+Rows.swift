@@ -32,7 +32,7 @@ extension BodyTreeCoordinator {
     func value(of item: BodyTreeItem) -> String {
         switch (item.node, structure) {
         case (.message(let message), _):
-            return message.event.json
+            return message.item.text
         case (.json(let entry, let index), _):
             switch entry.kind {
             case .string:
@@ -141,29 +141,55 @@ extension BodyTreeCoordinator {
         parts.label = [labelKey, "\(entry.kind)", description].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// A message's header: which way it went, when, its size, fields the schema lacks, and why it has no fields when it
-    /// doesn't parse.
+    /// A timeline row's header: a gRPC message's direction or an event's type and ID, then when and how big.
     private func messageRow(_ message: MessageTimeline.Message, into parts: inout RowParts) {
-        let event = message.event
-        let isSent = event.direction == .sent
-        parts.add(isSent ? "↑ Sent" : "↓ Received", isSent ? accent : .systemTeal)
-        let offset = ResponseStatusBar.duration(event.offset)
-        let size = ByteCountFormatter.string(fromByteCount: Int64(event.byteCount), countStyle: .binary)
-        parts.add("  +\(offset) · \(size)", .secondaryLabelColor)
-        var label = "\(isSent ? "Sent" : "Received") message, \(offset) into the call, \(size)"
-        if event.unknownFieldCount > 0 {
-            let unknown = event.unknownFieldCount == 1 ? "1 unknown field" : "\(event.unknownFieldCount) unknown fields"
+        let item = message.item
+        let offset = ResponseStatusBar.duration(item.offset)
+        let size = ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .binary)
+        switch item.header {
+        case .grpc(let direction, let unknownFieldCount):
+            parts.add(direction == .sent ? "↑ Sent" : "↓ Received", direction == .sent ? accent : .systemTeal)
+            parts.add("  +\(offset) · \(size)", .secondaryLabelColor)
+            parts.label = "\(direction == .sent ? "Sent" : "Received") message, \(offset) into the call, \(size)"
+            grpcNotes(message, unknownFieldCount: unknownFieldCount, into: &parts)
+        case .event(let type, let id):
+            parts.add("↓ \(type)", .systemTeal)
+            if let id {
+                parts.add(" · id \(id)", .secondaryLabelColor)
+            }
+            parts.add("  +\(offset) · \(size)", .secondaryLabelColor)
+            var label = "\(type) event\(id.map { ", ID \($0)" } ?? ""), \(offset) into the stream, \(size)"
+            // Plain text, or a JSON value with no fields to open, reads on the row itself.
+            if message.fields.isEmpty {
+                let text = Self.oneLine(item.text, limit: Self.displayLimit)
+                parts.add("  " + text, SyntaxPalette.base)
+                label += ", \(text)"
+            } else if message.index?.rootEntries().first?.isTruncated == true {
+                parts.add("  Shortened to fit the run history", .secondaryLabelColor)
+                label += ", shortened to fit the run history"
+            }
+            parts.label = label
+        case .note:
+            parts.add("⟳ \(item.text)", .secondaryLabelColor)
+            parts.add("  +\(offset)", .secondaryLabelColor)
+            parts.label = "\(item.text), \(offset) into the stream"
+        }
+    }
+
+    /// Fields a message's schema lacks, and why it has no fields when it doesn't parse.
+    private func grpcNotes(_ message: MessageTimeline.Message, unknownFieldCount: Int, into parts: inout RowParts) {
+        if unknownFieldCount > 0 {
+            let unknown = unknownFieldCount == 1 ? "1 unknown field" : "\(unknownFieldCount) unknown fields"
             parts.add("  ⚠ \(unknown)", .systemOrange)
-            label += ", \(unknown)"
+            parts.label += ", \(unknown)"
         }
         if message.index == nil {
             parts.add("  Not shown as a tree; switch to Text to read it", .secondaryLabelColor)
-            label += ", not shown as a tree"
+            parts.label += ", not shown as a tree"
         } else if message.index?.rootEntries().first?.isTruncated == true {
             parts.add("  Shortened to fit the run history", .secondaryLabelColor)
-            label += ", shortened to fit the run history"
+            parts.label += ", shortened to fit the run history"
         }
-        parts.label = label
     }
 
     private func xmlRow(_ node: XMLStructureIndex.Node, node position: Int, index: XMLStructureIndex, into parts: inout RowParts) {

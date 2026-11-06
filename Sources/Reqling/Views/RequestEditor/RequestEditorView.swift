@@ -112,7 +112,7 @@ struct RequestEditorURLBar: View {
             )
 
             if editor.isSending {
-                Button("Cancel", role: .cancel) { editor.cancel() }
+                Button(editor.isStreaming ? "Stop" : "Cancel", role: .cancel) { editor.cancel() }
                     .keyboardShortcut(".", modifiers: .command)
             } else {
                 Button("Send") { editor.send() }

@@ -7,7 +7,7 @@
 
 <h1 align="center">Reqling</h1>
 
-<p align="center">A minimal, fully native macOS client for HTTP, GraphQL, and gRPC APIs, with a built-in MCP server for AI agents.</p>
+<p align="center">A minimal, fully native macOS client for HTTP, Server-Sent Events, GraphQL, and gRPC APIs, with a built-in MCP server for AI agents.</p>
 
 <p align="center">
   <a href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
@@ -48,12 +48,13 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 - Automatic headers are listed alongside your own, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`). Add a header with the same name to replace one; switching off `User-Agent`, `Accept`, or `Content-Type` stops Reqling setting it, and macOS then sends its own default.
 - Paste a cURL command into the URL field to import it, and **Copy as cURL** (⌥⌘C) to export the resolved request.
 - Responses show status, timing per phase, headers, and the body. JSON and XML open as collapsible trees, with any value, key, or path a right-click away; Pretty re-indents JSON without reordering keys, and Raw shows the body as sent. Bodies of any size stay highlighted and scroll smoothly, and images preview.
-- ⌘F finds within the focused body editor, and searches a response's text or tree in place.
+- A response of type `text/event-stream` (Server-Sent Events) stays open and shows its events as they arrive, each with its type, ID, data, and arrival time, as a tree whose JSON data opens to its fields, or as text. A GET stream reconnects whenever it ends, after the server's `retry:` delay, sending `Last-Event-ID`; any other method, such as a POST to an LLM API, ends when the server closes it rather than running again. **Stop** (⌘.) ends a stream and keeps its events, and the request's timeout is how long one may stay silent.
+- ⌘F finds within the focused body editor, and searches a response's text or tree in place; a timeline of messages or events is searchable in its Tree mode.
 - Every run is kept in the request's history (**Request ▸ Show Run History**, ⌘Y, or the toolbar's inspector button): pick one to see its response again, re-run it, or restore its request into the editor, or select two and **Compare** them line by line, with JSON re-indented first so only real changes show. History stays on this Mac, never in the project; **Settings ▸ History** sets how long and how much is kept, and **Clear Run History…** in the sidebar's menus clears a request's or a project's.
 
 ## gRPC
 
-Switch any request between HTTP and gRPC from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline, as a collapsible tree or as text, with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
+Switch any request between HTTP and gRPC from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline, as a collapsible tree or as text, following the newest while you're scrolled to the end, with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
 
 The schema comes from one of three places:
 
@@ -76,7 +77,7 @@ The schema comes from one of two places, chosen in the **Schema** row:
 
 ## MCP server
 
-Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agents on your Mac can work with your projects: create and edit projects, environments, variables, and saved requests, compile protos, read a GraphQL request's schema and check queries against it, send requests and read their responses, and look back through each request's run history. Changes appear in the window as they happen. Turn it on in **Settings ▸ MCP**, which also shows the setup command for Claude Code and the config for Codex:
+Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agents on your Mac can work with your projects: create and edit projects, environments, variables, and saved requests, compile protos, read a GraphQL request's schema and check queries against it, send requests and read their responses (an event stream for a bounded time or number of events), and look back through each request's run history. Changes appear in the window as they happen. Turn it on in **Settings ▸ MCP**, which also shows the setup command for Claude Code and the config for Codex:
 
 ```sh
 claude mcp add --transport http reqling http://127.0.0.1:39717/mcp --header "Authorization: Bearer <token>"

@@ -87,7 +87,7 @@ extension ResponseViewModel {
             return
         }
         guard key != shapingKey, shapedBodies[key] == nil,
-              let exchange, exchange.startedAt == key.startedAt, let response = exchange.response else {
+              let exchange, exchange.startedAt == key.startedAt, let response = exchange.response, response.eventStream == nil else {
             return
         }
         shapingTask?.cancel()

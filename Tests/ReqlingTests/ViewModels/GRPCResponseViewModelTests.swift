@@ -75,13 +75,13 @@ final class GRPCResponseViewModelTests: XCTestCase {
 
         publish(record(1..<limit + 1))
         XCTAssertEqual(response.timeline.map(\.id), Array(1..<limit + 1))
-        XCTAssertEqual(response.timeline.last?.event.json, #"{"index": \#(limit)}"#)
+        XCTAssertEqual(response.timeline.last?.item.text, #"{"index": \#(limit)}"#)
 
         publish(record(700..<limit + 700))
         let timeline = response.timeline
         XCTAssertEqual(timeline.count, limit)
         XCTAssertEqual(timeline.first?.id, 700)
-        XCTAssertEqual(timeline.last?.event.json, #"{"index": \#(limit + 699)}"#)
+        XCTAssertEqual(timeline.last?.item.text, #"{"index": \#(limit + 699)}"#)
         XCTAssertFalse(timeline.last?.tokens.isEmpty ?? true, "a new message is highlighted")
     }
 
@@ -92,7 +92,7 @@ final class GRPCResponseViewModelTests: XCTestCase {
         publish(record(0..<10, dropped: [6, 7]))
 
         XCTAssertEqual(response.timeline.map(\.id), [0, 1, 2, 3, 4, 5, 8, 9])
-        XCTAssertEqual(response.timeline.map(\.event.json).last, #"{"index": 9}"#)
+        XCTAssertEqual(response.timeline.map(\.item.text).last, #"{"index": 9}"#)
     }
 
     /// The messages tree keeps one identity per call as it streams, so the tree updates in place, and indexes each
@@ -107,7 +107,7 @@ final class GRPCResponseViewModelTests: XCTestCase {
             return XCTFail("not a timeline")
         }
         XCTAssertEqual(first.id, second.id)
-        XCTAssertEqual(second.messages.map(\.event.sequence), [0, 1, 2, 3, 4])
+        XCTAssertEqual(second.messages.map(\.item.sequence), [0, 1, 2, 3, 4])
         XCTAssertEqual(second.messages[0].index?.id, first.messages[0].index?.id, "indexed once")
         XCTAssertEqual(second.messages[4].fields.map(\.key), ["index"])
     }

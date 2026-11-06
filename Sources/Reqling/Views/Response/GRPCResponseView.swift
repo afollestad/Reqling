@@ -129,7 +129,7 @@ private struct GRPCResponseSectionBar: View {
 
     private var controls: some View {
         HStack(spacing: 8) {
-            SectionPicker("Format", selection: $response.messagesMode, options: GRPCMessagesMode.allCases, label: \.rawValue)
+            SectionPicker("Format", selection: $response.messagesMode, options: MessageTimelineMode.allCases, label: \.rawValue)
             if response.messagesMode == .tree {
                 BodyTreeControls(controller: response.treeController)
             }
@@ -144,22 +144,32 @@ private struct GRPCResponseTabContent: View {
     var body: some View {
         switch response.tab {
         case .messages:
-            let isCacheShortened = response.exchange?.isBodyTruncated == true
+            let notes = MessageTimelineView.notes(
+                trimmedCount: call.trimmedEventCount,
+                droppedCount: call.droppedEventCount,
+                isCacheShortened: response.exchange?.isBodyTruncated == true,
+                kind: .call
+            )
+            // A failed call's status message; an OK status says nothing more.
+            let failure = call.status.flatMap { $0.isOK ? nil : $0.message }
+            let end = MessageTimelineEnd(
+                isOpen: call.status == nil,
+                isEmpty: call.events.isEmpty,
+                kind: .call,
+                ending: call.events.isEmpty ? "No messages crossed the wire." : nil
+            )
             if response.messagesMode == .tree, let tree = response.messageTree {
-                let notes = GRPCTimelineView.notes(
-                    trimmedCount: call.trimmedEventCount,
-                    droppedCount: call.droppedEventCount,
-                    isCacheShortened: isCacheShortened
+                MessageTimelineTreeView(
+                    structure: tree,
+                    failure: failure,
+                    notes: notes,
+                    end: end,
+                    search: response.search,
+                    controller: response.treeController,
+                    accessibilityLabel: "Messages"
                 )
-                GRPCMessageTreeView(call: call, structure: tree, notes: notes, response: response)
             } else {
-                GRPCTimelineView(
-                    entries: response.timeline,
-                    status: call.status,
-                    trimmedCount: call.trimmedEventCount,
-                    droppedCount: call.droppedEventCount,
-                    isCacheShortened: isCacheShortened
-                )
+                MessageTimelineView(entries: response.timeline, failure: failure, notes: notes, end: end)
             }
         case .metadata:
             GRPCMetadataView(initial: call.initialMetadata, trailers: call.trailers, isOpen: call.status == nil)

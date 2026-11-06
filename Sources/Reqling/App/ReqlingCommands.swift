@@ -49,7 +49,8 @@ struct ReqlingCommands: Commands {
             Button(model.editor?.asGRPC?.isStreamOpen == true ? "Send Message" : "Send") { model.editor?.send() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(model.editor == nil)
-            Button("Cancel") { model.editor?.cancel() }
+            // An open event stream has nothing left to cancel but the stream itself.
+            Button(model.editor?.asHTTP?.isStreaming == true ? "Stop" : "Cancel") { model.editor?.cancel() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.editor?.isSending != true)
             Divider()

@@ -1,34 +1,45 @@
 import ReqlingKit
 import SwiftUI
 
-/// The section tabs. On the Body tab, the format picker and the copy and save actions sit at the trailing end of the
-/// same row when it has room, and on a row of their own below it when it doesn't.
+/// The section tabs. On the Body tab (Events, for an event stream), the format picker and the copy and save actions
+/// sit at the trailing end of the same row when it has room, and on a row of their own below it when it doesn't.
 struct ResponseSectionBar: View {
     @Bindable var response: ResponseViewModel
     let model: AppModel
 
     var body: some View {
+        let isStream = response.eventStream != nil
         if response.tab == .body {
-            let modes = response.body.availableModes
             WidthAdaptive {
                 HStack(spacing: 12) {
-                    tabs
+                    tabs(isStream: isStream)
                     Spacer(minLength: 0)
-                    ResponseBodyControls(response: response, modes: modes, spreads: false, model: model)
+                    controls(isStream: isStream, spreads: false)
                 }
             } fallback: {
                 VStack(alignment: .leading, spacing: 8) {
-                    tabs
-                    ResponseBodyControls(response: response, modes: modes, spreads: true, model: model)
+                    tabs(isStream: isStream)
+                    controls(isStream: isStream, spreads: true)
                 }
             }
         } else {
-            tabs
+            tabs(isStream: isStream)
         }
     }
 
-    private var tabs: some View {
-        SectionPicker("Response section", selection: $response.tab, options: ResponseTab.allCases, label: \.rawValue)
+    private func tabs(isStream: Bool) -> some View {
+        SectionPicker("Response section", selection: $response.tab, options: ResponseTab.allCases) { tab in
+            tab == .body && isStream ? "Events" : tab.rawValue
+        }
+    }
+
+    @ViewBuilder
+    private func controls(isStream: Bool, spreads: Bool) -> some View {
+        if isStream {
+            ResponseEventsControls(response: response, spreads: spreads, model: model)
+        } else {
+            ResponseBodyControls(response: response, modes: response.body.availableModes, spreads: spreads, model: model)
+        }
     }
 }
 
@@ -41,7 +52,11 @@ struct ResponseTabContent: View {
     var body: some View {
         switch response.tab {
         case .body:
-            ResponseBodyView(response: response, isTruncated: exchange.isBodyTruncated, model: model)
+            if let stream = record.eventStream {
+                ResponseEventsView(response: response, stream: stream, isCacheShortened: exchange.isBodyTruncated)
+            } else {
+                ResponseBodyView(response: response, isTruncated: exchange.isBodyTruncated, model: model)
+            }
         case .headers:
             HeaderList(headers: record.headers)
         case .timing:
@@ -248,6 +263,14 @@ private struct TimingView: View {
             }
             if record.redirectCount > 0 {
                 Text("Followed \(record.redirectCount) redirect\(record.redirectCount == 1 ? "" : "s"); timing covers the final request.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if record.eventStream != nil {
+                // URLSession reports a connection's phases only once it ends.
+                Text(record.timing == nil
+                    ? "The phases appear once the stream's first connection ends."
+                    : "Timing covers the stream's first connection; Download lasts as long as it stayed open.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

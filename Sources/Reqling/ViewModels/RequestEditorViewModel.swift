@@ -102,6 +102,11 @@ final class RequestEditorViewModel {
         app.runner.isInFlight(requestID, in: projectID)
     }
 
+    /// The response is an event stream still open, which Cancel stops, so it reads Stop.
+    var isStreaming: Bool {
+        app.runner.eventStreams.contains(RunKey(requestID, in: projectID))
+    }
+
     var isReadOnly: Bool {
         draft.isReadOnly
     }

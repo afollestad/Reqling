@@ -52,6 +52,37 @@ final class ResponseViewModelTests: XCTestCase {
         _ = runner.exchange(for: request, in: project)
     }
 
+    /// Makes an event stream the request's latest exchange, as `publish` does a body.
+    private func publish(_ stream: EventStreamRecord, at seconds: TimeInterval = 1_700_000_000) {
+        let runner = fixture.component.requestRunner
+        let request = response.requestID
+        runner.forget(request, in: project)
+        let startedAt = Date(timeIntervalSince1970: seconds)
+        RunHistoryStore(directory: fixture.profile.historyDirectory).save(RequestExchange(
+            projectID: project,
+            requestID: request,
+            startedAt: startedAt,
+            environmentName: nil,
+            request: nil,
+            outcome: .response(HTTPResponseRecord(
+                statusCode: 200,
+                headers: [KeyValuePair(key: "Content-Type", value: "text/event-stream")],
+                body: Data(),
+                url: "https://api.test/events",
+                startedAt: startedAt,
+                duration: 2,
+                eventStream: stream
+            ))
+        ))
+        _ = runner.exchange(for: request, in: project)
+    }
+
+    private static let streamEntries = [
+        EventStreamEntry(sequence: 0, offset: 0.1, kind: .event(ServerSentEvent(type: "tick", id: "1", data: #"{"n":1}"#))),
+        EventStreamEntry(sequence: 1, offset: 0.5, kind: .note("Reconnected")),
+        EventStreamEntry(sequence: 2, offset: 0.9, kind: .event(ServerSentEvent(data: "line one\nline two")))
+    ]
+
     private func text(_ presentation: ResponseBodyPresentation) -> String? {
         if case .text(let document) = presentation.content {
             return document.text(in: 0..<document.length)
@@ -189,5 +220,32 @@ final class ResponseViewModelTests: XCTestCase {
         guard case .treeFailed = response.body.content else {
             return XCTFail("a live body that ends early is an error: \(response.body.content)")
         }
+    }
+
+    /// A stream shows its events, never a body to shape: classifying its empty body would latch `.empty` for the run.
+    func testAnEventStreamShowsItsEventsInPlaceOfABody() throws {
+        publish(EventStreamRecord(entries: [], end: nil))
+        XCTAssertTrue(response.eventTimeline.isEmpty)
+        XCTAssertNil(response.body.pendingShape)
+
+        publish(EventStreamRecord(entries: Self.streamEntries, end: nil))
+
+        XCTAssertEqual(response.eventTimeline.map(\.item.text), [#"{"n":1}"#, "Reconnected", "line one\nline two"])
+        XCTAssertFalse(response.eventTimeline[0].tokens.isEmpty, "JSON data is highlighted")
+        XCTAssertTrue(response.eventTimeline[2].tokens.isEmpty, "Plain data is not")
+        guard case .messages(let timeline) = try XCTUnwrap(response.eventTree) else {
+            return XCTFail("The events make one timeline tree")
+        }
+        XCTAssertEqual(timeline.messages.map { $0.fields.count }, [1, 0, 0], "Only JSON data opens to fields")
+        XCTAssertNil(response.body.pendingShape)
+    }
+
+    /// Copy and Save write the events back out as an event stream, with the notes as comments.
+    func testCopyingAStreamWritesItsEventsBackOut() {
+        publish(EventStreamRecord(entries: Self.streamEntries, end: .closed))
+
+        response.copyBody(to: fixture.system)
+
+        XCTAssertEqual(fixture.system.pasteboard, "id: 1\nevent: tick\ndata: {\"n\":1}\n\n: Reconnected\n\ndata: line one\ndata: line two\n\n")
     }
 }

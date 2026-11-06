@@ -11,7 +11,7 @@ final class BodyTreeItem {
         /// A JSON value, with the index it is in: a timeline's messages each have their own.
         case json(JSONEntry, JSONStructureIndex)
         case xml(Int)
-        /// A gRPC message on a call's timeline, over its fields.
+        /// A message, event, or note on a timeline, over its fields.
         case message(MessageTimeline.Message)
         /// The document itself, never shown: its children are the top-level values, which bucket like any others
         /// (newline-delimited JSON can have thousands).

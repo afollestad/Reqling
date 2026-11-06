@@ -6,7 +6,7 @@ public enum BodyStructure: Sendable {
     case xml(XMLStructureIndex)
     case messages(MessageTimeline)
 
-    /// The same for every update of one gRPC call's timeline, which the tree applies in place.
+    /// The same for every update of one call's or stream's timeline, which the tree applies in place.
     public var id: UUID {
         switch self {
         case .json(let index): index.id
@@ -18,7 +18,7 @@ public enum BodyStructure: Sendable {
     /// Changes whenever the content does under the same `id`: a timeline's newest message. A search reruns on it.
     public var revision: Int {
         if case .messages(let timeline) = self {
-            return (timeline.messages.last?.event.sequence ?? -1) &* 31 &+ timeline.messages.count
+            return (timeline.messages.last?.item.sequence ?? -1) &* 31 &+ timeline.messages.count
         }
         return 0
     }

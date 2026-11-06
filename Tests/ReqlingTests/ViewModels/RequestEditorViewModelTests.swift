@@ -61,6 +61,23 @@ final class RequestEditorViewModelTests: XCTestCase {
         gate.releaseAll()
     }
 
+    /// An open event stream's Cancel reads Stop, and stopping it keeps the events that arrived.
+    func testAnOpenEventStreamStopsAndKeepsItsEvents() async throws {
+        let server = try EventStreamLoopbackServer()
+        defer { server.shutdown() }
+        editor.urlText = server.url
+        editor.send()
+
+        await waitUntilObserved("the stream opens") { self.editor.isStreaming }
+        XCTAssertTrue(editor.isSending)
+        editor.cancel()
+        await waitUntilObserved("the stream stops") { !self.editor.isSending }
+
+        XCTAssertFalse(editor.isStreaming)
+        XCTAssertEqual(editor.response.eventStream?.end, .stopped)
+        XCTAssertEqual(editor.response.eventStream?.events.map(\.data), ["hello"])
+    }
+
     func testEditsAutosaveOnlyAfterThePause() async throws {
         editor.urlText = "{{base}}/users?page=2"
 
