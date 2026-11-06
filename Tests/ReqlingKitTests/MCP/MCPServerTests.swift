@@ -225,26 +225,81 @@ final class MCPServerTests: XCTestCase {
             + "Accept: application/json\r\nContent-Length: \(contentLength)\r\n\r\n"
     }
 
-    /// Sends `request` as written, for headers URLSession won't send as given, and returns the status code.
+    /// Sends `request` as written, for headers URLSession won't send as given, and returns the status code. A connection
+    /// that fails, waits to retry, or gets no reply in time throws, naming how far it got: one of these once never
+    /// finished its send or receive, and left the suite waiting forever.
     private func raw(_ request: String) async throws -> Int {
         let connection = NWConnection(host: "127.0.0.1", port: try XCTUnwrap(NWEndpoint.Port(rawValue: UInt16(port))), using: .tcp)
         defer { connection.cancel() }
+        let outcome = RawOutcome()
+        let answered = expectation(description: "A reply to the raw request")
+        let settle: @Sendable (Result<Int, any Error>) -> Void = { result in
+            if outcome.settle(result) {
+                answered.fulfill()
+            }
+        }
+        connection.stateUpdateHandler = { state in
+            outcome.note("\(state)")
+            switch state {
+            case .failed(let error), .waiting(let error):
+                settle(.failure(error))
+            default:
+                break
+            }
+        }
         connection.start(queue: .global())
-        return try await withCheckedThrowingContinuation { continuation in
-            connection.send(content: Data(request.utf8), completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        connection.send(content: Data(request.utf8), completion: .contentProcessed { error in
+            if let error {
+                return settle(.failure(error))
+            }
+            outcome.note("sent")
+            connection.receive(minimumIncompleteLength: 12, maximumLength: 4_096) { data, _, _, error in
+                guard let data, let line = String(data: data, encoding: .utf8)?.split(separator: " "), line.count > 1,
+                      let status = Int(line[1]) else {
+                    return settle(.failure(error ?? URLError(.badServerResponse)))
                 }
-                connection.receive(minimumIncompleteLength: 12, maximumLength: 4_096) { data, _, _, error in
-                    guard let data, let line = String(data: data, encoding: .utf8)?.split(separator: " "), line.count > 1,
-                          let status = Int(line[1]) else {
-                        continuation.resume(throwing: error ?? URLError(.badServerResponse))
-                        return
-                    }
-                    continuation.resume(returning: status)
-                }
-            })
+                settle(.success(status))
+            }
+        })
+        await fulfillment(of: [answered], timeout: 30)
+        // Settles a timed-out request too, so the callbacks cancelling it sets off can't fulfill `answered` after the test.
+        _ = outcome.settle(.failure(RawRequestTimeout(progress: outcome.progress)))
+        return try XCTUnwrap(outcome.result).get()
+    }
+}
+
+/// A raw request with no outcome in time, and how far its connection got.
+private struct RawRequestTimeout: Error {
+    let progress: String
+}
+
+/// The first of a raw request's outcomes; later ones, such as the failure cancelling it reports, are dropped.
+private final class RawOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settled: Result<Int, any Error>?
+    private var steps: [String] = []
+
+    var result: Result<Int, any Error>? {
+        lock.withLock { settled }
+    }
+
+    /// The connection's states and the send, in order.
+    var progress: String {
+        lock.withLock { steps.joined(separator: ", ") }
+    }
+
+    func note(_ step: String) {
+        lock.withLock { steps.append(step) }
+    }
+
+    /// True for the first outcome only.
+    func settle(_ result: Result<Int, any Error>) -> Bool {
+        lock.withLock {
+            guard settled == nil else {
+                return false
+            }
+            settled = result
+            return true
         }
     }
 }
