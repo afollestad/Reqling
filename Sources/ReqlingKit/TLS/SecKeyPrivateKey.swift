@@ -14,18 +14,18 @@ struct SecKeyPrivateKey: NIOSSLCustomPrivateKey, Hashable, @unchecked Sendable {
     let signatureAlgorithms: [SignatureAlgorithm]
     private let algorithms: [SignatureAlgorithm: SecKeyAlgorithm]
 
-    init(identity: TLSClientIdentity) throws(GRPCCallError) {
+    init(identity: TLSClientIdentity) throws(TLSError) {
         var key: SecKey?
         guard SecIdentityCopyPrivateKey(identity.identity, &key) == errSecSuccess, let key else {
-            throw .tlsFailed("The client certificate's private key could not be read.")
+            throw .unusableClientIdentity("The client certificate's private key could not be read.")
         }
         try self.init(key: key)
     }
 
-    init(key: SecKey) throws(GRPCCallError) {
+    init(key: SecKey) throws(TLSError) {
         let candidates = Self.candidates(for: key).filter { SecKeyIsAlgorithmSupported(key, .sign, $0.1) }
         guard !candidates.isEmpty else {
-            throw .tlsFailed("The client certificate's key type cannot sign TLS handshakes; use an EC or RSA key.")
+            throw .unusableClientIdentity("The client certificate's key type cannot sign TLS handshakes; use an EC or RSA key.")
         }
         self.key = key
         signatureAlgorithms = candidates.map(\.0)

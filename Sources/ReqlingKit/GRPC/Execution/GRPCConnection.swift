@@ -2,9 +2,6 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import NIOCore
-import NIOSSL
-import Security
-import Synchronization
 
 /// How a call ended when it did not end normally, before `GRPCExecutor` or `GRPCReflectionClient` turns it into
 /// their own result.
@@ -79,32 +76,31 @@ enum GRPCConnection {
         }
     }
 
-    /// The identity is the one `context` names for the target's host and port. Verification runs entirely in
-    /// `GRPCServerTrust` (NIOSSL's hostname check is off because the SSL policy there checks the name), so the
-    /// project's CAs and the system roots both count.
+    /// The identity is the one `context` names for the target's host and port, and verification runs in
+    /// `NIOClientTLS.verify`, so the project's CAs and the system roots both count.
     private static func tlsConfiguration(
         _ context: TLSContext,
         target: GRPCTarget,
         trustFailure: TrustFailureRecorder
     ) throws(GRPCCallError) -> HTTP2ClientTransport.Posix.TransportSecurity.TLS {
-        var tls = HTTP2ClientTransport.Posix.TransportSecurity.TLS.defaults
-        if let identity = context.clientIdentity(target.host, target.port) {
-            tls.privateKey = .customPrivateKey(try SecKeyPrivateKey(identity: identity))
-            guard let leaf = identity.certificate else {
-                throw .tlsFailed("The client certificate could not be read.")
-            }
-            tls.certificateChain = ([leaf] + identity.intermediates).map { certificate in
-                .bytes([UInt8](SecCertificateCopyData(certificate) as Data), format: .der)
-            }
+        let client: NIOClientTLS
+        do {
+            client = try NIOClientTLS(context, host: target.host, port: target.port, trustFailure: trustFailure)
+        } catch {
+            throw .tlsFailed(error.localizedDescription)
         }
-        guard context.verifiesServer else {
+        var tls = HTTP2ClientTransport.Posix.TransportSecurity.TLS.defaults
+        if let privateKey = client.privateKey {
+            tls.privateKey = .customPrivateKey(privateKey)
+            tls.certificateChain = client.certificateChain.map { .bytes($0, format: .der) }
+        }
+        guard client.verifiesServer else {
             tls.serverCertificateVerification = .noVerification
             return tls
         }
         tls.serverCertificateVerification = .noHostnameVerification
-        let host = target.host
         tls.customVerificationCallback = { certificates, promise in
-            GRPCServerTrust.verify(certificates, host: host, anchors: context.anchors, trustFailure: trustFailure, promise: promise)
+            client.verify(certificates, promise: promise)
         }
         return tls
     }
@@ -125,8 +121,8 @@ enum GRPCConnection {
             return .failure(.untrustedServer(trustFailure))
         }
         let causes = causeChain(of: error)
-        if let tlsError = causes.first(where: isTLSError) {
-            return .failure(.tlsFailed("The TLS handshake with \(target) failed: \(tlsReason(tlsError))."))
+        if let tlsError = causes.first(where: NIOClientTLS.isHandshakeError) {
+            return .failure(.tlsFailed("The TLS handshake with \(target) failed: \(NIOClientTLS.handshakeReason(tlsError))."))
         }
         return .failure(.connectionFailed("Could not connect to \(target): \(describe(causes.last ?? error))"))
     }
@@ -141,33 +137,6 @@ enum GRPCConnection {
         return chain
     }
 
-    private static func isTLSError(_ error: any Error) -> Bool {
-        error is NIOSSLError || error is BoringSSLError || error is NIOSSLExtraError
-    }
-
-    /// BoringSSL's reason appears only inside its OpenSSL-format error string
-    /// (`error:1000045c:SSL routines:OPENSSL_internal:TLSV1_ALERT_CERTIFICATE_REQUIRED at file:line`), so it is read
-    /// from there; the common ones get a sentence that says what to fix.
-    private static func tlsReason(_ error: any Error) -> String {
-        let text = String(describing: error)
-        guard let reason = text.firstMatch(of: /OPENSSL_internal:([A-Z0-9_]+)/).map({ String($0.1) }) else {
-            return text
-        }
-        if reason.hasSuffix("CERTIFICATE_REQUIRED") {
-            return "the server requires a client certificate"
-        }
-        if reason == "WRONG_VERSION_NUMBER" {
-            return "the server did not answer with TLS, so it may expect plaintext"
-        }
-        if ["ALERT_UNKNOWN_CA", "ALERT_BAD_CERTIFICATE", "ALERT_CERTIFICATE_UNKNOWN", "ALERT_ACCESS_DENIED"].contains(where: reason.hasSuffix) {
-            return "the server rejected the client certificate"
-        }
-        if reason.hasSuffix("ALERT_HANDSHAKE_FAILURE") {
-            return "the server refused the handshake, and it may require a client certificate"
-        }
-        return reason.lowercased().replacingOccurrences(of: "_", with: " ")
-    }
-
     /// A socket error reads as its `strerror` text ("Connection refused") rather than NIO's call-site detail.
     private static func describe(_ error: any Error) -> String {
         if let ioError = error as? IOError {
@@ -180,61 +149,5 @@ enum GRPCConnection {
             return runtimeError.message
         }
         return String(describing: error)
-    }
-}
-
-/// Server-certificate verification for NIOSSL's custom callback, through `TLSTrustEvaluator`.
-enum GRPCServerTrust {
-    /// Hops off the event loop: trust evaluation can fetch intermediates or revocation status over the network.
-    static func verify(
-        _ certificates: [NIOSSLCertificate],
-        host: String,
-        anchors: [SecCertificate],
-        trustFailure: TrustFailureRecorder,
-        promise: EventLoopPromise<NIOSSLVerificationResultWithMetadata>
-    ) {
-        let encoded: [Data]
-        do {
-            encoded = try certificates.map { Data(try $0.toDERBytes()) }
-        } catch {
-            trustFailure.record("The certificate for \(host) could not be read.")
-            promise.succeed(.failed)
-            return
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            switch evaluate(encoded, host: host, anchors: anchors) {
-            case .success:
-                promise.succeed(.certificateVerified(VerificationMetadata(nil)))
-            case .failure(let error):
-                trustFailure.record(error.localizedDescription)
-                promise.succeed(.failed)
-            }
-        }
-    }
-
-    static func evaluate(_ encoded: [Data], host: String, anchors: [SecCertificate]) -> Result<Void, TLSError> {
-        let certificates = encoded.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
-        var trust: SecTrust?
-        guard !certificates.isEmpty, certificates.count == encoded.count,
-              SecTrustCreateWithCertificates(certificates as CFArray, SecPolicyCreateSSL(true, host as CFString), &trust)
-                == errSecSuccess,
-              let trust else {
-            return .failure(.untrustedServer(host: host, reason: "The server sent no readable certificate."))
-        }
-        return TLSTrustEvaluator.evaluate(trust, host: host, anchors: anchors)
-    }
-}
-
-/// Carries a trust-evaluation failure from NIOSSL's callback to the classification of the error that follows, which
-/// otherwise only says the handshake failed.
-final class TrustFailureRecorder: Sendable {
-    private let stored = Mutex<String?>(nil)
-
-    func record(_ reason: String) {
-        stored.withLock { $0 = reason }
-    }
-
-    var reason: String? {
-        stored.withLock { $0 }
     }
 }

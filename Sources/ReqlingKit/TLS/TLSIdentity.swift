@@ -29,6 +29,8 @@ public enum TLSError: Error, Equatable, LocalizedError {
     /// Security cannot read the certificate's key, which would crash `SecPKCS12Import` (`PKCS12ImportProbe`).
     case unsupportedCertificate
     case certificateCheckFailed(String)
+    /// The client identity can't take part in a handshake over SwiftNIO (`NIOClientTLS`); the message says why.
+    case unusableClientIdentity(String)
 
     public var errorDescription: String? {
         switch self {
@@ -50,6 +52,8 @@ public enum TLSError: Error, Equatable, LocalizedError {
             """
         case .certificateCheckFailed(let detail):
             "Reqling couldn't check the client certificate before opening it: \(detail)"
+        case .unusableClientIdentity(let message):
+            message
         }
     }
 }
