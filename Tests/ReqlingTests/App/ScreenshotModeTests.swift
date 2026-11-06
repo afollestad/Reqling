@@ -78,13 +78,36 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertNotNil(graphQL.schema.snapshot?.typeSystem.type(named: "Product"))
     }
 
-    /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, so it changes no capture.
-    func testOtherScenesKeepStorefrontCollapsedAndTheInspectorClosed() throws {
+    func testEventsSceneOpensTheStreamWithItsEvents() throws {
+        try ScreenshotDemoProject.seed(.events, into: component)
+
+        let editor = try XCTUnwrap(component.appModel.editor?.asHTTP)
+        XCTAssertEqual(component.appModel.selectedNode()?.name, "Order updates")
+        XCTAssertEqual(editor.tab, .headers)
+        XCTAssertEqual(editor.response.exchange?.response?.eventStream?.entries.count, 3)
+    }
+
+    func testWebSocketSceneOpensTheConnectionWithItsTimeline() throws {
+        try ScreenshotDemoProject.seed(.websocket, into: component)
+
+        let editor = try XCTUnwrap(component.appModel.editor?.asWebSocket)
+        XCTAssertEqual(component.appModel.selectedNode()?.name, "Support chat")
+        XCTAssertEqual(editor.tab, .messages)
+        XCTAssertEqual(editor.response.record?.close?.code, 1000)
+        XCTAssertEqual(editor.response.record?.subprotocol, "chat.v2")
+    }
+
+    /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, and only the live scenes
+    /// add Acme API's Live folder, so neither changes another capture.
+    func testOtherScenesKeepStorefrontCollapsedTheInspectorClosedAndNoLiveFolder() throws {
         try ScreenshotDemoProject.seed(.body, into: component)
 
-        let storefront = try XCTUnwrap(component.projectLibrary.projects.first { $0.name == "Storefront" }?.id)
+        let library = component.projectLibrary
+        let storefront = try XCTUnwrap(library.projects.first { $0.name == "Storefront" }?.id)
+        let acme = try XCTUnwrap(library.projects.first { $0.name == "Acme API" }?.id)
         XCTAssertTrue(component.workspaceState.projectState(storefront).isCollapsed)
         XCTAssertFalse(component.appModel.isInspectorShown)
+        XCTAssertEqual(library.document(acme)?.items.map(\.name), ["Users", "Orders", "Greeter", "Health check", "Purge cache"])
     }
 
     func testTheStorageIsWipedOnEveryLaunch() throws {

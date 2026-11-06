@@ -6,9 +6,9 @@ usage() {
   cat <<'USAGE'
 Usage: ./scripts/screenshots.sh [-b|--build] [-o|--output <dir>] [scene ...]
 
-Captures the main window in each screenshot scene (`ScreenshotMode.Scene`: request, body, grpc, graphql), or only those named,
-in light and dark, as <dir>/<scene>-<light|dark>.png, `.build/screenshots` by default. Each is the window alone at 2x,
-with transparent rounded corners and no shadow. `-b` builds the debug app first.
+Captures the main window in each screenshot scene (`ScreenshotMode.Scene`: request, body, grpc, graphql, events,
+websocket), or only those named, in light and dark, as <dir>/<scene>-<light|dark>.png, `.build/screenshots` by default.
+Each is the window alone at 2x, with transparent rounded corners and no shadow. `-b` builds the debug app first.
 
 Each launch runs a copy of the debug app re-identified as `com.afollestad.reqling.shots`, with
 `-DebugScreenshotScene` seeding a demo project into throwaway storage, so neither the dev build's projects nor its
@@ -39,7 +39,7 @@ while [ $# -gt 0 ]; do
       usage
       exit 0
       ;;
-    request|body|grpc|graphql)
+    request|body|grpc|graphql|events|websocket)
       scenes+=("$1")
       shift
       ;;
@@ -51,7 +51,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ ${#scenes[@]} -eq 0 ]; then
-  scenes=(request body grpc graphql)
+  scenes=(request body grpc graphql events websocket)
 fi
 
 app=$(app_path debug)

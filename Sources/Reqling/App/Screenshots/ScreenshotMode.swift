@@ -17,6 +17,10 @@ struct ScreenshotMode {
         case grpc
         /// A GraphQL query checked against its schema file, and that schema in the inspector's browser.
         case graphql
+        /// A GET whose response is an event stream, and its events as a tree.
+        case events
+        /// A WebSocket's saved messages, and its connection's timeline both ways.
+        case websocket
     }
 
     let scene: Scene

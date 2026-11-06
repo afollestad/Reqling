@@ -6,6 +6,7 @@ import ReqlingKit
 /// cached last run for each request a scene opens, plus a second project so the sidebar reads as a library. That one,
 /// Storefront, holds the GraphQL scene's request and stays collapsed in every other scene, where its row still shows
 /// how many requests it holds: keep that at two, or every other capture changes.
+/// Its Live folder (`ScreenshotLiveRequests`) exists only in the scenes that open it, so it never changes the others.
 /// Every value is fixed, so the light and dark captures of a scene match and one `alt` describes both. The website's
 /// alt text (the `gh-pages` branch) describes this data, so recapture with `scripts/screenshots.sh` and update it there
 /// when it changes.
@@ -25,6 +26,7 @@ enum ScreenshotDemoProject {
         }
         try GreeterDescriptorSet.data.write(to: acmeURL.appendingPathComponent(GreeterDescriptorSet.fileName))
         let requests = DemoRequests()
+        let live = [.events, .websocket].contains(scene) ? ScreenshotLiveRequests() : nil
         try library.mutate(acme) { document in
             document.defaultEnvironment.variables = [
                 Variable(key: "baseUrl", value: "https://api.acme.dev"),
@@ -38,11 +40,17 @@ enum ScreenshotDemoProject {
             for node in requests.nodes {
                 try document.insert(node, into: nil)
             }
+            if let live {
+                // Below Greeter, beside the other folders.
+                try document.insert(.folder(live.folder), into: nil, at: 3)
+            }
         }
-        component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = requests.expandedFolderIDs }
+        // The live scenes open only Live, so the sidebar fits without scrolling.
+        component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = live.map { [$0.folder.id] } ?? requests.expandedFolderIDs }
 
         let history = RunHistoryStore(directory: component.storageProfile.historyDirectory)
-        let runs = requests.cachedRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))]
+        let acmeRuns = requests.cachedRuns + [live?.cachedRun(for: scene, startedAt: startedAt)].compactMap(\.self)
+        let runs = acmeRuns.map { (acme, $0) } + [(storefront, StorefrontSearch.cachedRun(of: search.id))]
         for (project, run) in runs {
             history.save(RequestExchange(
                 projectID: project,
@@ -59,7 +67,13 @@ enum ScreenshotDemoProject {
         case .body: WorkspaceSelection(projectID: acme, nodeID: requests.createUser)
         case .grpc: WorkspaceSelection(projectID: acme, nodeID: requests.chat)
         case .graphql: WorkspaceSelection(projectID: storefront, nodeID: search.id)
+        case .events: WorkspaceSelection(projectID: acme, nodeID: live?.orderUpdates)
+        case .websocket: WorkspaceSelection(projectID: acme, nodeID: live?.supportChat)
         }
+        show(shown, for: scene, in: component)
+    }
+
+    private static func show(_ shown: WorkspaceSelection, for scene: ScreenshotMode.Scene, in component: AppComponent) {
         component.workspaceState.update { state in
             state.selection = shown
             if scene == .graphql {
@@ -107,6 +121,10 @@ enum ScreenshotDemoProject {
         case .graphql:
             model.editor?.asHTTP?.tab = .body
             model.editor?.asHTTP?.graphQL?.browser.show("Product")
+        case .events:
+            model.editor?.asHTTP?.tab = .headers
+        case .websocket:
+            model.editor?.asWebSocket?.tab = .messages
         }
     }
 }
@@ -161,7 +179,7 @@ private enum StorefrontSearch {
 }
 
 /// A run stored as if it had just finished, so the response pane shows it.
-private struct CachedRun {
+struct CachedRun {
     let request: RequestNodeID
     let sent: ResolvedHTTPRequest?
     let outcome: RequestExchange.Outcome
