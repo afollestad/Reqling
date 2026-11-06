@@ -312,6 +312,7 @@ public final class RequestRunner {
     }
 
     func runContext(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> RunContext {
+        library.reloadSecretsIfUnread(for: projectID)
         guard let project = library.project(projectID), let document = project.document else {
             throw RunFailure(kind: .invalidRequest, message: "The project is not available.")
         }

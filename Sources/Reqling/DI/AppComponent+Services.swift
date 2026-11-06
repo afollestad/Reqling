@@ -9,7 +9,7 @@ extension AppComponent {
     var secretStore: any SecretStore {
         shared {
             if storageProfile.isEphemeral {
-                return InMemorySecretStore() as any SecretStore
+                return testSecretStore ?? InMemorySecretStore() as any SecretStore
             }
             return KeychainSecretStore(service: "\(appInfo.bundleIdentifier).secrets")
         }

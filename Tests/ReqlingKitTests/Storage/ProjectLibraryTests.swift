@@ -231,7 +231,22 @@ final class ProjectLibraryTests: XCTestCase {
         XCTAssertEqual(fixture.relaunched().document(id)?.defaultEnvironment.variables.first?.value, "s3cr3t")
     }
 
-    func testUntouchedSecretsSurviveASaveWhenTheKeychainCouldNotBeReadAtLoad() throws {
+    func testProjectSecretsLoadOnceTheKeychainOpensWithoutARelaunch() throws {
+        let id = try fixture.library.createProject(named: "Locked")
+        try fixture.library.mutate(id) { $0.defaultEnvironment.variables.append(Variable(key: "token", value: "s3cr3t", isSecret: true)) }
+        let keychain = LockableSecretStore(wrapping: fixture.secrets)
+        let locked = fixture.relaunched(secretStore: keychain)
+
+        locked.reloadSecretsIfUnread(for: id)
+        XCTAssertEqual(locked.document(id)?.defaultEnvironment.variables.first?.value, "")
+        keychain.isLocked = false
+        locked.reloadSecretsIfUnread(for: id)
+
+        XCTAssertEqual(locked.document(id)?.defaultEnvironment.variables.first?.value, "s3cr3t")
+        XCTAssertEqual(locked.project(id)?.issues, [])
+    }
+
+    func testASaveKeepsSecretsTheKeychainCouldNotGiveAtLoadAndReadsThemOnceItCan() throws {
         let id = try fixture.library.createProject(named: "Locked")
         let secret = Variable(key: "token", value: "s3cr3t", isSecret: true)
         try fixture.library.mutate(id) { $0.defaultEnvironment.variables.append(secret) }
@@ -239,10 +254,13 @@ final class ProjectLibraryTests: XCTestCase {
         let locked = fixture.relaunched(secretStore: lockedStore)
         XCTAssertEqual(locked.document(id)?.defaultEnvironment.variables.first?.value, "")
         XCTAssertEqual(locked.project(id)?.issues.map(\.message), ["Secret values could not be read from the Keychain."])
-        lockedStore.isLocked = false
 
         try locked.mutate(id) { $0.name = "Renamed" }
         XCTAssertEqual(try fixture.secrets.secrets(for: id).values.sorted(), ["s3cr3t"])
+        lockedStore.isLocked = false
+        try locked.mutate(id) { $0.name = "Renamed Again" }
+        XCTAssertEqual(locked.document(id)?.defaultEnvironment.variables.first?.value, "s3cr3t")
+        XCTAssertEqual(locked.project(id)?.issues, [])
 
         try locked.mutate(id) { $0.defaultEnvironment.variables[0].value = "rotated" }
         XCTAssertEqual(try fixture.secrets.secrets(for: id).values.sorted(), ["rotated"])

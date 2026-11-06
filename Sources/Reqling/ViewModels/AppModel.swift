@@ -86,9 +86,9 @@ final class AppModel {
     var sheet: AppSheet? {
         didSet {
             // Here rather than in the sheet's editor, which its view rebuilds on every library change, so the Keychain is
-            // retried once per opening and before the editor copies Global.
-            if case .environments = sheet {
-                library.reloadGlobalSecretsIfUnread()
+            // retried once per opening and before the editor copies the environments.
+            if case .environments(let project) = sheet {
+                library.reloadSecretsIfUnread(for: project)
             }
         }
     }

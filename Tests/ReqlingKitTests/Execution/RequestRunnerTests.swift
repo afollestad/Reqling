@@ -1,5 +1,5 @@
 import Foundation
-import ReqlingKit
+@testable import ReqlingKit
 import XCTest
 
 @MainActor
@@ -25,9 +25,9 @@ final class RequestRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    func makeRunner() -> RequestRunner {
+    func makeRunner(library: ProjectLibrary? = nil) -> RequestRunner {
         RequestRunner(
-            library: fixture.library,
+            library: library ?? fixture.library,
             workspace: workspace,
             settings: settings,
             keychain: EmptyKeychain(),
@@ -108,6 +108,28 @@ final class RequestRunnerTests: XCTestCase {
         let exchange = await makeRunner().run(fixtureProject.request, in: fixtureProject.id)
 
         XCTAssertEqual(body(exchange), "GET /default/v2 -")
+    }
+
+    /// Masking reads them too, before the run does, so a server echoing a secret back can't slip it past the mask.
+    func testARunReadsSecretsTheKeychainCouldNotGiveAtLaunch() async throws {
+        let server = try await echoServer()
+        let fixtureProject = try makeProject(base: server.baseURL)
+        try fixture.library.mutate(fixtureProject.id) { document in
+            document.defaultEnvironment.variables[1] = Variable(key: "path", value: "project-secret", isSecret: true)
+            try document.updateRequest(fixtureProject.request) { $0.kind = .http(HTTPRequestSpec(url: "{{base}}/{{path}}/{{version}}")) }
+        }
+        try fixture.library.mutateGlobalEnvironment { $0.variables = [Variable(key: "version", value: "global-secret", isSecret: true)] }
+        let keychain = LockableSecretStore(wrapping: fixture.secrets)
+        let library = fixture.relaunched(secretStore: keychain)
+        XCTAssertNotNil(library.globalEnvironmentIssue)
+        keychain.isLocked = false
+        let runner = makeRunner(library: library)
+
+        let masked = runner.maskingSecrets(in: fixtureProject.id)("project-secret, global-secret")
+        let exchange = await runner.run(fixtureProject.request, in: fixtureProject.id)
+
+        XCTAssertFalse(masked.contains("secret"), masked)
+        XCTAssertEqual(body(exchange), "GET /project-secret/global-secret -")
     }
 
     func testUndefinedVariablesFailBeforeAnythingIsSent() async throws {

@@ -1,3 +1,5 @@
+import ReqlingKit
+
 /// Owns the app's single root component and the one-time Needle provider registration.
 @MainActor
 enum AppDI {
@@ -11,10 +13,11 @@ enum AppDI {
         return AppComponent(storageProfile: .production)
     }()
 
-    /// A fresh component graph over isolated storage. Callers own the profile's `cleanUp()`.
-    static func makeTestComponent(storageProfile: AppStorageProfile) -> AppComponent {
+    /// A fresh component graph over isolated storage, with in-memory secrets unless `secretStore` stands in. Callers own
+    /// the profile's `cleanUp()`.
+    static func makeTestComponent(storageProfile: AppStorageProfile, secretStore: (any SecretStore)? = nil) -> AppComponent {
         registerNeedleProviders()
-        return AppComponent(storageProfile: storageProfile)
+        return AppComponent(storageProfile: storageProfile, testSecretStore: secretStore)
     }
 
     private static func registerNeedleProviders() {

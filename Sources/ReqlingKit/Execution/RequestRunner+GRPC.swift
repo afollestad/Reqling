@@ -330,6 +330,8 @@ extension RequestRunner {
     /// have come from any of them. Take it before a run starts, so a request deleted meanwhile cannot leave the output
     /// unmasked.
     func maskingSecrets(in project: ProjectID, variableOverrides: [String: String] = [:]) -> @Sendable (String) -> String {
+        // Before the values are read, so a secret the run is about to read again is masked as well.
+        library.reloadSecretsIfUnread(for: project)
         guard let document = library.document(project) else {
             return { $0 }
         }

@@ -140,6 +140,28 @@ final class SheetModelTests: XCTestCase {
         XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.key), ["region"])
     }
 
+    func testOpeningEnvironmentsReadsSecretsTheKeychainCouldNotGiveAtLaunch() throws {
+        let keychain = LockableSecretStore()
+        let launched = AppFixture(secretStore: keychain)
+        defer { launched.tearDown() }
+        launched.model.createProject(named: "Locked")
+        let project = try XCTUnwrap(launched.model.selection?.projectID)
+        try launched.library.mutate(project) { $0.defaultEnvironment.variables = [Variable(key: "token", value: "project", isSecret: true)] }
+        try launched.library.mutateGlobalEnvironment { $0.variables = [Variable(key: "key", value: "global", isSecret: true)] }
+        keychain.isLocked = true
+        let relaunched = AppFixture(profile: launched.profile, secretStore: keychain)
+        defer { relaunched.tearDown() }
+        keychain.isLocked = false
+
+        relaunched.model.sheet = .environments(project)
+        let editor = EnvironmentEditorModel(projectID: project, app: relaunched.model)
+
+        XCTAssertEqual(editor.globalEnvironment.variables.map(\.value), ["global"])
+        XCTAssertEqual(editor.defaultEnvironment.variables.map(\.value), ["project"])
+        XCTAssertNil(editor.globalEnvironmentIssue)
+        XCTAssertEqual(relaunched.library.project(project)?.issues, [])
+    }
+
     func testDoneRefusesAProjectEnvironmentNamedLikeGlobal() throws {
         let editor = EnvironmentEditorModel(projectID: project, app: fixture.model)
         editor.addEnvironment()

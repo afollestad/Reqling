@@ -30,17 +30,15 @@ extension ProjectLibrary {
         return result
     }
 
-    /// Reads Global's secret values again when loading could not, filling the ones still blank and clearing the issue,
-    /// so a Keychain unlocked or allowed since launch takes effect without a relaunch. Opening the Environments sheet
-    /// calls this, and so does every edit before applying itself, so a merge starts from the stored values, not blanks.
+    /// Reads Global's secret values again when loading could not, filling the ones still blank and clearing the issue.
+    /// `reloadSecretsIfUnread(for:)` calls this before a run and as the Environments sheet opens, and every edit calls it
+    /// before applying itself, so a merge starts from the stored values, not blanks.
     public func reloadGlobalSecretsIfUnread() {
         guard globalSecretsUnread, let secrets = try? configuration.secretStore.secrets(for: .global) else {
             return
         }
         var environment = globalEnvironment
-        for index in environment.variables.indices where environment.variables[index].isSecret && environment.variables[index].value.isEmpty {
-            environment.variables[index].value = secrets[SecretKey.variable(environment.variables[index].id, in: environment.id)] ?? ""
-        }
+        Self.fillBlankSecrets(in: &environment, from: secrets)
         globalSecretsUnread = false
         globalEnvironmentIssue = nil
         if environment != globalEnvironment {
@@ -70,7 +68,7 @@ extension ProjectLibrary {
                 }
             } catch {
                 globalSecretsUnread = true
-                globalEnvironmentIssue = "Secret values could not be read from the Keychain."
+                globalEnvironmentIssue = Self.unreadableSecretsMessage
             }
         }
         globalEnvironment = environment

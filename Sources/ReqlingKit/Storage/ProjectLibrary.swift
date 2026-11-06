@@ -20,6 +20,9 @@ public final class ProjectLibrary {
     /// Whether Global's secret values still sit blank because loading could not read them; see
     /// `reloadGlobalSecretsIfUnread`.
     @ObservationIgnored var globalSecretsUnread = false
+    /// The projects whose secret values still sit blank because loading could not read them; see
+    /// `reloadSecretsIfUnread(for:)`.
+    @ObservationIgnored var projectsWithUnreadSecrets: Set<ProjectID> = []
     @ObservationIgnored private var indexes: [ProjectID: ProjectDiskIndex] = [:]
     @ObservationIgnored private var monitors: [ProjectID: any ProjectChangeMonitor] = [:]
 
@@ -135,9 +138,11 @@ public final class ProjectLibrary {
     /// Applies `body` to a copy of the project, stores new and changed secrets, saves the folder, publishes the result,
     /// and only then deletes the secrets the edit removed. When nothing changed, nothing is written. A failed save
     /// reloads from disk so memory never claims a state the folder does not have, and leaves every secret its files
-    /// still reference in place.
+    /// still reference in place. Secret values loading could not read are read again first, so an edit starts from the
+    /// stored values rather than blanks.
     @discardableResult
     public func mutate<Result>(_ id: ProjectID, _ body: (inout ProjectDocument) throws -> Result) throws -> Result {
+        reloadProjectSecretsIfUnread(id)
         guard let position = projects.firstIndex(where: { $0.id == id }),
               let old = projects[position].document,
               let index = indexes[id] else {
@@ -256,18 +261,47 @@ public final class ProjectLibrary {
         }
     }
 
+    static let unreadableSecretsMessage = "Secret values could not be read from the Keychain."
+
+    /// Fills the project's secret values still blank and drops its Keychain issue, once the Keychain answers. Here
+    /// rather than beside `reloadSecretsIfUnread(for:)`, since only this file may write `projects`.
+    func reloadProjectSecretsIfUnread(_ id: ProjectID) {
+        guard projectsWithUnreadSecrets.contains(id) else {
+            return
+        }
+        guard let position = projects.firstIndex(where: { $0.id == id }), var document = projects[position].document else {
+            projectsWithUnreadSecrets.remove(id)
+            return
+        }
+        guard let secrets = try? configuration.secretStore.secrets(for: id) else {
+            return
+        }
+        for environment in document.allEnvironments {
+            document.updateEnvironment(environment.id) { Self.fillBlankSecrets(in: &$0, from: secrets) }
+        }
+        projectsWithUnreadSecrets.remove(id)
+        var project = projects[position]
+        project.status = .loaded(document)
+        project.issues.removeAll { $0.path.isEmpty && $0.message == Self.unreadableSecretsMessage }
+        if project != projects[position] {
+            projects[position] = project
+        }
+    }
+
     /// Builds a loaded project, filling secret values from the store. A loaded project's library ID is always its
     /// document ID, which is also what its secrets and workspace state are keyed by.
     private func makeLoadedProject(_ result: ProjectReader.Result, url: URL) -> LibraryProject {
         var document = result.document
         var issues = result.issues
         let hasSecrets = document.allEnvironments.contains { $0.variables.contains(where: \.isSecret) }
+        projectsWithUnreadSecrets.remove(document.id)
         if hasSecrets {
             do {
                 let secrets = try configuration.secretStore.secrets(for: document.id)
                 Self.fillSecretValues(in: &document, from: secrets)
             } catch {
-                issues.append(ProjectLoadIssue(path: "", message: "Secret values could not be read from the Keychain."))
+                projectsWithUnreadSecrets.insert(document.id)
+                issues.append(ProjectLoadIssue(path: "", message: Self.unreadableSecretsMessage))
             }
         }
         return LibraryProject(
