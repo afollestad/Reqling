@@ -40,7 +40,7 @@ struct ScreenshotLiveRequests {
             let url = "https://api.acme.dev/orders/stream?status=open"
             let sent = ResolvedHTTPRequest(method: "GET", url: url, headers: [], bodyPreview: nil, bodyByteCount: 0)
             return CachedRun(request: orderUpdates, sent: sent, outcome: .response(Self.orderStream(url: url, startedAt: startedAt)))
-        case .request, .body, .grpc, .graphql, .websocket:
+        case .request, .grpc, .graphql, .websocket:
             return nil
         }
     }

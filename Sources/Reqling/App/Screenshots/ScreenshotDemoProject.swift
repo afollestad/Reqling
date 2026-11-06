@@ -55,7 +55,6 @@ enum ScreenshotDemoProject {
 
         let shown = switch scene {
         case .request: WorkspaceSelection(projectID: acme, nodeID: requests.getUser)
-        case .body: WorkspaceSelection(projectID: acme, nodeID: requests.createUser)
         case .grpc: WorkspaceSelection(projectID: acme, nodeID: requests.chat)
         case .graphql: WorkspaceSelection(projectID: storefront, nodeID: search.id)
         case .events: WorkspaceSelection(projectID: acme, nodeID: live?.orderUpdates)
@@ -122,9 +121,6 @@ enum ScreenshotDemoProject {
         switch scene {
         case .request:
             model.editor?.asHTTP?.tab = .params
-        case .body:
-            model.editor?.asHTTP?.tab = .body
-            model.editor?.asHTTP?.response.tab = .timing
         case .grpc:
             model.editor?.asGRPC?.tab = .messages
         case .graphql:
@@ -198,7 +194,6 @@ struct CachedRun {
 @MainActor
 private struct DemoRequests {
     let getUser: RequestNodeID
-    let createUser: RequestNodeID
     let chat: RequestNodeID
     let nodes: [RequestNode]
     let expandedFolderIDs: Set<RequestNodeID>
@@ -206,12 +201,11 @@ private struct DemoRequests {
 
     init() {
         let getUser = Self.getUserRequest
-        let createUser = Self.createUserRequest
         let chat = Self.grpc("Chat", method: "Chat")
         let users = RequestFolder(name: "Users", auth: .bearer(token: "{{token}}"), children: [
             .request(Self.http("List users", url: "{{baseUrl}}/users")),
             .request(getUser),
-            .request(createUser),
+            .request(Self.http("Create user", .post, url: "{{baseUrl}}/users")),
             .request(Self.http("Delete user", .delete, url: "{{baseUrl}}/users/{{userId}}"))
         ])
         let orders = RequestFolder(name: "Orders", children: [
@@ -220,7 +214,6 @@ private struct DemoRequests {
         ])
         let greeter = RequestFolder(name: "Greeter", children: [.request(Self.grpc("Say hello", method: "SayHello")), .request(chat)])
         self.getUser = getUser.id
-        self.createUser = createUser.id
         self.chat = chat.id
         nodes = [
             .folder(users),
@@ -232,7 +225,6 @@ private struct DemoRequests {
         expandedFolderIDs = [users.id, greeter.id]
         cachedRuns = [
             CachedRun(request: getUser.id, sent: Self.sent("GET", "/users/42?include=roles,team"), outcome: .response(Self.userResponse)),
-            CachedRun(request: createUser.id, sent: Self.sent("POST", "/users"), outcome: .response(Self.createdResponse)),
             CachedRun(request: chat.id, sent: nil, outcome: .grpc(Self.chatRecord))
         ]
     }
@@ -265,22 +257,6 @@ private struct DemoRequests {
         )))
     }
 
-    private static var createUserRequest: RequestItem {
-        RequestItem(name: "Create user", kind: .http(HTTPRequestSpec(
-            method: .post,
-            url: "{{baseUrl}}/users",
-            body: .raw("""
-            {
-              "name": "{{name}}",
-              "email": "grace@acme.dev",
-              "roles": ["member", "billing"],
-              "sendInvite": true,
-              "requestId": "{{$uuid}}"
-            }
-            """, contentType: "application/json")
-        )))
-    }
-
     private static func sent(_ method: String, _ path: String) -> ResolvedHTTPRequest {
         ResolvedHTTPRequest(method: method, url: "https://api.acme.dev\(path)", headers: [], bodyPreview: nil, bodyByteCount: 0)
     }
@@ -301,23 +277,6 @@ private struct DemoRequests {
             startedAt: ScreenshotDemoProject.startedAt,
             duration: 0.086,
             timing: HTTPTiming(dnsLookup: 0.003, connect: 0.009, tlsHandshake: 0.018, requestSent: 0.0002, waiting: 0.049, download: 0.007),
-            protocolName: "h2",
-            tlsVersion: "TLS 1.3"
-        )
-    }
-
-    private static var createdResponse: HTTPResponseRecord {
-        HTTPResponseRecord(
-            statusCode: 201,
-            headers: [
-                KeyValuePair(key: "Content-Type", value: "application/json; charset=utf-8"),
-                KeyValuePair(key: "Location", value: "/users/43")
-            ],
-            body: Data(#"{"id":43,"name":"Grace Hopper","email":"grace@acme.dev","roles":["member","billing"],"invited":true}"#.utf8),
-            url: "https://api.acme.dev/users",
-            startedAt: ScreenshotDemoProject.startedAt,
-            duration: 0.142,
-            timing: HTTPTiming(dnsLookup: 0.004, connect: 0.012, tlsHandshake: 0.026, requestSent: 0.0003, waiting: 0.088, download: 0.011),
             protocolName: "h2",
             tlsVersion: "TLS 1.3"
         )

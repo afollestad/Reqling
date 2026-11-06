@@ -31,16 +31,6 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertEqual(editor.response.exchange?.response?.statusCode, 200)
     }
 
-    func testBodySceneOpensThePOSTOnItsBodyAndTiming() throws {
-        try ScreenshotDemoProject.seed(.body, into: component)
-
-        let editor = try XCTUnwrap(component.appModel.editor?.asHTTP)
-        XCTAssertEqual(component.appModel.selectedNode()?.name, "Create user")
-        XCTAssertEqual(editor.tab, .body)
-        XCTAssertEqual(editor.response.tab, .timing)
-        XCTAssertNotNil(editor.response.exchange?.response?.timing)
-    }
-
     /// The descriptor set it writes must load, or the method pickers show an error in the capture.
     func testGRPCSceneOpensTheStreamWithItsSchemaAndTimeline() async throws {
         try ScreenshotDemoProject.seed(.grpc, into: component)
@@ -126,7 +116,7 @@ final class ScreenshotModeTests: XCTestCase {
     /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, and only the live scenes
     /// add Acme API's Live folder, so neither changes another capture.
     func testOtherScenesKeepStorefrontCollapsedTheInspectorClosedAndNoLiveFolder() throws {
-        try ScreenshotDemoProject.seed(.body, into: component)
+        try ScreenshotDemoProject.seed(.request, into: component)
 
         let library = component.projectLibrary
         let storefront = try XCTUnwrap(library.projects.first { $0.name == "Storefront" }?.id)
