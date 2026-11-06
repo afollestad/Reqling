@@ -177,6 +177,52 @@ extension RequestRunnerTests {
         XCTAssertEqual(runner.history.runs(for: key.requestID, in: key.projectID).first?.status, .webSocket(.refused(statusCode: 403)))
     }
 
+    /// A change to the saved keepalive, from the window or an agent, reaches the open connection; other edits don't.
+    func testTheOpenConnectionFollowsChangesToTheSavedKeepalive() async throws {
+        let server = try await socketServer()
+        let key = try makeSocketProject(url: server.url)
+        let runner = makeRunner(sleep: patientSleeper)
+        func save(_ change: @escaping (inout WebSocketRequestSpec) -> Void) throws {
+            try fixture.library.mutate(key.projectID) { document in
+                try document.updateRequest(key.requestID) { item in
+                    guard var spec = item.kind.webSocketSpec else {
+                        return
+                    }
+                    change(&spec)
+                    item.kind = .webSocket(spec)
+                }
+            }
+        }
+        func notes() -> [String] {
+            runner.latest[key]?.webSocket?.entries.compactMap { if case .note(let text) = $0.kind { text } else { nil } } ?? []
+        }
+
+        let run = Task { await runner.run(key.requestID, in: key.projectID) }
+        await waitUntil("the connection opens") { runner.openSockets.contains(key) }
+        try save { $0.options.keepaliveSeconds = 20 }
+        await waitUntil("the new keepalive shows") { notes().count == 1 }
+        try save { $0.subprotocols = ["chat"] }
+        try save { $0.options.keepaliveSeconds = nil }
+        await waitUntil("the keepalive turns off") { notes().count == 2 }
+        runner.cancel(key.requestID, in: key.projectID)
+        let exchange = await run.value
+
+        XCTAssertEqual(
+            exchange.webSocket?.entries.compactMap { if case .note(let text) = $0.kind { text } else { nil } },
+            ["Keepalive now pings after 20 s of silence.", "Keepalive turned off."]
+        )
+    }
+
+    /// A value an agent or a hand edit stores can't overflow the timer, or ping more than once a second.
+    func testAKeepaliveIsHeldToItsRange() {
+        XCTAssertEqual(RequestRunner.keepalive(seconds: 1e300), .seconds(3_600))
+        XCTAssertEqual(RequestRunner.keepalive(seconds: 0.5), .seconds(1))
+        XCTAssertEqual(RequestRunner.keepalive(seconds: 25), .seconds(25))
+        for off in [nil, 0, -5, .nan] as [Double?] {
+            XCTAssertNil(RequestRunner.keepalive(seconds: off), "\(String(describing: off))")
+        }
+    }
+
     func testForgettingARequestClosesItsOpenConnection() async throws {
         let server = try await socketServer()
         let key = try makeSocketProject(url: server.url)

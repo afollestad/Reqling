@@ -124,8 +124,13 @@ public struct WebSocketRequestOptions: Hashable, Sendable, Codable {
     /// Bounds connecting, TLS, and the server's answer to the handshake. An open connection never times out on its own.
     public var timeoutSeconds: Double?
     public var verifyTLS: Bool?
-    /// Ping after this many seconds without a frame either way; `nil` never pings unasked, as browsers don't.
+    /// Ping after this many seconds without a frame either way; `nil` never pings unasked, as browsers don't. A
+    /// connection holds it to `keepaliveRange`.
     public var keepaliveSeconds: Double?
+
+    /// The keepalive intervals a connection uses. A stored value outside is moved to the nearer end, so a value an agent
+    /// or a hand edit gives can't overflow the timer.
+    public static let keepaliveRange: ClosedRange<Double> = 1...3_600
 
     public init(timeoutSeconds: Double? = nil, verifyTLS: Bool? = nil, keepaliveSeconds: Double? = nil) {
         self.timeoutSeconds = timeoutSeconds

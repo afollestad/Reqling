@@ -4,6 +4,10 @@ import Foundation
 /// plus sending and pinging while a connection is open. The handshake is built as an HTTP GET (`preparedHTTP`), so
 /// auth, `{{variables}}`, and masking are HTTP's; it shares the project's cookie jar (`HTTPExecutor.cookies`) and
 /// certificates (`tlsContext`). Disconnect is `cancel`, which closes with 1000.
+///
+/// An open connection keeps what it connected with, except its keepalive: a change to the request's saved keepalive
+/// applies at once (`followSavedKeepalive`), so a server that drops quiet connections can be kept talking without
+/// reconnecting.
 extension RequestRunner {
     /// Sends `message` on the open connection of `request`, resolved against the run's environment. Fails when no
     /// connection is open, or the message can't be resolved or encoded.
@@ -70,7 +74,6 @@ extension RequestRunner {
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
-            let keepalive = spec.options.keepaliveSeconds.flatMap { $0 > 0 ? Duration.seconds(max($0, 1)) : nil }
             return PreparedWebSocket(
                 connect: WebSocketConnectRequest(
                     handshake: handshake,
@@ -78,7 +81,7 @@ extension RequestRunner {
                     subprotocols: offered,
                     tls: tls,
                     cookies: executor(for: project).cookies,
-                    keepalive: keepalive
+                    keepalive: Self.keepalive(seconds: spec.options.keepaliveSeconds)
                 ),
                 summary: summary,
                 seeds: seeds,
@@ -119,6 +122,7 @@ extension RequestRunner {
         let publishes = options.unsaved == nil
         if publishes {
             latest[key] = live.exchange
+            followSavedKeepalive(key, on: live)
         }
         let executor = WebSocketExecutor(sleep: sleep)
         return Task {
@@ -164,6 +168,40 @@ extension RequestRunner {
         if publishes {
             publishThrottled(live, key: key) { [weak self] in self?.liveSockets[key] === live }
         }
+    }
+
+    /// Sends `live` each change to its request's saved keepalive, until the run ends or is replaced. Only a change
+    /// counts, so a re-run of an older version (`RunOptions.spec`) keeps its own interval until the saved one changes.
+    /// Re-arms itself on each library change, as `withObservationTracking` reports only the first; edits in the window
+    /// reach the library after its autosave pause, so a burst of them lands as one change.
+    private func followSavedKeepalive(_ key: RunKey, on live: WebSocketLive) {
+        guard liveSockets[key] === live else {
+            return
+        }
+        let saved = withObservationTracking {
+            library.document(key.projectID)?.request(key.requestID)?.kind.webSocketSpec.map(\.options.keepaliveSeconds)
+        } onChange: { [weak self, weak live] in
+            Task { @MainActor [weak self, weak live] in
+                if let self, let live {
+                    followSavedKeepalive(key, on: live)
+                }
+            }
+        }
+        // A project that failed to load, or a request mid-switch, says nothing about the keepalive.
+        guard let saved else {
+            return
+        }
+        if let followed = live.followedKeepalive, followed != saved {
+            live.setKeepalive(Self.keepalive(seconds: saved))
+        }
+        live.followedKeepalive = saved
+    }
+
+    /// A request's keepalive as the connection takes it: held to `WebSocketRequestOptions.keepaliveRange`, and off for
+    /// none, zero, or less.
+    static func keepalive(seconds: Double?) -> Duration? {
+        let range = WebSocketRequestOptions.keepaliveRange
+        return seconds.flatMap { $0 > 0 ? .seconds(min(max($0, range.lowerBound), range.upperBound)) : nil }
     }
 
     /// The handshake's URL as a WebSocket's: `http` and `https` as `ws` and `wss`, as browsers allow (a URL typed with

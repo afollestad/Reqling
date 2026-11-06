@@ -298,7 +298,7 @@ private struct WebSocketOptionsEditor: View {
                     .labelsHidden()
                     .frame(maxWidth: 160)
             }
-            LabeledRowNote(text: "Seconds of silence before a ping; one still unanswered at the next ping ends the connection.")
+            LabeledRowNote(text: "Seconds of silence before a ping, applied live to an open connection. A ping unanswered by the next ends it.")
                 .font(.caption)
             LabeledRow("TLS") {
                 Picker("Verify TLS certificates", selection: $editor.spec.options.verifyTLS) {

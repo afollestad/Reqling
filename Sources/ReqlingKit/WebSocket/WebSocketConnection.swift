@@ -21,7 +21,8 @@ struct WebSocketConnectRequest: Sendable {
     /// `Set-Cookie`s come back into it, unless the handshake's `httpShouldHandleCookies` is off (the user typed a
     /// `Cookie` header), as URLSession treats it.
     var cookies: HTTPCookieStorage?
-    /// Ping after this long without a frame either way; `nil` never pings unasked.
+    /// Ping after this long without a frame either way; `nil` never pings unasked. `WebSocketCommand.keepalive`
+    /// changes it once open.
     var keepalive: Duration?
 
     init(
@@ -45,6 +46,8 @@ struct WebSocketConnectRequest: Sendable {
 enum WebSocketCommand: Sendable {
     case message(WebSocketMessageFormat, [UInt8])
     case ping
+    /// From now on, pings after this long without a frame either way, or never unasked for `nil`.
+    case keepalive(Duration?)
     /// Starts the close handshake. Messages queued after it are not sent.
     case close(code: UInt16, reason: String)
 }

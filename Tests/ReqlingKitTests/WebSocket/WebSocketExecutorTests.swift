@@ -418,6 +418,35 @@ final class WebSocketExecutorTests: XCTestCase {
         ], "The pong to one keepalive never delays the next")
     }
 
+    func testAKeepaliveChangedWhileOpenRestartsItsIntervalAndCanTurnItOff() async throws {
+        let sleeper = TestSleeper(returnsAtOnce: false)
+        let server = try await start()
+        var requests = sleeper.requests.makeAsyncIterator()
+        var connection = try connect(server.url, keepalive: .seconds(30), sleeper: sleeper)
+        _ = await connection.next()
+        while await requests.next() != .seconds(30) {}
+
+        connection.outbox.send(.keepalive(.seconds(45)))
+        connection.outbox.send(.keepalive(.seconds(45)))
+        var controls = [await connection.nextControl() ?? .note("none")]
+        while await requests.next() != .seconds(45) {}
+        sleeper.wake()
+        controls.append(await connection.nextControl() ?? .note("none"))
+        controls.append(await connection.nextControl() ?? .note("none"))
+        connection.outbox.send(.keepalive(nil))
+        controls.append(await connection.nextControl() ?? .note("none"))
+        connection.task.cancel()
+        _ = await connection.outcome
+
+        XCTAssertEqual(controls.map { if case .pong(let id, _) = $0 { "pong \(id ?? 0)" } else { "\($0)" } }, [
+            "\(WebSocketControlEvent.note("Keepalive now pings after 45 s of silence."))",
+            "\(WebSocketControlEvent.pingSent(id: 1))",
+            "pong 1",
+            "\(WebSocketControlEvent.note("Keepalive turned off."))"
+        ], "One note for a repeated interval, and the first ping waits out the new one")
+        XCTAssertFalse(sleeper.durations.drop { $0 != .seconds(45) }.contains(.seconds(30)), "The old interval's timer stops")
+    }
+
     func testMessagesQueuedAfterACloseAreNotSent() async throws {
         let server = try await start(behavior: TestWebSocketServer.Behavior(answersClose: false))
         var connection = try connect(server.url, commands: [.close(code: 1000, reason: ""), .message(.text, Array("late".utf8))])

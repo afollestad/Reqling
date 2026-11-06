@@ -14,7 +14,8 @@ struct WebSocketSession: Sendable {
         case frame(WebSocketFrame)
         case inboundEnded((any Error)?)
         case command(WebSocketCommand)
-        case keepaliveTick
+        /// From the keepalive timer `generation` started, so a tick queued just before a change is ignored.
+        case keepaliveTick(generation: Int)
         case closeTimeout
     }
 
@@ -22,6 +23,7 @@ struct WebSocketSession: Sendable {
     /// The channel under `channel`, closed directly when the server never finishes the close handshake.
     let underlying: any Channel
     let sink: WebSocketEventSink
+    /// The interval at the start; `WebSocketCommand.keepalive` changes it.
     let keepalive: Duration?
     let closeTimeout: Duration
     let messageLimit: Int
@@ -49,15 +51,8 @@ struct WebSocketSession: Sendable {
                             feed.yield(.command(command))
                         }
                     }
-                    if let keepalive {
-                        let sleep = sleep
-                        group.addTask {
-                            while (try? await sleep(keepalive)) != nil {
-                                feed.yield(.keepaliveTick)
-                            }
-                        }
-                    }
-                    var loop = Loop(session: self, outbound: outbound)
+                    var loop = Loop(session: self, outbound: outbound, feed: feed)
+                    loop.restartKeepalive()
                     var end: WebSocketEnd = .dropped("The connection closed without a close frame (1006).")
                     for await input in inputs {
                         if let finished = await loop.handle(input, startCloseTimer: {
@@ -72,6 +67,7 @@ struct WebSocketSession: Sendable {
                             break
                         }
                     }
+                    loop.stopKeepalive()
                     group.cancelAll()
                     return end
                 }
@@ -86,6 +82,7 @@ struct WebSocketSession: Sendable {
 private struct Loop {
     let session: WebSocketSession
     let outbound: NIOAsyncChannelOutboundWriter<WebSocketFrame>
+    let feed: AsyncStream<WebSocketSession.Input>.Continuation
     /// Counts message commands, numbering `WebSocketEvent.sent`.
     var messageIndex = 0
     var sentClose: (code: UInt16?, reason: String)?
@@ -98,10 +95,17 @@ private struct Loop {
     /// The keepalive ping waiting for any sign of life, which ends the connection when the next tick finds it waiting.
     var keepalivePing: UInt64?
     var trafficSinceTick = false
+    var keepalive: Duration?
+    /// Ticks every `keepalive`. Unstructured, unlike the session's other inputs, so a change can cancel it at once
+    /// rather than leave it asleep for the rest of the old interval.
+    var keepaliveTimer: Task<Void, Never>?
+    var keepaliveGeneration = 0
 
-    init(session: WebSocketSession, outbound: NIOAsyncChannelOutboundWriter<WebSocketFrame>) {
+    init(session: WebSocketSession, outbound: NIOAsyncChannelOutboundWriter<WebSocketFrame>, feed: AsyncStream<WebSocketSession.Input>.Continuation) {
         self.session = session
         self.outbound = outbound
+        self.feed = feed
+        keepalive = session.keepalive
     }
 
     /// The end once the connection has closed, or `nil` while it is open.
@@ -116,8 +120,10 @@ private struct Loop {
             }
             keepalivePing = nil
             await receive(frame, startCloseTimer: startCloseTimer)
-        case .keepaliveTick:
-            await tick()
+        case .keepaliveTick(let generation):
+            if generation == keepaliveGeneration {
+                await tick()
+            }
         case .closeTimeout:
             let text = receivedClose == nil
                 ? "The server didn't answer the close in \(Self.describe(session.closeTimeout)), so Reqling closed the connection."
@@ -152,9 +158,40 @@ private struct Loop {
                 return
             }
             await ping()
+        case .keepalive(let interval):
+            guard sentClose == nil, interval != keepalive else {
+                return
+            }
+            keepalive = interval
+            restartKeepalive()
+            session.sink.control(.note(interval.map { "Keepalive now pings after \(Self.describe($0)) of silence." } ?? "Keepalive turned off."))
         case .close(let code, let reason):
             await close(code: code, reason: reason, startCloseTimer: startCloseTimer)
         }
+    }
+
+    /// Starts `keepalive`'s interval over, so the first ping at a new one waits a whole quiet interval from now. A
+    /// keepalive ping still unanswered stays due: the new timer's first tick ends the connection if nothing has come
+    /// back by then, unless the keepalive was turned off.
+    mutating func restartKeepalive() {
+        stopKeepalive()
+        trafficSinceTick = false
+        guard let keepalive else {
+            keepalivePing = nil
+            return
+        }
+        let (sleep, feed, generation) = (session.sleep, feed, keepaliveGeneration)
+        keepaliveTimer = Task {
+            while (try? await sleep(keepalive)) != nil {
+                feed.yield(.keepaliveTick(generation: generation))
+            }
+        }
+    }
+
+    mutating func stopKeepalive() {
+        keepaliveTimer?.cancel()
+        keepaliveTimer = nil
+        keepaliveGeneration += 1
     }
 
     private mutating func receive(_ frame: WebSocketFrame, startCloseTimer: () -> Void) async {

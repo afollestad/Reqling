@@ -51,6 +51,9 @@ final class WebSocketLive: LiveRun {
     var isStopping = false
     /// Stops the connection once `limit.maxDuration` has passed since it opened.
     var limitTimer: Task<Void, Never>?
+    /// The request's saved keepalive when `RequestRunner.followSavedKeepalive` last read it, or `nil` before its first
+    /// read; only a change from it reaches the connection.
+    var followedKeepalive: Double??
     var lastPublished: ContinuousClock.Instant?
     var isPublishPending = false
 
@@ -89,6 +92,12 @@ final class WebSocketLive: LiveRun {
         guard outbox.send(.ping) else {
             throw RunFailure(kind: .invalidRequest, message: "The connection is closed.")
         }
+    }
+
+    /// Pings after `interval` of silence from now on, or never unasked for `nil`; the timeline notes the change. A
+    /// connection still opening takes it as it opens; one already closing ignores it.
+    func setKeepalive(_ interval: Duration?) {
+        outbox.send(.keepalive(interval))
     }
 
     /// Closes normally once a bound is reached; the messages already on their way are still recorded.
