@@ -51,6 +51,31 @@ extension RequestRunner {
         liveCalls[key] != nil || liveStreams[key]?.isOpen == true || liveSockets[key] != nil
     }
 
+    /// Saves every open run as Reqling quits, which would otherwise end unrecorded: an established gRPC call as
+    /// `CANCELLED`, an open event stream and an open WebSocket as stopped, the WebSocket closing with 1001 Going Away
+    /// as it goes (best effort: the process may end first). Runs that haven't reached a server, and unsaved ones, are
+    /// left as they are. Synchronous, for `applicationWillTerminate`; each run is detached once recorded, so a late
+    /// end can't record it again.
+    public func recordLiveRuns(now: Date = Date()) {
+        for (key, stamp) in liveStamps {
+            let exchange: RequestExchange
+            if let call = liveCalls[key], call.hasReachedServer {
+                exchange = call.finished(.failed(.cancelled), now: now)
+                detach(key)
+            } else if let stream = liveStreams[key], stream.hasOpened {
+                exchange = stream.finished(.stopped, now: now)
+                detach(key)
+            } else if let socket = liveSockets[key], socket.isOpen {
+                exchange = socket.quit(now: now)
+                // Cancelling would close with Disconnect's 1000 instead.
+                detach(key, cancels: false)
+            } else {
+                continue
+            }
+            _ = record(stamp.applied(to: exchange))
+        }
+    }
+
     /// Forgets `key`'s live run, if any, so it can never publish again.
     func dropLive(_ key: RunKey) {
         liveCalls[key] = nil
@@ -59,6 +84,7 @@ extension RequestRunner {
         eventStreams.remove(key)
         liveSockets[key] = nil
         openSockets.remove(key)
+        liveStamps[key] = nil
     }
 
     /// Forgets every live run in `project`.
@@ -69,5 +95,6 @@ extension RequestRunner {
         eventStreams = eventStreams.filter { $0.projectID != project }
         liveSockets = liveSockets.filter { $0.key.projectID != project }
         openSockets = openSockets.filter { $0.projectID != project }
+        liveStamps = liveStamps.filter { $0.key.projectID != project }
     }
 }

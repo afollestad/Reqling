@@ -97,6 +97,9 @@ public final class RequestRunner {
     /// Each WebSocket run's connection, by run, from the moment it is sent: identity-checked like `liveCalls`, and in
     /// `openSockets` only once the server switches protocols.
     @ObservationIgnored var liveSockets: [RunKey: WebSocketLive] = [:]
+    /// What each saved run in flight stamps its exchanges with, so `recordLiveRuns` can record one that never finishes;
+    /// unsaved runs never record, so they have none.
+    @ObservationIgnored var liveStamps: [RunKey: RunStamp] = [:]
     /// Waits out an event stream's reconnect delay and time limit, and times a WebSocket's handshake, keepalive, and
     /// close; tests inject one that needs no wall clock.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
@@ -198,6 +201,9 @@ public final class RequestRunner {
         }
         tasks[key] = task
         inFlight.insert(key)
+        if options.unsaved == nil {
+            liveStamps[key] = stamp
+        }
         // The run is an unstructured task, so it outlives a replaced caller; the caller's cancellation is forwarded.
         let exchange = stamp.applied(to: await withTaskCancellationHandler {
             await task.value
@@ -210,6 +216,7 @@ public final class RequestRunner {
         }
         tasks[key] = nil
         inFlight.remove(key)
+        liveStamps[key] = nil
         return options.unsaved == nil ? record(exchange) : exchange
     }
 
@@ -280,9 +287,13 @@ public final class RequestRunner {
         latest[key] = nil
     }
 
-    /// Cancels a run and forgets it is running, so it can never publish or record.
-    func detach(_ key: RunKey) {
-        tasks.removeValue(forKey: key)?.cancel()
+    /// Cancels a run and forgets it is running, so it can never publish or record. `cancels: false` leaves it running
+    /// unwatched, as a WebSocket closing with its own code must.
+    func detach(_ key: RunKey, cancels: Bool = true) {
+        let task = tasks.removeValue(forKey: key)
+        if cancels {
+            task?.cancel()
+        }
         inFlight.remove(key)
         dropLive(key)
     }
@@ -447,8 +458,8 @@ public final class RequestRunner {
 }
 
 /// What every exchange of one run carries, whichever path produced it: a failure before sending, a response, or a
-/// gRPC call's partial and final records.
-private struct RunStamp {
+/// live run's partial and final records.
+struct RunStamp {
     let id: RunID
     let startedAt: Date
     let spec: RequestKind?

@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         AppDI.component.appModel.flushPendingEdits()
         AppDI.component.mcpServer.stopListening()
+        // Open streams, calls, and connections would otherwise end unrecorded with the process.
+        AppDI.component.requestRunner.recordLiveRuns()
         // Last, after anything above that might still record a run.
         AppDI.component.requestRunner.flushHistory()
     }

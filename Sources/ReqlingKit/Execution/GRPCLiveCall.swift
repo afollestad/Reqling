@@ -43,6 +43,11 @@ final class GRPCLiveCall: LiveRun {
     var lastPublished: ContinuousClock.Instant?
     var isPublishPending = false
 
+    /// The call reached the server, so it has a record to keep however it ends.
+    var hasReachedServer: Bool {
+        isEstablished
+    }
+
     /// Bounds the JSON a live record holds (`LiveWindow`).
     static let byteLimit = 32 * 1024 * 1024
 

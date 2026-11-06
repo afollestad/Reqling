@@ -34,6 +34,27 @@ extension GRPCRunnerTests {
         XCTAssertThrowsError(try runner.sendMessage("{}", to: request, in: project), "The call has ended")
     }
 
+    /// Quitting records an open call as `CANCELLED`, as cancelling it does, with what crossed it so far.
+    func testQuittingRecordsAnOpenCall() async throws {
+        let server = try await start()
+        let (project, request) = try makeProject(echoSpec("Bidi", messages: [#"{"text": "first"}"#]), server: server)
+        let runner = makeRunner()
+        let key = RunKey(request, in: project)
+
+        let running = Task { await runner.run(request, in: project, options: RunOptions(keepsStreamOpen: true)) }
+        await waitUntil("first echo") { (try? self.texts(runner.latest[key]?.grpc ?? .empty, .received)) == ["first"] }
+        runner.recordLiveRuns()
+        _ = await running.value
+        runner.flushHistory()
+
+        let runs = runner.history.runs(for: request, in: project)
+        XCTAssertEqual(runs.count, 1)
+        XCTAssertEqual(runs.first?.status, .grpc(code: 1, name: "CANCELLED"))
+        let stored = await runner.history.exchange(try XCTUnwrap(runs.first?.id), for: request, in: project)
+        XCTAssertEqual(try texts(try XCTUnwrap(stored?.grpc), .received), ["first"])
+        XCTAssertFalse(runner.openStreams.contains(key))
+    }
+
     func testForgettingAProjectCancelsItsOpenStream() async throws {
         let server = try await start()
         let (project, request) = try makeProject(echoSpec("Bidi"), server: server)

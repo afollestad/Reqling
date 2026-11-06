@@ -135,6 +135,14 @@ final class WebSocketLive: LiveRun {
         exchange(.webSocket(record))
     }
 
+    /// Reqling is quitting: closes with 1001 Going Away, best effort, since the process may end before the frame goes
+    /// out, and ends the run as stopped.
+    func quit(now: Date = Date()) -> RequestExchange {
+        outbox.send(.close(code: 1001, reason: ""))
+        apply(.control(.note("Reqling quit, closing the connection with 1001 Going Away."), timestamp: now))
+        return finished(.ended(.closed(code: 1001, reason: "", byServer: false), timestamp: now), stopped: true)
+    }
+
     /// `stopped` says the run was cancelled (Disconnect, `cancel_request`): a close that came of it ends `.stopped`.
     func finished(_ outcome: WebSocketOutcome, stopped: Bool) -> RequestExchange {
         isOpen = false
