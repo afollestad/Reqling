@@ -26,7 +26,7 @@ struct MCPRequestTools {
                 "project": MCPSchema.project,
                 "folder": MCPSchema.string("Only requests inside this folder (by ID)."),
                 "recursive": MCPSchema.boolean("With a folder, include its subfolders' requests. Defaults to true."),
-                "kind": MCPSchema.enumeration(["http", "grpc"], "Only this protocol."),
+                "kind": MCPSchema.enumeration(RequestKind.Name.allCases.map(\.rawValue), "Only this protocol."),
                 "query": MCPSchema.string("Words that must all match a request's name, method, URL, or RPC, ignoring case.")
             ],
             annotations: .read
@@ -35,7 +35,7 @@ struct MCPRequestTools {
                 ?? context.library.projects.compactMap { project in project.document.map { (project, $0) } }
             let kind = try arguments.optionalString("kind").map { name in
                 guard let kind = RequestKind.Name(rawValue: name) else {
-                    throw MCPToolError("`kind` must be http or grpc.")
+                    throw MCPToolError("`kind` must be one of \(RequestKind.Name.allCases.map(\.rawValue).joined(separator: ", ")).")
                 }
                 return kind
             }
@@ -85,13 +85,14 @@ struct MCPRequestTools {
         MCPTool(
             "create_request",
             title: "Create request",
-            description: "Saves a new request template. Pass `http` or `grpc` with its spec (fields left out take their defaults; "
-                + "call get_request on an existing request to see the shape), or neither for an empty HTTP GET.",
+            description: "Saves a new request template. Pass `http`, `grpc`, or `websocket` with its spec (fields left out take "
+                + "their defaults; call get_request on an existing request to see the shape), or none for an empty HTTP GET.",
             properties: [
                 "project": MCPSchema.project,
                 "name": MCPSchema.string("The request's name in the sidebar."),
                 "http": Self.httpSpecSchema,
                 "grpc": Self.grpcSpecSchema,
+                "websocket": Self.webSocketSpecSchema,
                 "folder": MCPSchema.folder,
                 "index": MCPSchema.index
             ],
@@ -114,7 +115,8 @@ struct MCPRequestTools {
             title: "Update request",
             description: "Changes a saved request. `spec` is a JSON merge patch on the spec get_request returns: objects merge, "
                 + "`null` resets a field to its default, and a list given replaces the list. In row lists (headers, query "
-                + "parameters, form fields, metadata) a row with an existing `id` keeps it and merges the fields given, so "
+                + "parameters, form fields, metadata, WebSocket messages) a row with an existing `id` keeps it and merges the "
+                + "fields given, so "
                 + #"{"id": "…", "value": "new"} changes one value; a row without `id` is new; a row left out is removed. "#
                 + "Its protocol can't change.",
             properties: [

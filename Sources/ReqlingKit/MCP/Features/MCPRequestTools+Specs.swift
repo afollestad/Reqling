@@ -92,25 +92,46 @@ extension MCPRequestTools {
             + #""projectProtos" | "reflection"} or {"type": "descriptorSet", "file": {"relative": "path"}}), auth, deadlineSeconds."#
     )
 
+    static let webSocketSpecSchema = MCPSchema.openObject(
+        #"A WebSocket spec: url ("ws://" or "wss://"; any query string moves into queryParameters), queryParameters and "#
+            + #"headers ([{"key", "value", "enabled"}]), subprotocols (strings, in preference order), messages "#
+            + #"([{"format": "text" | "binary", "text", "sendOnConnect"}]; binary is base64, and the checked ones go out "#
+            + #"in order on connect), enabledAutoHeaders (["origin"] sends an Origin from the URL), auth, and options "#
+            + #"({"timeoutSeconds", "verifyTLS", "keepaliveSeconds"}). Values may contain {{variables}}."#
+    )
+
     static let folderAuthSchema = MCPSchema.openObject(
         #"Auth for the folder's requests that inherit it: {"type": "inherit"} (the default: from the parent or project), "#
             + #"{"type": "none"}, or the bearer, basic, and apiKey forms update_project describes."#
     )
 
-    /// The spec `http` or `grpc` names, normalized as any outside spec must be.
-    static func kind(from arguments: MCPArguments) throws -> RequestKind {
-        let http = try arguments.optionalObject("http")
-        let grpc = try arguments.optionalObject("grpc")
-        switch (http, grpc) {
-        case (.some, .some):
-            throw MCPToolError("Pass `http` or `grpc`, not both.")
-        case (let http?, nil):
-            return .http(try MCPJSON.decode(HTTPRequestSpec.self, from: .object(http), path: "http").normalized())
-        case (nil, let grpc?):
-            return .grpc(try MCPJSON.decode(GRPCRequestSpec.self, from: .object(grpc), path: "grpc"))
-        case (nil, nil):
-            return .http(HTTPRequestSpec())
+    /// The spec `http`, `grpc`, or `websocket` names, normalized as any outside spec must be; `nil` when none does.
+    static func specArgument(_ arguments: MCPArguments) throws -> RequestKind? {
+        let given = [
+            try arguments.optionalObject("http").map { (RequestKind.Name.http, $0) },
+            try arguments.optionalObject("grpc").map { (RequestKind.Name.grpc, $0) },
+            try arguments.optionalObject("websocket").map { (RequestKind.Name.webSocket, $0) }
+        ].compactMap(\.self)
+        guard given.count <= 1 else {
+            throw MCPToolError("Pass one of `http`, `grpc`, or `websocket`, not more.")
         }
+        guard let (name, object) = given.first else {
+            return nil
+        }
+        let path = name.rawValue
+        switch name {
+        case .http:
+            return .http(try MCPJSON.decode(HTTPRequestSpec.self, from: .object(object), path: path).normalized())
+        case .grpc:
+            return .grpc(try MCPJSON.decode(GRPCRequestSpec.self, from: .object(object), path: path))
+        case .webSocket:
+            return .webSocket(try MCPJSON.decode(WebSocketRequestSpec.self, from: .object(object), path: path).normalized())
+        }
+    }
+
+    /// The spec a new request starts from: the one named, or an empty HTTP GET.
+    static func kind(from arguments: MCPArguments) throws -> RequestKind {
+        try specArgument(arguments) ?? .http(HTTPRequestSpec())
     }
 
     /// `kind`'s spec with an RFC 7396 merge patch applied to its JSON.

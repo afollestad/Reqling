@@ -85,7 +85,7 @@ The schema comes from one of two places, chosen in the **Schema** row:
 
 ## MCP server
 
-Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agents on your Mac can work with your projects: create and edit projects, environments, variables, and saved requests, compile protos, read a GraphQL request's schema and check queries against it, send requests and read their responses (an event stream for a bounded time or number of events), and look back through each request's run history. Changes appear in the window as they happen. Turn it on in **Settings ▸ MCP**, which also shows the setup command for Claude Code and the config for Codex:
+Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agents on your Mac can work with your projects: create and edit projects, environments, variables, and saved requests, compile protos, read a GraphQL request's schema and check queries against it, send requests and read their responses (an event stream or a WebSocket for a bounded time or number of events or received messages, a WebSocket sending its own on-connect messages or the agent's), and look back through each request's run history. Changes appear in the window as they happen. Turn it on in **Settings ▸ MCP**, which also shows the setup command for Claude Code and the config for Codex:
 
 ```sh
 claude mcp add --transport http reqling http://127.0.0.1:39717/mcp --header "Authorization: Bearer <token>"

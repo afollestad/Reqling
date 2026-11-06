@@ -105,9 +105,10 @@ public struct MCPToolError: Error, Equatable, LocalizedError {
 /// Converts between `Value` and JSON text.
 enum MCPJSON {
     /// Sorted keys, so the text is stable from call to call.
-    static func text(_ value: Value) -> String {
+    /// `compact` leaves out the indentation, for text that goes on the wire as written, such as a WebSocket message.
+    static func text(_ value: Value, compact: Bool = false) -> String {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = compact ? [.sortedKeys, .withoutEscapingSlashes] : [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) else {
             return "{}"
         }

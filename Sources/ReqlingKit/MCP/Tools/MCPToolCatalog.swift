@@ -6,7 +6,7 @@ public enum MCPToolCatalog {
 
     static let instructions = """
     These tools operate Reqling, the macOS API client running on this Mac: its projects, their environments and \
-    {{variables}}, the saved request templates in them (HTTP and gRPC), and sending those requests. Changes show up \
+    {{variables}}, the saved request templates in them (HTTP, gRPC, and WebSocket), and sending those requests. Changes show up \
     in Reqling's window as they happen and are saved to the project's files, so prefer these tools over editing \
     project files directly. Saved requests are templates: their {{variables}} resolve only when a request runs, \
     against the environment chosen for that run. The Global environment's variables apply to every project, beneath \

@@ -20,8 +20,10 @@ struct MCPExecutionTools {
             title: "Send request",
             description: "Sends a saved request and waits for the response (HTTP) or the call's end (gRPC), resolving its "
                 + "{{variables}} against an environment. An event-stream response is read until it ends, streamSeconds pass, "
-                + "or streamEvents arrive, then returned with its events. Fails before sending when a variable is undefined, "
-                + "listing the names, unless allowUnresolved is set. The run shows in Reqling's window.",
+                + "or streamEvents arrive, then returned with its events. A WebSocket connects, sends its on-connect messages "
+                + "(or `messages`), and returns everything that crossed it once it closes or reaches the same bounds. Fails "
+                + "before sending when a variable is undefined, listing the names, unless allowUnresolved is set. The run "
+                + "shows in Reqling's window.",
             properties: Self.runProperties.merging([
                 "request": MCPSchema.request,
                 "overrides": MCPSchema.openObject("One-run changes to the spec, as a merge patch like update_request's `spec`. "
@@ -61,7 +63,8 @@ struct MCPExecutionTools {
             properties: Self.runProperties.merging([
                 "name": MCPSchema.string("A name for messages about the run."),
                 "http": MCPRequestTools.httpSpecSchema,
-                "grpc": MCPRequestTools.grpcSpecSchema
+                "grpc": MCPRequestTools.grpcSpecSchema,
+                "websocket": MCPRequestTools.webSocketSpecSchema
             ]) { $1 },
             required: ["project"],
             annotations: .network,
@@ -173,7 +176,9 @@ struct MCPExecutionTools {
         "variables": MCPSchema.stringMap("One-run values that beat every environment's, by key."),
         "messages": MCPSchema.array(
             ["type": ["object", "string"]],
-            "gRPC only: the messages to send in order, as proto3 JSON objects or strings, in place of the spec's."
+            "gRPC and WebSocket: the messages to send in order, in place of the spec's. gRPC takes proto3 JSON objects or "
+                + #"strings. A WebSocket sends a string or a JSON object as text, and {"format": "binary", "text": "<base64>"} "#
+                + "as binary."
         ),
         "allowUnresolved": MCPSchema.boolean("Send even with undefined {{variables}}, which go out as written.")
     ].merging(streamProperties) { $1 }
@@ -187,36 +192,55 @@ struct MCPExecutionTools {
         return options
     }
 
-    /// `kind` with the `messages` argument in place of its own, for gRPC.
+    /// `kind` with the `messages` argument in place of its own: a gRPC call's, or a WebSocket's on-connect messages.
     private static func applyingMessages(_ arguments: MCPArguments, to kind: RequestKind) throws -> RequestKind {
         guard let messages = try arguments.optionalArray("messages") else {
             return kind
         }
-        guard case .grpc(var spec) = kind else {
-            throw MCPToolError("`messages` is for gRPC requests; change an HTTP body through `overrides`.")
-        }
-        spec.messages = try messages.enumerated().map { index, message in
-            switch message {
-            case .string(let text):
-                return text
-            case .object:
-                return MCPJSON.text(message)
-            default:
-                throw MCPToolError("messages[\(index)] must be a JSON object or a string of one.")
+        switch kind {
+        case .grpc(var spec):
+            spec.messages = try messages.enumerated().map { index, message in
+                switch message {
+                case .string(let text):
+                    return text
+                case .object:
+                    return MCPJSON.text(message)
+                default:
+                    throw MCPToolError("messages[\(index)] must be a JSON object or a string of one.")
+                }
             }
+            return .grpc(spec)
+        case .webSocket(var spec):
+            spec.messages = try messages.enumerated().map { index, message in try webSocketMessage(message, at: index) }
+            return .webSocket(spec)
+        case .http:
+            throw MCPToolError("`messages` is for gRPC and WebSocket requests; change an HTTP body through `overrides`.")
         }
-        return .grpc(spec)
+    }
+
+    /// A string goes as text, and so does any JSON object but one naming its `format`, which is a message spec.
+    private static func webSocketMessage(_ message: Value, at index: Int) throws -> WebSocketMessage {
+        switch message {
+        case .string(let text):
+            return WebSocketMessage(text: text)
+        case .object(let object) where object["format"] != nil:
+            guard let format = object["format"]?.stringValue.flatMap(WebSocketMessageFormat.init(rawValue:)),
+                  let text = object["text"]?.stringValue, object.keys.allSatisfy(["format", "text"].contains) else {
+                throw MCPToolError(#"messages[\#(index)] with a `format` must be {"format": "text" | "binary", "text": "…"}."#)
+            }
+            return WebSocketMessage(format: format, text: text)
+        case .object:
+            return WebSocketMessage(text: MCPJSON.text(message, compact: true))
+        default:
+            throw MCPToolError("messages[\(index)] must be a string or a JSON object.")
+        }
     }
 
     private static func adHocKind(_ arguments: MCPArguments) throws -> RequestKind {
-        switch (try arguments.optionalObject("http"), try arguments.optionalObject("grpc")) {
-        case (let http?, nil):
-            return .http(try MCPJSON.decode(HTTPRequestSpec.self, from: .object(http), path: "http").normalized())
-        case (nil, let grpc?):
-            return .grpc(try MCPJSON.decode(GRPCRequestSpec.self, from: .object(grpc), path: "grpc"))
-        default:
-            throw MCPToolError("Pass exactly one of `http` or `grpc`.")
+        guard let kind = try MCPRequestTools.specArgument(arguments) else {
+            throw MCPToolError("Pass one of `http`, `grpc`, or `websocket`.")
         }
+        return kind
     }
 
     // MARK: - Output
