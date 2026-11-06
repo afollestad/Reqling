@@ -120,6 +120,10 @@ extension MessageTreeCache {
     mutating func timeline(for stream: EventStreamRecord, startedAt: Date, isCacheShortened: Bool) -> MessageTimeline {
         timeline(of: stream.entries, startedAt: startedAt, allowsTruncation: isCacheShortened, sequence: \.sequence, item: TimelineItem.init)
     }
+
+    mutating func timeline(for record: WebSocketRecord, startedAt: Date, isCacheShortened: Bool) -> MessageTimeline {
+        timeline(of: record.entries, startedAt: startedAt, allowsTruncation: isCacheShortened, sequence: \.sequence, item: TimelineItem.init)
+    }
 }
 
 extension MessageTimelineCache {
@@ -129,5 +133,9 @@ extension MessageTimelineCache {
 
     mutating func entries(for stream: EventStreamRecord, startedAt: Date) -> [MessageTimelineEntry] {
         entries(of: stream.entries, startedAt: startedAt, sequence: \.sequence, item: TimelineItem.init)
+    }
+
+    mutating func entries(for record: WebSocketRecord, startedAt: Date) -> [MessageTimelineEntry] {
+        entries(of: record.entries, startedAt: startedAt, sequence: \.sequence, item: TimelineItem.init)
     }
 }

@@ -2,7 +2,8 @@ import Foundation
 
 /// One run of a request: what was sent (masked) and what came back, or why it failed.
 public struct RequestExchange: Hashable, Sendable, Codable {
-    /// Shared by every partial exchange an open gRPC call or event stream publishes and the one it finishes with.
+    /// Shared by every partial exchange an open gRPC call, event stream, or WebSocket publishes and the one it finishes
+    /// with.
     public var id: RunID
     public var projectID: ProjectID
     public var requestID: RequestNodeID
@@ -17,7 +18,7 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     public var request: ResolvedHTTPRequest?
     public var outcome: Outcome
     public var unresolvedVariables: [String]
-    /// The stored HTTP body, gRPC messages, or stream events were cut to fit the history (`RunHistoryStore.bodyLimit`
+    /// The stored HTTP body, gRPC messages, stream events, or WebSocket messages were cut to fit the history (`RunHistoryStore.bodyLimit`
     /// and `messageLimit`); the run itself saw them all.
     public var isBodyTruncated: Bool
 
@@ -25,6 +26,8 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         case response(HTTPResponseRecord)
         /// A gRPC call that reached the server, whatever its status; a call that never connected is a `failure`.
         case grpc(GRPCCallRecord)
+        /// A WebSocket connection the server answered, opened or refused; one that got no answer is a `failure`.
+        case webSocket(WebSocketRecord)
         case failure(RunFailure)
     }
 
@@ -68,6 +71,13 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         return nil
     }
 
+    public var webSocket: WebSocketRecord? {
+        if case .webSocket(let record) = outcome {
+            return record
+        }
+        return nil
+    }
+
     public var failure: RunFailure? {
         if case .failure(let failure) = outcome {
             return failure
@@ -80,6 +90,7 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         // A stream that timed out or failed never answered with an error status, but still went wrong.
         case .response(let response): response.statusCode < 400 && response.eventStream?.end?.isFailure != true ? .succeeded : .failed
         case .grpc(let call): call.status?.isOK == true ? .succeeded : .failed
+        case .webSocket(let record): record.isFailure ? .failed : .succeeded
         case .failure: .failed
         }
     }

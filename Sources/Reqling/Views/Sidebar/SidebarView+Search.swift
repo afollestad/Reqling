@@ -55,7 +55,7 @@ private struct SidebarFilterMenu: View {
         Menu {
             Section("Protocol") {
                 ForEach(RequestKind.Name.allCases, id: \.self) { name in
-                    Toggle(Self.title(for: name), isOn: member(name, in: \.protocols))
+                    Toggle(name.title, isOn: member(name, in: \.protocols))
                 }
             }
             Section("Method") {
@@ -93,13 +93,6 @@ private struct SidebarFilterMenu: View {
                 }
             }
         )
-    }
-
-    static func title(for name: RequestKind.Name) -> String {
-        switch name {
-        case .http: "HTTP"
-        case .grpc: "gRPC"
-        }
     }
 
     static func title(for group: RequestFilter.MethodGroup) -> String {

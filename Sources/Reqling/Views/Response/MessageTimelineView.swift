@@ -1,30 +1,6 @@
 import ReqlingKit
 import SwiftUI
 
-/// What a timeline lists, for the words its notes use and the limit they quote.
-enum MessageTimelineKind {
-    /// A gRPC call's messages both ways.
-    case call
-    /// An event stream's events, with notes about its connection between them.
-    case stream
-
-    func count(_ count: Int) -> String {
-        let noun = self == .call ? "message" : "event"
-        return count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
-    }
-
-    var plural: String {
-        self == .call ? "messages" : "events"
-    }
-
-    /// Why older entries are gone from a record nobody shortened.
-    var windowNote: String {
-        self == .call
-            ? "a call keeps its newest \(GRPCCallRecord.eventLimit), or as many as fit"
-            : "a stream keeps its newest \(EventStreamRecord.entryLimit), or as many as fit"
-    }
-}
-
 /// Every message or event, in the order they crossed the wire, with what went wrong above them. Notes above the
 /// entries say what is left out, by cause: a long run keeps only its newest entries, one too fast to record loses some
 /// in between, and a saved response may have been shortened to fit the run history.
@@ -97,7 +73,7 @@ struct MessageTimelineView: View {
             notes.append("This saved response was shortened to fit the run history.")
         }
         if trimmedCount > 0 {
-            let earlier = trimmedCount == 1 ? "1 earlier \(kind == .call ? "message" : "event")" : "\(trimmedCount) earlier \(kind.plural)"
+            let earlier = trimmedCount == 1 ? "1 earlier \(kind.singular)" : "\(trimmedCount) earlier \(kind.plural)"
             // A shortened saved response explains its own trimming; otherwise it is the record's window.
             notes.append(isCacheShortened ? "\(earlier) not shown." : "\(earlier) not shown; \(kind.windowNote).")
         }
@@ -214,7 +190,7 @@ struct MessageTimelineEnd: View {
     var body: some View {
         if isOpen {
             // The status bar's Streaming… already moves; this only marks where new entries land.
-            Label(isEmpty ? "Waiting for \(kind.plural)…" : "Waiting for more \(kind.plural)…", systemImage: "ellipsis.circle")
+            Label(isEmpty ? "Waiting for \(kind.awaited)…" : "Waiting for more \(kind.awaited)…", systemImage: "ellipsis.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if let ending {
@@ -358,7 +334,7 @@ private struct MessageTimelineRow: View, Equatable {
             .accessibilityElement(children: .combine)
         } else {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: isSent ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                Image(systemName: symbol)
                     .font(.title3)
                     .foregroundStyle(isSent ? Color(nsColor: accent) : GRPCBadge.color)
                     .accessibilityHidden(true)
@@ -377,7 +353,7 @@ private struct MessageTimelineRow: View, Equatable {
                             RoundedRectangle(cornerRadius: AppMetrics.inputCornerRadius, style: .continuous)
                                 .strokeBorder(Color(nsColor: .separatorColor))
                         )
-                        .accessibilityLabel(isEvent ? "\(title) event" : "\(title) message")
+                        .accessibilityLabel(accessibilityLabel)
                         .accessibilityValue(item.text)
                 }
             }
@@ -390,25 +366,34 @@ private struct MessageTimelineRow: View, Equatable {
     }
 
     private var isSent: Bool {
-        if case .grpc(.sent, _) = entry.item.header {
-            return true
-        }
-        return false
+        entry.item.header.direction == .sent
     }
 
-    private var isEvent: Bool {
-        if case .event = entry.item.header {
-            return true
+    /// A ping, pong, or close frame takes a smaller glyph than a message: it carries no payload worth reading.
+    private var symbol: String {
+        if case .control = entry.item.header {
+            return isSent ? "arrow.up.circle" : "arrow.down.circle"
         }
-        return false
+        return isSent ? "arrow.up.circle.fill" : "arrow.down.circle.fill"
     }
 
-    /// A message's direction, or an event's type.
+    /// A message's direction (and a WebSocket's format), an event's type, or a control frame's direction.
     private var title: String {
         switch entry.item.header {
         case .grpc(let direction, _): direction == .sent ? "Sent" : "Received"
         case .event(let type, _): type
+        case .webSocket(let direction, let format, let isBase64):
+            "\(direction == .sent ? "Sent" : "Received") \(format == .binary ? "binary" : "text")\(isBase64 ? ", base64" : "")"
+        case .control(let direction): direction == .sent ? "Sent" : "Received"
         case .note: ""
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch entry.item.header {
+        case .event: "\(title) event"
+        case .control: "\(title) frame"
+        case .grpc, .webSocket, .note: "\(title) message"
         }
     }
 
@@ -441,9 +426,11 @@ private struct MessageTimelineRowHeader: View {
             Text("+\(ResponseStatusBar.duration(item.offset))")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .help(isEvent ? "Since the request was sent" : "Since the call started")
-            Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .binary))
-                .foregroundStyle(.secondary)
+                .help(origin)
+            if !isControl {
+                Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .binary))
+                    .foregroundStyle(.secondary)
+            }
             if case .grpc(_, let unknownFieldCount) = item.header, unknownFieldCount > 0 {
                 Label(
                     unknownFieldCount == 1 ? "1 unknown field" : "\(unknownFieldCount) unknown fields",
@@ -457,8 +444,16 @@ private struct MessageTimelineRowHeader: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var isEvent: Bool {
-        if case .event = item.header {
+    private var origin: String {
+        switch item.header {
+        case .grpc, .note: MessageTimelineKind.call.origin
+        case .event: MessageTimelineKind.stream.origin
+        case .webSocket, .control: MessageTimelineKind.connection.origin
+        }
+    }
+
+    private var isControl: Bool {
+        if case .control = item.header {
             return true
         }
         return false

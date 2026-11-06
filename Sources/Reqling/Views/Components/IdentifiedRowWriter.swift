@@ -66,4 +66,14 @@ final class IdentifiedRowWriter<Row: Identifiable & Equatable> {
         current.remove(at: index)
         rows.wrappedValue = current
     }
+
+    /// Moves the row `offset` places (−1 up, +1 down) as one edit; at either end, or for the draft, nothing moves.
+    func move(by offset: Int) {
+        var current = rows.wrappedValue
+        guard !isDraft, let index = current.firstIndex(where: { $0.id == shown.id }), current.indices.contains(index + offset) else {
+            return
+        }
+        current.swapAt(index, index + offset)
+        rows.wrappedValue = current
+    }
 }

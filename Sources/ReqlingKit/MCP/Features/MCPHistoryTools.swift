@@ -100,6 +100,12 @@ struct MCPHistoryTools {
             description["status"] = .int(code)
         case .grpc(_, let name):
             description["status"] = name.map(Value.string) ?? .null
+        case .webSocket(.refused(let code)):
+            description["status"] = .int(code)
+        case .webSocket(.closed(let code)):
+            description["closeCode"] = .int(code ?? 1005)
+        case .webSocket(.unclosed):
+            description["closeCode"] = .int(1006)
         case .failure(let kind):
             description["failure"] = .string(kind.rawValue)
         }

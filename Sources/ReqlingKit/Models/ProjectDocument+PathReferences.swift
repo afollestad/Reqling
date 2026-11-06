@@ -43,6 +43,9 @@ extension RequestKind {
                 spec.schema = .descriptorSet(transform(reference))
             }
             return .grpc(spec)
+        case .webSocket:
+            // Binary messages are typed as base64, never read from a file.
+            return self
         }
     }
 }

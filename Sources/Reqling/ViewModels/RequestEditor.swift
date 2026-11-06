@@ -2,7 +2,7 @@ import Foundation
 import ReqlingKit
 
 /// What every request editor offers whatever protocol its request speaks, so `AppModel`'s selection, flushing, quit
-/// confirmation, and adoption, and the Request menu's Send and Cancel, treat both kinds alike.
+/// confirmation, and adoption, and the Request menu's Send and Cancel, treat every kind alike.
 @MainActor
 protocol RequestEditing: AnyObject {
     var projectID: ProjectID { get }
@@ -38,15 +38,6 @@ extension RequestEditing {
     }
 }
 
-extension RequestKind.Name {
-    var title: String {
-        switch self {
-        case .http: "HTTP"
-        case .grpc: "gRPC"
-        }
-    }
-}
-
 extension RequestEditorViewModel: RequestEditing {
     var kind: RequestKind.Name {
         .http
@@ -74,11 +65,13 @@ extension GRPCEditorViewModel: RequestEditing {
 enum RequestEditor: Equatable {
     case http(RequestEditorViewModel)
     case grpc(GRPCEditorViewModel)
+    case webSocket(WebSocketEditorViewModel)
 
     init(projectID: ProjectID, requestID: RequestNodeID, kind: RequestKind.Name, app: AppModel) {
         switch kind {
         case .http: self = .http(RequestEditorViewModel(projectID: projectID, requestID: requestID, app: app))
         case .grpc: self = .grpc(GRPCEditorViewModel(projectID: projectID, requestID: requestID, app: app))
+        case .webSocket: self = .webSocket(WebSocketEditorViewModel(projectID: projectID, requestID: requestID, app: app))
         }
     }
 
@@ -86,6 +79,7 @@ enum RequestEditor: Equatable {
         switch self {
         case .http(let editor): editor
         case .grpc(let editor): editor
+        case .webSocket(let editor): editor
         }
     }
 
@@ -93,6 +87,7 @@ enum RequestEditor: Equatable {
         switch self {
         case .http: .http
         case .grpc: .grpc
+        case .webSocket: .webSocket
         }
     }
 
@@ -110,10 +105,18 @@ enum RequestEditor: Equatable {
         return nil
     }
 
+    var asWebSocket: WebSocketEditorViewModel? {
+        if case .webSocket(let editor) = self {
+            return editor
+        }
+        return nil
+    }
+
     nonisolated static func == (lhs: RequestEditor, rhs: RequestEditor) -> Bool {
         switch (lhs, rhs) {
         case (.http(let left), .http(let right)): left === right
         case (.grpc(let left), .grpc(let right)): left === right
+        case (.webSocket(let left), .webSocket(let right)): left === right
         default: false
         }
     }
@@ -158,5 +161,24 @@ enum RequestEditor: Equatable {
 
     func cancel() {
         editing.cancel()
+    }
+
+    /// The Request menu's Send. An open gRPC stream or WebSocket takes ⌘Return as its next message, not a restart.
+    var sendTitle: String {
+        switch self {
+        case .http: "Send"
+        case .grpc(let editor): editor.isStreamOpen ? "Send Message" : "Send"
+        case .webSocket(let editor): editor.isOpen ? "Send Message" : "Connect"
+        }
+    }
+
+    /// The Request menu's Cancel. An open event stream has nothing left to cancel but the stream itself, and an open
+    /// WebSocket closes.
+    var cancelTitle: String {
+        switch self {
+        case .http(let editor): editor.isStreaming ? "Stop" : "Cancel"
+        case .grpc: "Cancel"
+        case .webSocket(let editor): editor.isOpen ? "Disconnect" : "Cancel"
+        }
     }
 }

@@ -38,7 +38,7 @@ public enum RunComparer {
         let old = try Facets(older)
         let new = try Facets(newer)
         var sections: [RunComparisonSection] = []
-        // Both kinds have three sections; titled as the newer run's, should the two ever be of different kinds.
+        // Every kind has three sections; titled as the newer run's, should the two ever be of different kinds.
         for index in new.titles.indices {
             sections.append(RunComparisonSection(title: new.titles[index], content: try content(old.sections[index], new.sections[index])))
         }
@@ -56,8 +56,8 @@ public enum RunComparer {
     }
 }
 
-/// One run as the texts a comparison diffs. HTTP and gRPC runs both yield three sections, titled by `titles`, so a
-/// comparison of two runs of one request lines them up by position.
+/// One run as the texts a comparison diffs. Every kind's runs yield three sections, titled by `titles`, so a comparison
+/// of two runs of one request lines them up by position.
 private struct Facets {
     enum Body {
         case text(String, SyntaxLanguage)
@@ -81,8 +81,16 @@ private struct Facets {
     let titles: [String]
     let sections: [Body]
 
+    /// By the outcome's kind, or for a failure the spec's, so a failed run lines up with the request's other runs.
     init(_ exchange: RequestExchange) throws(CancellationError) {
-        if exchange.grpc != nil || exchange.spec?.name == .grpc {
+        let kind: RequestKind.Name = switch exchange.outcome {
+        case .response: .http
+        case .grpc: .grpc
+        case .webSocket: .webSocket
+        case .failure: exchange.spec?.name ?? .http
+        }
+        switch kind {
+        case .grpc:
             titles = ["Messages", "Metadata", "Request"]
             let call = exchange.grpc
             sections = [
@@ -90,7 +98,15 @@ private struct Facets {
                 .text(call.map(Self.metadata) ?? "", .plainText),
                 .text(call.map(Self.callRequest) ?? "", .plainText)
             ]
-        } else {
+        case .webSocket:
+            titles = ["Messages", "Handshake", "Request"]
+            let record = exchange.webSocket
+            sections = [
+                .text(record.map(Self.messages) ?? Self.failureText(exchange), .plainText),
+                .text(record.map(Self.handshake) ?? "", .plainText),
+                .text(exchange.request.map(Self.httpRequest) ?? "", .plainText)
+            ]
+        case .http:
             let response = exchange.response
             titles = [response?.eventStream == nil ? "Body" : "Events", "Headers", "Request"]
             sections = [
@@ -168,6 +184,50 @@ private struct Facets {
             }
         }
         .joined(separator: "\n\n")
+    }
+
+    /// Each message under a line naming its direction and place in the connection, with pings, closes, and notes
+    /// between.
+    private static func messages(_ record: WebSocketRecord) -> String {
+        record.entries.map { entry in
+            switch entry.kind {
+            case .message(let message):
+                let direction = message.direction == .sent ? "→ Sent" : "← Received"
+                let format = message.isBase64 ? " (base64)" : ""
+                let text = message.isBase64 ? message.text : JSONFormatter.pretty(message.text) ?? message.text
+                return "\(direction) #\(entry.sequence + 1)\(format)\n\(text)"
+            case .control(let direction, let text):
+                return "\(direction == .sent ? "→" : "←") \(text)"
+            case .note(let note):
+                return "— \(note)"
+            }
+        }
+        .joined(separator: "\n\n")
+    }
+
+    /// The server's answer and how the connection ended.
+    private static func handshake(_ record: WebSocketRecord) -> String {
+        var lines: [String] = []
+        if let head = record.handshake {
+            lines.append("Status: \(head.statusCode) \(head.reasonPhrase)")
+            if !head.headers.isEmpty {
+                lines += ["", headerLines(head.headers)]
+            }
+            if let body = String(data: head.body, encoding: .utf8), !body.isEmpty {
+                lines += ["", JSONFormatter.pretty(body) ?? body]
+            }
+        }
+        if let close = record.close {
+            let reason = close.reason.isEmpty ? "" : ": \(close.reason)"
+            lines += ["", "Close: \(close.title) by the \(close.byServer ? "server" : "client")\(reason)"]
+        }
+        switch record.end {
+        case .refused(let message), .failed(let message):
+            lines += ["", message]
+        case .closed, .stopped, .limit, nil:
+            break
+        }
+        return lines.joined(separator: "\n")
     }
 
     private static func metadata(_ call: GRPCCallRecord) -> String {

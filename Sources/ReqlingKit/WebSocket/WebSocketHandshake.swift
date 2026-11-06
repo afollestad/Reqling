@@ -15,9 +15,7 @@ enum WebSocketHandshake {
     /// the URL, so typed copies are dropped rather than sent twice, as URLSession ignores a typed `Host`. A typed
     /// `Sec-WebSocket-Extensions` goes too: no extension is supported, so a server that took one would break the
     /// connection.
-    static let reservedHeaders: Set<String> = [
-        "host", "upgrade", "connection", "sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions"
-    ]
+    static let reservedHeaders = WebSocketRequestSpec.connectionHeaders.union(["sec-websocket-extensions"])
 
     /// Where a handshake connects, and what it sends there.
     struct Target {

@@ -115,6 +115,8 @@ struct MCPExecutionTools {
                         "messages": .array(preview.messages.map(Value.string)),
                         "unresolvedVariables": .array(preview.unresolvedVariables.map(Value.string))
                     ])
+                case .webSocket:
+                    return .object(try Self.resolved(context.runner.previewWebSocket(request.id, in: project.id, options: options)))
                 }
             } catch let failure as RunFailure {
                 throw MCPToolError(failure.message)
@@ -233,6 +235,8 @@ struct MCPExecutionTools {
             description["response"] = .object(http(response, cachedCut: exchange.isBodyTruncated, mask: mask))
         case .grpc(let call):
             description["call"] = .object(grpc(call, cachedCut: exchange.isBodyTruncated, mask: mask))
+        case .webSocket(let record):
+            description["connection"] = .object(webSocket(record, cachedCut: exchange.isBodyTruncated, mask: mask))
         case .failure(let failure):
             description["failure"] = ["kind": .string(failure.kind.rawValue), "message": .string(mask(failure.message))]
         }

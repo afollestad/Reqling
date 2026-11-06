@@ -1,7 +1,7 @@
 import Foundation
 
-/// A run that publishes partial exchanges into `RequestRunner.latest` while it is open: a gRPC call (`GRPCLiveCall`)
-/// or an event stream (`EventStreamLive`).
+/// A run that publishes partial exchanges into `RequestRunner.latest` while it is open: a gRPC call (`GRPCLiveCall`),
+/// an event stream (`EventStreamLive`), or a WebSocket connection (`WebSocketLive`).
 @MainActor
 protocol LiveRun: AnyObject {
     /// The run so far, with the ID every partial exchange shares with the final one.
@@ -45,10 +45,10 @@ extension RequestRunner {
         latest[key] = live.exchange
     }
 
-    /// Whether `key` has an open gRPC call or event stream, whose partial exchange in `latest` is newer than anything
-    /// the history holds or drops.
+    /// Whether `key` has an open gRPC call, event stream, or WebSocket, whose partial exchange in `latest` is newer
+    /// than anything the history holds or drops.
     func isLive(_ key: RunKey) -> Bool {
-        liveCalls[key] != nil || liveStreams[key]?.isOpen == true
+        liveCalls[key] != nil || liveStreams[key]?.isOpen == true || liveSockets[key] != nil
     }
 
     /// Forgets `key`'s live run, if any, so it can never publish again.
@@ -57,6 +57,8 @@ extension RequestRunner {
         openStreams.remove(key)
         liveStreams[key] = nil
         eventStreams.remove(key)
+        liveSockets[key] = nil
+        openSockets.remove(key)
     }
 
     /// Forgets every live run in `project`.
@@ -65,5 +67,7 @@ extension RequestRunner {
         openStreams = openStreams.filter { $0.projectID != project }
         liveStreams = liveStreams.filter { $0.key.projectID != project }
         eventStreams = eventStreams.filter { $0.projectID != project }
+        liveSockets = liveSockets.filter { $0.key.projectID != project }
+        openSockets = openSockets.filter { $0.projectID != project }
     }
 }

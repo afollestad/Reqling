@@ -7,7 +7,7 @@
 
 <h1 align="center">Reqling</h1>
 
-<p align="center">A minimal, fully native macOS client for HTTP, Server-Sent Events, GraphQL, and gRPC APIs, with a built-in MCP server for AI agents.</p>
+<p align="center">A minimal, fully native macOS client for HTTP, Server-Sent Events, WebSocket, GraphQL, and gRPC APIs, with a built-in MCP server for AI agents.</p>
 
 <p align="center">
   <a href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
@@ -54,7 +54,7 @@ Mark a variable **secret** to keep its value in your Keychain instead of the pro
 
 ## gRPC
 
-Switch any request between HTTP and gRPC from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline, as a collapsible tree or as text, following the newest while you're scrolled to the end, with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
+Switch any request between HTTP, gRPC, and WebSocket from the protocol menu in its header; its auth, headers, and host carry over. A gRPC request names a target (`host:port`, or `unix:/path` for a socket), a service, and a method, with messages written as proto3 JSON and `{{variables}}` anywhere in them. Unary, server-streaming, client-streaming, and bidirectional calls are all supported; a streaming call stays open so you can send more messages and end the stream yourself, and the response shows every message on a timeline, as a collapsible tree or as text, following the newest while you're scrolled to the end, with the initial metadata, trailers, and final status. A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
 
 The schema comes from one of three places:
 
@@ -63,6 +63,14 @@ The schema comes from one of three places:
 - **Server reflection**, for servers that expose it.
 
 **Example** fills a message with every field of its type. Calls use the project's client certificates and CA certificates, the same as HTTP requests.
+
+## WebSockets
+
+Switch a request to WebSocket from the protocol menu, and **Connect** (⌘Return) to a `ws://` or `wss://` URL; `http(s)://` URLs work too. The handshake goes out like an HTTP request, with its query, headers, auth (inherited from folders, API keys in the query included), and `{{variables}}`. It uses the project's cookies, so a session from an earlier login carries over, and its client certificates and CAs. Subprotocols, the handshake's timeout, and Verify TLS are in Options. `Origin` is an automatic header you can turn on in Headers when a server checks it.
+
+A request keeps a list of messages, text or binary (written as base64), with `{{variables}}` in either. Checked ones go out in order as soon as the connection opens, which replays a conversation, and while it's open each has a **Send** button, beside a composer for messages you don't want to keep (**Save** adds one to the list). Messages sent while connected resolve against the environment you connected with. **Ping** measures a round trip, and a keepalive in Options pings after a quiet stretch, ending the connection when a ping goes unanswered.
+
+The response shows every message both ways on a timeline, as a tree or text, with the server's pings and pongs, the close frames with their codes and reasons, and the server's answer to the handshake (a refusal keeps its body, which usually says why). **Disconnect** (⌘.) closes with 1000 Normal Closure. A server that breaks the protocol is held to it as a browser would hold it, and a run counts as failed when the handshake is refused, the connection drops, or it closes with an abnormal code. Compression (`permessage-deflate`) isn't offered, and like gRPC, WebSockets connect directly rather than through a system proxy.
 
 ## GraphQL
 

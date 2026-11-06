@@ -1,33 +1,5 @@
 import Foundation
 
-/// One template resolved once into the text sent and the text shown, as `HTTPRequestBuilder` does, so dynamic values
-/// (`{{$uuid}}`) are the same in both.
-struct ResolvedTemplate: Hashable, Sendable {
-    let sent: String
-    let shown: String
-}
-
-/// Resolves a gRPC request's templates, collecting the unresolved names in first-use order across every template.
-struct GRPCTemplates {
-    let resolver: TemplateResolver
-    private(set) var unresolved: [String] = []
-
-    init(resolver: TemplateResolver) {
-        self.resolver = resolver
-    }
-
-    mutating func resolve(_ text: String) throws(RunFailure) -> ResolvedTemplate {
-        let resolution = resolver.resolve(text)
-        guard !resolution.exceedsLimit else {
-            throw RunFailure(kind: .invalidRequest, message: HTTPBuildError.templateTooLarge.localizedDescription)
-        }
-        for name in resolution.unresolved where !unresolved.contains(name) {
-            unresolved.append(name)
-        }
-        return ResolvedTemplate(sent: resolution.value, shown: resolution.maskedValue)
-    }
-}
-
 /// Where and how a gRPC request connects, with templates resolved: what a call and a reflection lookup both need.
 struct GRPCEndpoint {
     let target: GRPCTarget
@@ -48,7 +20,7 @@ struct GRPCEndpoint {
 enum GRPCRequestResolution {
     static func endpoint(
         _ spec: GRPCRequestSpec,
-        templates: inout GRPCTemplates,
+        templates: inout RunTemplates,
         authChain: [HTTPAuth],
         defaults: AppSettings
     ) throws(RunFailure) -> GRPCEndpoint {
@@ -123,7 +95,7 @@ enum GRPCRequestResolution {
     /// query string, so an API key set to go in one cannot be sent.
     private static func authMetadata(
         _ auth: HTTPAuth,
-        templates: inout GRPCTemplates
+        templates: inout RunTemplates
     ) throws(RunFailure) -> [(key: ResolvedTemplate, value: ResolvedTemplate)] {
         let authorization = ResolvedTemplate(sent: "authorization", shown: "authorization")
         switch auth {

@@ -64,7 +64,8 @@ extension VerticalAlignment {
     }
 }
 
-/// A run's outcome as a small capsule: its HTTP status code, its gRPC status name, or why it never got a response.
+/// A run's outcome as a small capsule: its HTTP status code, its gRPC status name, a WebSocket's close code, or why it
+/// never got a response.
 struct RunStatusBadge: View {
     let status: RunSummary.Status
 
@@ -82,6 +83,9 @@ struct RunStatusBadge: View {
         switch status {
         case .http(let code): "\(code)"
         case .grpc(_, let name): name ?? "NO STATUS"
+        case .webSocket(.refused(let code)): "\(code)"
+        case .webSocket(.closed(let code)): "\(code ?? 1005)"
+        case .webSocket(.unclosed): "NO CLOSE"
         case .failure(let kind): Self.title(for: kind)
         }
     }
@@ -90,6 +94,9 @@ struct RunStatusBadge: View {
         switch status {
         case .http(let code): "Status \(code)"
         case .grpc(_, let name): "Status \(name ?? "unknown")"
+        case .webSocket(.refused(let code)): "Refused with status \(code)"
+        case .webSocket(.closed(let code)): "Closed with \(code ?? 1005)"
+        case .webSocket(.unclosed): "Ended without a close"
         case .failure(let kind): Self.title(for: kind)
         }
     }
@@ -98,6 +105,9 @@ struct RunStatusBadge: View {
         switch status {
         case .http(let code): StatusBadge.color(for: code)
         case .grpc(_, let name): GRPCStatusBadge.color(for: name ?? "")
+        case .webSocket(.refused(let code)): StatusBadge.color(for: code)
+        case .webSocket(.closed(let code)): WebSocketBadge.color(forClose: code)
+        case .webSocket(.unclosed): .red
         case .failure(.cancelled): .gray
         case .failure: .red
         }

@@ -237,7 +237,7 @@ private struct SidebarCount: View {
     }
 }
 
-/// A compact method name, or "gRPC", on a tinted pill, sized so request names line up.
+/// A compact method name, "gRPC", or "WS", on a tinted pill, sized so request names line up.
 private struct RequestKindPill: View {
     let kind: RequestKind
 
@@ -248,6 +248,8 @@ private struct RequestKindPill: View {
                 MethodBadge(method: spec.method, compact: true)
             case .grpc:
                 GRPCBadge(compact: true)
+            case .webSocket:
+                WebSocketBadge(compact: true)
             }
         }
         .frame(width: 38, height: 16)
@@ -261,6 +263,7 @@ private struct RequestKindPill: View {
         switch kind {
         case .http(let spec): MethodBadge.color(for: spec.method)
         case .grpc: GRPCBadge.color
+        case .webSocket: WebSocketBadge.color
         }
     }
 }

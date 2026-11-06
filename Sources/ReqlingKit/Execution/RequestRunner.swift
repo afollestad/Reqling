@@ -16,7 +16,7 @@ public struct RunOptions: Sendable {
     /// messages, for `RequestRunner.sendMessage` and `endStream`. The editor sets it; agents and tests leave it off, so
     /// a call runs to completion unattended.
     public var keepsStreamOpen: Bool
-    /// Stops an event-stream response early, so an agent's run returns; `nil` lets it run until stopped.
+    /// Stops an event-stream response or a WebSocket early, so an agent's run returns; `nil` lets it run until stopped.
     public var streamLimit: StreamLimit?
 
     public init(
@@ -66,6 +66,8 @@ public final class RequestRunner {
     public internal(set) var openStreams: Set<RunKey> = []
     /// Requests whose response is an event stream still open, which Stop (`cancel`) ends.
     public internal(set) var eventStreams: Set<RunKey> = []
+    /// WebSocket connections open for `sendWebSocketMessage` and `pingWebSocket`, which Disconnect (`cancel`) closes.
+    public internal(set) var openSockets: Set<RunKey> = []
 
     @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored let workspace: WorkspaceStateStore
@@ -92,7 +94,11 @@ public final class RequestRunner {
     /// Each HTTP run's event stream, by run, from the moment it is sent: identity-checked like `liveCalls`, and open
     /// only once its response turns out to be one.
     @ObservationIgnored var liveStreams: [RunKey: EventStreamLive] = [:]
-    /// Waits out an event stream's reconnect delay and time limit; tests inject one that needs no wall clock.
+    /// Each WebSocket run's connection, by run, from the moment it is sent: identity-checked like `liveCalls`, and in
+    /// `openSockets` only once the server switches protocols.
+    @ObservationIgnored var liveSockets: [RunKey: WebSocketLive] = [:]
+    /// Waits out an event stream's reconnect delay and time limit, and times a WebSocket's handshake, keepalive, and
+    /// close; tests inject one that needs no wall clock.
     @ObservationIgnored let sleep: @Sendable (Duration) async throws -> Void
 
     public init(
@@ -173,19 +179,22 @@ public final class RequestRunner {
         let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
         let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
         let task: Task<RequestExchange, Never>
-        if item?.kind.grpcSpec != nil {
-            // Inside the task, unlike HTTP's preparation: finding the schema can compile protos or ask the server, so
-            // it must count as in flight and be cancellable.
-            task = Task { await self.runGRPC(request, in: project, options: options, id: stamp.id, startedAt: stamp.startedAt) }
-        } else {
-            let preparation: PreparedRun
-            do {
-                preparation = try prepareRun(request, in: project, options: options)
-            } catch {
-                let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
-                return options.unsaved == nil ? record(failed) : failed
+        do throws(RunFailure) {
+            switch item?.kind {
+            case .grpc:
+                // Inside the task, unlike the others' preparation: finding the schema can compile protos or ask the
+                // server, so it must count as in flight and be cancellable.
+                task = Task { await self.runGRPC(request, in: project, options: options, id: stamp.id, startedAt: stamp.startedAt) }
+            case .webSocket:
+                let preparation = try prepareWebSocket(request, in: project, options: options)
+                task = webSocketTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
+            case .http, nil:
+                let preparation = try prepareRun(request, in: project, options: options)
+                task = httpTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
             }
-            task = httpTask(preparation, key: key, options: options, id: stamp.id, startedAt: stamp.startedAt)
+        } catch {
+            let failed = stamp.applied(to: failedExchange(request, in: project, startedAt: stamp.startedAt, error))
+            return options.unsaved == nil ? record(failed) : failed
         }
         tasks[key] = task
         inFlight.insert(key)
@@ -239,9 +248,13 @@ public final class RequestRunner {
         inFlight.contains(RunKey(request, in: project))
     }
 
-    /// Cancels the run in flight; one whose task has not started yet is unaffected (cancel the task awaiting `run`).
+    /// Cancels the run in flight; one whose task has not started yet is unaffected (cancel the task awaiting `run`). An
+    /// open WebSocket takes no more messages from here on, while its close handshake finishes.
     public func cancel(_ request: RequestNodeID, in project: ProjectID) {
-        tasks[RunKey(request, in: project)]?.cancel()
+        let key = RunKey(request, in: project)
+        tasks[key]?.cancel()
+        liveSockets[key]?.isStopping = true
+        openSockets.remove(key)
     }
 
     /// Drops a project's cookies, connections, and history, as when it is deleted. Its runs in flight are cancelled and
@@ -339,7 +352,8 @@ public final class RequestRunner {
     private func prepareRun(_ request: RequestNodeID, in projectID: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedRun {
         let context = try runContext(request, in: projectID, options: options)
         guard let spec = context.item.kind.httpSpec else {
-            throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a gRPC request; this works only with HTTP requests.")
+            let kind = context.item.kind.name.title
+            throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is a \(kind) request; this works only with HTTP requests.")
         }
         let prepared = try preparedHTTP(spec, context: context, options: options)
         let tls = try tls(for: prepared, project: projectID, context: context)
@@ -375,7 +389,7 @@ public final class RequestRunner {
         do {
             return try tlsContext(
                 host: url?.host ?? "",
-                port: url?.port ?? (url?.scheme?.lowercased() == "https" ? 443 : 80),
+                port: url?.port ?? (["https", "wss"].contains(url?.scheme?.lowercased()) ? 443 : 80),
                 verifiesServer: prepared.verifyTLS,
                 project: project,
                 context: context

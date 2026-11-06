@@ -45,16 +45,14 @@ struct ReqlingCommands: Commands {
                 .disabled(model.editor == nil)
         }
         CommandMenu("Request") {
-            // An open gRPC stream takes ⌘Return as its next message rather than a restarted call.
-            Button(model.editor?.asGRPC?.isStreamOpen == true ? "Send Message" : "Send") { model.editor?.send() }
+            Button(model.editor?.sendTitle ?? "Send") { model.editor?.send() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(model.editor == nil)
-            // An open event stream has nothing left to cancel but the stream itself.
-            Button(model.editor?.asHTTP?.isStreaming == true ? "Stop" : "Cancel") { model.editor?.cancel() }
+            Button(model.editor?.cancelTitle ?? "Cancel") { model.editor?.cancel() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.editor?.isSending != true)
             Divider()
-            // HTTP only: a gRPC call has no cURL form.
+            // HTTP only: a gRPC call or WebSocket has no cURL form.
             Button("Copy as cURL") { model.editor?.asHTTP?.copyAsCurl() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
                 .disabled(model.editor?.asHTTP == nil)

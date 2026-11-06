@@ -148,7 +148,7 @@ extension RequestRunner {
         _ spec: GRPCRequestSpec,
         method: GRPCMethodDescriptor,
         codec: ProtobufJSONCodec,
-        templates: inout GRPCTemplates
+        templates: inout RunTemplates
     ) throws(RunFailure) -> [EncodedMessage] {
         var seeds: [EncodedMessage] = []
         for (index, json) in GRPCRequestResolution.messages(spec, kind: method.kind).enumerated() {
@@ -163,7 +163,7 @@ extension RequestRunner {
     private struct Connection {
         let resolved: GRPCEndpoint
         let security: GRPCTransportSecurity
-        let templates: GRPCTemplates
+        let templates: RunTemplates
     }
 
     /// Fails on unresolved names before any network use, reflection included, as HTTP fails before sending.
@@ -174,7 +174,7 @@ extension RequestRunner {
         options: RunOptions
     ) throws(RunFailure) -> Connection {
         do throws(RunFailure) {
-            var templates = GRPCTemplates(resolver: context.resolver)
+            var templates = RunTemplates(resolver: context.resolver)
             let resolved = try GRPCRequestResolution.endpoint(
                 spec,
                 templates: &templates,
@@ -284,7 +284,7 @@ extension RequestRunner {
         guard let spec = context.item.kind.grpcSpec else {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
         }
-        var templates = GRPCTemplates(resolver: context.resolver)
+        var templates = RunTemplates(resolver: context.resolver)
         let endpoint = try GRPCRequestResolution.endpoint(spec, templates: &templates, authChain: context.authChain, defaults: settings.settings)
         var messages: [String] = []
         for message in spec.messages {

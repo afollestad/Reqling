@@ -9,6 +9,7 @@ final class RequestRunnerTests: XCTestCase {
     var settings: SettingsStore!
     private var suiteName: String!
     var servers: [TestHTTPServer] = []
+    var socketServers: [TestWebSocketServer] = []
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
@@ -19,6 +20,9 @@ final class RequestRunnerTests: XCTestCase {
 
     override func tearDown() async throws {
         for server in servers {
+            try await server.shutdown()
+        }
+        for server in socketServers {
             try await server.shutdown()
         }
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)

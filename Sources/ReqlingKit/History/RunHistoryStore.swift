@@ -174,13 +174,21 @@ public struct RunHistoryStore: Sendable {
             response.body = response.body.prefix(bodyLimit)
             stored.outcome = .response(response)
             stored.isBodyTruncated = true
+        case .response:
+            break
         case .grpc(let call):
             let fitted = call.fittingCache(messageLimit: messageLimit, totalLimit: bodyLimit)
             if fitted.wasCut {
                 stored.outcome = .grpc(fitted.record)
                 stored.isBodyTruncated = true
             }
-        default:
+        case .webSocket(let record):
+            let fitted = record.fittingCache(messageLimit: messageLimit, totalLimit: bodyLimit)
+            if fitted.wasCut {
+                stored.outcome = .webSocket(fitted.record)
+                stored.isBodyTruncated = true
+            }
+        case .failure:
             break
         }
         return stored

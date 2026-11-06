@@ -1,0 +1,254 @@
+import Foundation
+
+/// WebSocket runs: the same entry points, history, and outcome tracking as the other kinds (`run`, `cancel`, `forget`),
+/// plus sending and pinging while a connection is open. The handshake is built as an HTTP GET (`preparedHTTP`), so
+/// auth, `{{variables}}`, and masking are HTTP's; it shares the project's cookie jar (`HTTPExecutor.cookies`) and
+/// certificates (`tlsContext`). Disconnect is `cancel`, which closes with 1000.
+extension RequestRunner {
+    /// Sends `message` on the open connection of `request`, resolved against the run's environment. Fails when no
+    /// connection is open, or the message can't be resolved or encoded.
+    public func sendWebSocketMessage(_ message: WebSocketMessage, to request: RequestNodeID, in project: ProjectID) throws(RunFailure) {
+        try openSocket(request, in: project).send(message)
+    }
+
+    /// Pings the open connection of `request`; its pong shows on the timeline with the round trip.
+    public func pingWebSocket(_ request: RequestNodeID, in project: ProjectID) throws(RunFailure) {
+        try openSocket(request, in: project).ping()
+    }
+
+    private func openSocket(_ request: RequestNodeID, in project: ProjectID) throws(RunFailure) -> WebSocketLive {
+        let key = RunKey(request, in: project)
+        guard let live = liveSockets[key], openSockets.contains(key) else {
+            throw RunFailure(kind: .invalidRequest, message: "The connection isn't open.")
+        }
+        return live
+    }
+
+    /// A WebSocket run ready to connect, everything resolved.
+    struct PreparedWebSocket {
+        let connect: WebSocketConnectRequest
+        /// The handshake as sent, masked.
+        let summary: ResolvedHTTPRequest
+        let seeds: [EncodedWebSocketMessage]
+        let unresolvedVariables: [String]
+        let environmentName: String
+        let resolver: TemplateResolver
+        let redaction: SecretRedaction
+    }
+
+    /// Resolves the handshake and the on-connect messages, failing before any network use on unresolved names, a URL
+    /// a WebSocket can't use, or a message that can't be encoded, as HTTP fails before sending.
+    func prepareWebSocket(_ request: RequestNodeID, in project: ProjectID, options: RunOptions) throws(RunFailure) -> PreparedWebSocket {
+        let context = try runContext(request, in: project, options: options)
+        do throws(RunFailure) {
+            guard let spec = context.item.kind.webSocketSpec?.normalized() else {
+                throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a WebSocket request.")
+            }
+            let prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+            var handshake = prepared.urlRequest
+            handshake.url = try Self.webSocketURL(handshake.url)
+            var summary = prepared.summary
+            summary.url = Self.webSocketURL(shown: summary.url)
+            let isTLS = handshake.url?.scheme == "wss"
+            let tls = isTLS ? try tlsContext(
+                host: handshake.url?.host(percentEncoded: false) ?? "",
+                port: handshake.url?.port ?? 443,
+                verifiesServer: prepared.verifyTLS,
+                project: project,
+                context: context
+            ) : nil
+            var templates = RunTemplates(resolver: context.resolver)
+            var seeds: [EncodedWebSocketMessage] = []
+            for (index, message) in spec.messages.enumerated() where message.sendsOnConnect {
+                seeds.append(try WebSocketLive.encode(message, templates: &templates, label: "Message \(index + 1)"))
+            }
+            if !options.allowUnresolved, !templates.unresolved.isEmpty {
+                throw RunFailure.undefinedVariables(templates.unresolved)
+            }
+            // What was offered, typed or from the subprotocols list, is what the server's choice must be among.
+            let offered = (handshake.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") ?? "")
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let keepalive = spec.options.keepaliveSeconds.flatMap { $0 > 0 ? Duration.seconds(max($0, 1)) : nil }
+            return PreparedWebSocket(
+                connect: WebSocketConnectRequest(
+                    handshake: handshake,
+                    shownURL: summary.url,
+                    subprotocols: offered,
+                    tls: tls,
+                    cookies: executor(for: project).cookies,
+                    keepalive: keepalive
+                ),
+                summary: summary,
+                seeds: seeds,
+                unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) },
+                environmentName: context.environmentName,
+                resolver: context.resolver,
+                redaction: context.redaction
+            )
+        } catch {
+            throw error.redacting(context.redaction)
+        }
+    }
+
+    func webSocketTask(
+        _ preparation: PreparedWebSocket,
+        key: RunKey,
+        options: RunOptions,
+        id: RunID,
+        startedAt: Date
+    ) -> Task<RequestExchange, Never> {
+        let live = WebSocketLive(
+            context: WebSocketLive.Context(
+                runID: id,
+                projectID: key.projectID,
+                requestID: key.requestID,
+                startedAt: startedAt,
+                environmentName: preparation.environmentName,
+                request: preparation.summary,
+                unresolvedVariables: preparation.unresolvedVariables,
+                resolver: preparation.resolver,
+                redaction: preparation.redaction,
+                allowUnresolved: options.allowUnresolved,
+                limit: options.streamLimit
+            ),
+            seeds: preparation.seeds
+        )
+        liveSockets[key] = live
+        let publishes = options.unsaved == nil
+        if publishes {
+            latest[key] = live.exchange
+        }
+        let executor = WebSocketExecutor(sleep: sleep)
+        return Task {
+            let outcome = await executor.execute(preparation.connect, outbox: live.outbox) { event in
+                await self.receive(event, on: live, key: key, publishes: publishes)
+            }
+            if self.liveSockets[key] === live {
+                self.liveSockets[key] = nil
+                self.openSockets.remove(key)
+            }
+            return live.finished(outcome, stopped: Task.isCancelled)
+        }
+    }
+
+    /// `publishes` is false for an unsaved run, which records its events without showing them.
+    private func receive(_ event: WebSocketEvent, on live: WebSocketLive, key: RunKey, publishes: Bool) {
+        // A replaced or forgotten run keeps going until its cancellation lands; it must not publish.
+        guard liveSockets[key] === live else {
+            return
+        }
+        let wasOpen = live.isOpen
+        live.apply(event)
+        if !wasOpen, live.isOpen {
+            if publishes, !live.isStopping {
+                openSockets.insert(key)
+            }
+            if let maxDuration = live.context.limit?.maxDuration {
+                let sleep = self.sleep
+                live.limitTimer = Task { [weak live] in
+                    guard (try? await sleep(maxDuration)) != nil else {
+                        return
+                    }
+                    live?.stopAtLimit()
+                }
+            }
+        }
+        if let maxEvents = live.context.limit?.maxEvents, live.receivedCount >= maxEvents {
+            live.stopAtLimit()
+        }
+        if live.reachedLimit {
+            openSockets.remove(key)
+        }
+        if publishes {
+            publishThrottled(live, key: key) { [weak self] in self?.liveSockets[key] === live }
+        }
+    }
+
+    /// The handshake's URL as a WebSocket's: `http` and `https` as `ws` and `wss`, as browsers allow (a URL typed with
+    /// no scheme reaches here as `http`). A fragment or credentials in it are refused rather than dropped: browsers
+    /// refuse the first and never send the second.
+    private static func webSocketURL(_ url: URL?) throws(RunFailure) -> URL {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw RunFailure(kind: .invalidRequest, message: "Enter a URL to connect to.")
+        }
+        switch components.scheme?.lowercased() {
+        case "ws", "http": components.scheme = "ws"
+        case "wss", "https": components.scheme = "wss"
+        default:
+            throw RunFailure(kind: .invalidRequest, message: "A WebSocket URL starts with ws:// or wss://.")
+        }
+        guard components.fragment == nil else {
+            throw RunFailure(kind: .invalidRequest, message: "A WebSocket URL can't have a #fragment; remove it.")
+        }
+        guard components.user == nil, components.password == nil else {
+            throw RunFailure(kind: .invalidRequest, message: "A WebSocket URL can't carry credentials; set them in the Auth tab.")
+        }
+        guard let mapped = components.url else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(url.absoluteString)” is not a valid WebSocket URL.")
+        }
+        return mapped
+    }
+
+    /// The masked summary's URL with its scheme mapped the same way.
+    static func webSocketURL(shown: String) -> String {
+        for (prefix, replacement) in [("https://", "wss://"), ("http://", "ws://")] where shown.lowercased().hasPrefix(prefix) {
+            return replacement + shown.dropFirst(prefix.count)
+        }
+        return shown
+    }
+}
+
+/// What a WebSocket request would send, resolved and masked, without connecting.
+public struct WebSocketRequestPreview: Sendable {
+    /// The handshake, masked.
+    public let request: ResolvedHTTPRequest
+    /// The on-connect messages in order, masked: text as resolved, binary as its base64.
+    public let messages: [(format: WebSocketMessageFormat, text: String)]
+    public let unresolvedVariables: [String]
+}
+
+extension RequestRunner {
+    /// Resolves a WebSocket request's handshake and on-connect messages as a run would, with secrets masked; unresolved
+    /// names are listed rather than refused, and nothing is checked that only connecting would.
+    public func previewWebSocket(
+        _ request: RequestNodeID,
+        in project: ProjectID,
+        options: RunOptions = RunOptions()
+    ) throws(RunFailure) -> WebSocketRequestPreview {
+        var options = options
+        options.allowUnresolved = true
+        let context = try runContext(request, in: project, options: options)
+        guard let spec = context.item.kind.webSocketSpec?.normalized() else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a WebSocket request.")
+        }
+        let prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+        var summary = prepared.summary
+        summary.url = Self.webSocketURL(shown: summary.url)
+        var templates = RunTemplates(resolver: context.resolver)
+        var messages: [(format: WebSocketMessageFormat, text: String)] = []
+        for message in spec.onConnectMessages {
+            messages.append((message.format, try templates.resolve(message.text).shown))
+        }
+        return WebSocketRequestPreview(
+            request: summary,
+            messages: messages,
+            unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) }
+        )
+    }
+}
+
+extension RunFailure {
+    /// A connection that never got an answer; TLS failures of either kind share `.tls`, as HTTP's and gRPC's do.
+    init(_ error: WebSocketError) {
+        let kind: Kind = switch error {
+        case .invalidRequest: .invalidRequest
+        case .connectionFailed: .transport
+        case .untrustedServer, .tlsFailed: .tls
+        case .timedOut: .timedOut
+        case .cancelled: .cancelled
+        }
+        self.init(kind: kind, message: error.localizedDescription)
+    }
+}

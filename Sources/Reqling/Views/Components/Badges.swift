@@ -77,6 +77,32 @@ struct GRPCBadge: View {
     }
 }
 
+/// "WS" where an HTTP request shows its method. Indigo is a semantic system color, so it has light and dark variants,
+/// and neither the method colors nor gRPC's teal uses it.
+struct WebSocketBadge: View {
+    static let color = Color.indigo
+
+    var compact = false
+
+    var body: some View {
+        Text(compact ? "WS" : "WebSocket")
+            .font(.system(compact ? .caption2 : .caption, design: .monospaced).weight(.bold))
+            .foregroundStyle(Self.color)
+            .lineLimit(1)
+            .accessibilityLabel("WebSocket")
+    }
+
+    /// A close code tinted by outcome, as `GRPCStatusBadge` tints a status: a normal close, a server asking to retry
+    /// later (1012 Service Restart, 1013 Try Again Later), or anything else.
+    static func color(forClose code: Int?) -> Color {
+        switch code {
+        case nil, 1000, 1001: .green
+        case 1012, 1013: .orange
+        default: .red
+        }
+    }
+}
+
 /// A gRPC status by its canonical name, tinted by outcome: OK, a retryable condition, or an error.
 struct GRPCStatusBadge: View {
     let status: GRPCStatusRecord

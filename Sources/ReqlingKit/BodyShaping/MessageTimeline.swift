@@ -1,11 +1,15 @@
 import Foundation
 
-/// One row of a message timeline, whatever the protocol: a gRPC message, an event-stream event, or a note about the
-/// stream's connection between events.
+/// One row of a message timeline, whatever the protocol: a gRPC message, an event-stream event, a WebSocket message or
+/// control frame, or a note about the connection between them.
 public struct TimelineItem: Hashable, Sendable {
     public enum Header: Hashable, Sendable {
-        case grpc(direction: GRPCMessageEvent.Direction, unknownFieldCount: Int)
+        case grpc(direction: MessageDirection, unknownFieldCount: Int)
         case event(type: String, id: String?)
+        /// `isBase64` for binary, and for text the server sent that wasn't valid UTF-8.
+        case webSocket(direction: MessageDirection, format: WebSocketMessageFormat, isBase64: Bool)
+        /// A WebSocket ping, pong, or close frame; `text` describes it.
+        case control(direction: MessageDirection)
         case note
     }
 
@@ -52,16 +56,34 @@ public struct TimelineItem: Hashable, Sendable {
         }
     }
 
-    /// Whether `text` is JSON to index and highlight: a gRPC message always is, an event's data when it starts like an
-    /// object or array (servers send plain text too), and a note never.
+    public init(_ entry: WebSocketEntry) {
+        switch entry.kind {
+        case .message(let message):
+            self.init(
+                sequence: entry.sequence,
+                offset: entry.offset,
+                byteCount: entry.byteCount,
+                text: message.text,
+                header: .webSocket(direction: message.direction, format: message.format, isBase64: message.isBase64)
+            )
+        case .control(let direction, let text):
+            self.init(sequence: entry.sequence, offset: entry.offset, byteCount: 0, text: text, header: .control(direction: direction))
+        case .note(let note):
+            self.init(sequence: entry.sequence, offset: entry.offset, byteCount: 0, text: note, header: .note)
+        }
+    }
+
+    /// Whether `text` is JSON to index and highlight: a gRPC message always is, an event's data or a WebSocket's text
+    /// when it starts like an object or array (servers send plain text too), and base64, control frames, and notes
+    /// never.
     public var isJSON: Bool {
         switch header {
         case .grpc:
             return true
-        case .event:
+        case .event, .webSocket(_, _, isBase64: false):
             let first = text.unicodeScalars.first { !CharacterSet.whitespacesAndNewlines.contains($0) }
             return first == "{" || first == "["
-        case .note:
+        case .webSocket, .control, .note:
             return false
         }
     }

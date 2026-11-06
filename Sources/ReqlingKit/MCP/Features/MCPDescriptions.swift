@@ -68,6 +68,8 @@ enum MCPDescriptions {
         case .grpc(let spec):
             summary["target"] = .string(spec.target)
             summary["rpc"] = .string(spec.methodPath)
+        case .webSocket(let spec):
+            summary["url"] = .string(spec.displayURL)
         }
         return .object(summary)
     }

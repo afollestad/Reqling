@@ -168,10 +168,7 @@ public struct GRPCStatusRecord: Hashable, Sendable, Codable {
 
 /// One message on a call's timeline.
 public struct GRPCMessageEvent: Hashable, Sendable, Codable {
-    public enum Direction: String, Hashable, Sendable, Codable {
-        case sent
-        case received
-    }
+    public typealias Direction = MessageDirection
 
     public var direction: Direction
     /// Seconds since the call started.

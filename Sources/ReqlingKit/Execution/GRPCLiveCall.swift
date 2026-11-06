@@ -74,7 +74,7 @@ final class GRPCLiveCall: LiveRun {
 
     /// Resolves and encodes `json` like a seeded message, then queues it on the open request stream.
     func send(_ json: String) throws(RunFailure) {
-        var templates = GRPCTemplates(resolver: context.resolver)
+        var templates = RunTemplates(resolver: context.resolver)
         let message: EncodedMessage
         do throws(RunFailure) {
             let text = try templates.resolve(json)

@@ -35,16 +35,28 @@ public struct RequestItem: Hashable, Sendable, Identifiable, Codable {
 public enum RequestKind: Hashable, Sendable {
     case http(HTTPRequestSpec)
     case grpc(GRPCRequestSpec)
+    case webSocket(WebSocketRequestSpec)
 
     public enum Name: String, Hashable, Sendable, Codable, CaseIterable {
         case http
         case grpc
+        case webSocket = "websocket"
+
+        /// The protocol's name as people write it, in menus, filters, and messages.
+        public var title: String {
+            switch self {
+            case .http: "HTTP"
+            case .grpc: "gRPC"
+            case .webSocket: "WebSocket"
+            }
+        }
     }
 
     public var name: Name {
         switch self {
         case .http: .http
         case .grpc: .grpc
+        case .webSocket: .webSocket
         }
     }
 
@@ -61,14 +73,23 @@ public enum RequestKind: Hashable, Sendable {
         }
         return nil
     }
+
+    public var webSocketSpec: WebSocketRequestSpec? {
+        if case .webSocket(let spec) = self {
+            return spec
+        }
+        return nil
+    }
 }
 
-/// Coded as `kind` plus the spec under its protocol's key, the shape request files and a run's history share.
+/// Coded as `kind` plus the spec under its protocol's key, the shape request files and a run's history share. A
+/// version that predates a kind fails to read its files, and shows each as one unreadable request it leaves alone.
 extension RequestKind: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case http
         case grpc
+        case webSocket = "websocket"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -79,6 +100,8 @@ extension RequestKind: Codable {
             self = .http(try container.decodeIfPresent(HTTPRequestSpec.self, forKey: .http) ?? HTTPRequestSpec())
         case .grpc:
             self = .grpc(try container.decodeIfPresent(GRPCRequestSpec.self, forKey: .grpc) ?? GRPCRequestSpec())
+        case .webSocket:
+            self = .webSocket(try container.decodeIfPresent(WebSocketRequestSpec.self, forKey: .webSocket) ?? WebSocketRequestSpec())
         case nil:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: container, debugDescription: "Unknown request kind: \(kindName)")
         }
@@ -92,6 +115,8 @@ extension RequestKind: Codable {
             try container.encode(spec, forKey: .http)
         case .grpc(let spec):
             try container.encode(spec, forKey: .grpc)
+        case .webSocket(let spec):
+            try container.encode(spec, forKey: .webSocket)
         }
     }
 }

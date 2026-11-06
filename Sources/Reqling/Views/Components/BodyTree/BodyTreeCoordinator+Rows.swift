@@ -141,7 +141,8 @@ extension BodyTreeCoordinator {
         parts.label = [labelKey, "\(entry.kind)", description].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// A timeline row's header: a gRPC message's direction or an event's type and ID, then when and how big.
+    /// A timeline row's header: a message's direction, an event's type and ID, or a WebSocket frame, then when and how
+    /// big.
     private func messageRow(_ message: MessageTimeline.Message, into parts: inout RowParts) {
         let item = message.item
         let offset = ResponseStatusBar.duration(item.offset)
@@ -169,6 +170,25 @@ extension BodyTreeCoordinator {
                 label += ", shortened to fit the run history"
             }
             parts.label = label
+        case .webSocket(let direction, let format, let isBase64):
+            let title = "\(direction == .sent ? "Sent" : "Received") \(format == .binary ? "binary" : "text")"
+            parts.add(direction == .sent ? "↑ \(title)" : "↓ \(title)", direction == .sent ? accent : .systemTeal)
+            parts.add("  +\(offset) · \(size)", .secondaryLabelColor)
+            var label = "\(title) message, \(offset) into the connection, \(size)"
+            // Plain text, base64, or a JSON value with no fields to open, reads on the row itself.
+            if message.fields.isEmpty {
+                let text = Self.oneLine(item.text, limit: Self.displayLimit)
+                parts.add("  " + (isBase64 ? "base64 " : "") + text, SyntaxPalette.base)
+                label += isBase64 ? ", base64 \(text)" : ", \(text)"
+            } else if message.index?.rootEntries().first?.isTruncated == true {
+                parts.add("  Shortened to fit the run history", .secondaryLabelColor)
+                label += ", shortened to fit the run history"
+            }
+            parts.label = label
+        case .control(let direction):
+            parts.add("\(direction == .sent ? "↑" : "↓") \(item.text)", .secondaryLabelColor)
+            parts.add("  +\(offset)", .secondaryLabelColor)
+            parts.label = "\(direction == .sent ? "Sent" : "Received") \(item.text), \(offset) into the connection"
         case .note:
             parts.add("⟳ \(item.text)", .secondaryLabelColor)
             parts.add("  +\(offset)", .secondaryLabelColor)

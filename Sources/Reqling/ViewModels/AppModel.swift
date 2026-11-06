@@ -48,18 +48,6 @@ struct AppAlert: Identifiable, Equatable {
     let message: String
 }
 
-/// A request switching protocol; see `AppModel.changeKind(of:in:to:)`.
-struct RequestKindChange: Identifiable, Equatable {
-    let projectID: ProjectID
-    let requestID: RequestNodeID
-    let name: String
-    let kind: RequestKind.Name
-
-    var id: RequestNodeID {
-        requestID
-    }
-}
-
 struct FolderAuthDraft: Equatable {
     let projectID: ProjectID
     let folderID: RequestNodeID

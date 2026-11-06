@@ -1,30 +1,35 @@
 import Foundation
 import MCP
 
-/// Event-stream responses through the execution tools. A run waits for its stream to end, and a GET stream reconnects
-/// for as long as it is open, so every stream an agent starts carries a time bound: otherwise `execute_request` would
-/// wait out the tool's timeout and lose everything that arrived.
+/// Event-stream responses and WebSockets through the execution tools. A run waits for its stream or connection to end,
+/// a GET stream reconnects for as long as it is open, and a WebSocket stays open until someone closes it, so every one
+/// an agent starts carries a time bound: otherwise `execute_request` would wait out the tool's timeout and lose
+/// everything that arrived.
 extension MCPExecutionTools {
     /// How long an agent's stream is read when it names no `streamSeconds`.
     static let defaultStreamSeconds = 30.0
 
     static let streamProperties: [String: Value] = [
         "streamSeconds": MCPSchema.number(
-            "Event-stream responses: stop reading after this many seconds, and return what arrived. Default 30.",
+            "Event streams and WebSockets: stop after this many seconds, and return what arrived. Default 30.",
             minimum: 1,
             maximum: 300
         ),
-        "streamEvents": MCPSchema.integer("Event-stream responses: stop after this many events.", minimum: 1, maximum: 2_000)
+        "streamEvents": MCPSchema.integer(
+            "Event streams: stop after this many events. WebSockets: close after this many received messages.",
+            minimum: 1,
+            maximum: 2_000
+        )
     ]
 
     /// The bound for a run of `kind`: every HTTP run gets one, which only matters if its response turns out to be an
-    /// event stream; gRPC calls end at their deadline instead, so asking for one there is refused.
+    /// event stream, and every WebSocket; gRPC calls end at their deadline instead, so asking for one there is refused.
     static func streamLimit(_ arguments: MCPArguments, for kind: RequestKind) throws -> StreamLimit? {
         let seconds = try arguments.optionalNumber("streamSeconds", in: 1...300)
         let events = try arguments.optionalInteger("streamEvents", in: 1...2_000)
-        guard kind.httpSpec != nil else {
+        guard kind.httpSpec != nil || kind.webSocketSpec != nil else {
             guard seconds == nil, events == nil else {
-                throw MCPToolError("`streamSeconds` and `streamEvents` are for HTTP event streams; a gRPC call ends at its deadline.")
+                throw MCPToolError("`streamSeconds` and `streamEvents` are for event streams and WebSockets; a gRPC call ends at its deadline.")
             }
             return nil
         }

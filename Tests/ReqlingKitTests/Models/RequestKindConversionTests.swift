@@ -54,4 +54,43 @@ final class RequestKindConversionTests: XCTestCase {
         XCTAssertEqual(http.converted(to: .http), http)
         XCTAssertFalse(http.losesContent(convertingTo: .http))
     }
+
+    func testHTTPAndWebSocketShareTheURLQueryAndSettings() throws {
+        let http = RequestKind.http(HTTPRequestSpec(
+            url: "https://{{host}}/chat",
+            queryParameters: [KeyValuePair(key: "room", value: "a")],
+            headers: [KeyValuePair(key: "x-trace", value: "1")],
+            disabledAutoHeaders: ["user-agent"],
+            auth: .bearer(token: "{{token}}"),
+            options: HTTPRequestOptions(timeoutSeconds: 5, verifyTLS: false)
+        ))
+
+        let webSocket = try XCTUnwrap(http.converted(to: .webSocket).webSocketSpec)
+
+        XCTAssertEqual(webSocket.url, "wss://{{host}}/chat")
+        XCTAssertEqual(webSocket.queryParameters.map(\.key), ["room"])
+        XCTAssertEqual(webSocket.disabledAutoHeaders, ["user-agent"])
+        XCTAssertEqual(webSocket.options, WebSocketRequestOptions(timeoutSeconds: 5, verifyTLS: false))
+        XCTAssertFalse(http.losesContent(convertingTo: .webSocket))
+        XCTAssertEqual(RequestKind.webSocket(webSocket).converted(to: .http), http)
+        XCTAssertEqual(RequestKind.http(HTTPRequestSpec(url: "HTTP://x")).converted(to: .webSocket).webSocketSpec?.url, "ws://x")
+    }
+
+    func testWhatOnlyAWebSocketHasIsReportedAsLost() {
+        XCTAssertFalse(RequestKind.webSocket(WebSocketRequestSpec()).losesContent(convertingTo: .http))
+        XCTAssertTrue(RequestKind.webSocket(WebSocketRequestSpec(messages: [WebSocketMessage(text: "hi")])).losesContent(convertingTo: .http))
+        XCTAssertTrue(RequestKind.webSocket(WebSocketRequestSpec(subprotocols: ["chat"])).losesContent(convertingTo: .http))
+        XCTAssertTrue(RequestKind.http(HTTPRequestSpec(method: .post)).losesContent(convertingTo: .webSocket))
+    }
+
+    func testGRPCAndWebSocketConvertThroughHTTP() {
+        let grpc = RequestKind.grpc(GRPCRequestSpec(target: "{{host}}:443", security: .tls, metadata: [KeyValuePair(key: "x", value: "1")]))
+
+        let webSocket = grpc.converted(to: .webSocket)
+
+        XCTAssertEqual(webSocket.webSocketSpec?.url, "wss://{{host}}:443")
+        XCTAssertEqual(webSocket.webSocketSpec?.headers.map(\.key), ["x"])
+        XCTAssertEqual(webSocket.converted(to: .grpc), grpc)
+        XCTAssertTrue(RequestKind.webSocket(WebSocketRequestSpec(url: "wss://host/path")).losesContent(convertingTo: .grpc))
+    }
 }

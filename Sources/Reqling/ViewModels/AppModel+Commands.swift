@@ -86,7 +86,7 @@ extension AppModel {
         selection = .node(project, request.id)
     }
 
-    /// Switches a request between HTTP and gRPC in place, asking first through `kindChangePending` when the switch
+    /// Switches a request between protocols in place, asking first through `kindChangePending` when the switch
     /// would discard something. Flushes first, so the conversion starts from the draft rather than the last save. Refused
     /// mid-run: the run belongs to the old protocol, and the editor that could show or cancel it is about to go.
     func changeKind(of request: RequestNodeID, in project: ProjectID, to kind: RequestKind.Name) {
@@ -94,7 +94,7 @@ extension AppModel {
         guard !runner.isInFlight(request, in: project), let item = library.document(project)?.request(request), item.kind.name != kind else {
             return
         }
-        let change = RequestKindChange(projectID: project, requestID: request, name: item.name, kind: kind)
+        let change = RequestKindChange(projectID: project, requestID: request, name: item.name, from: item.kind.name, kind: kind)
         if item.kind.losesContent(convertingTo: kind) {
             kindChangePending = change
         } else {

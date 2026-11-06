@@ -122,6 +122,9 @@ extension MCPRequestTools {
         case .grpc(let spec):
             let merged = mergePatch(try MCPJSON.encode(spec), patch)
             return .grpc(try MCPJSON.decode(GRPCRequestSpec.self, from: merged, path: "spec"))
+        case .webSocket(let spec):
+            let merged = mergePatch(try MCPJSON.encode(spec), patch)
+            return .webSocket(try MCPJSON.decode(WebSocketRequestSpec.self, from: merged, path: "spec").normalized())
         }
     }
 

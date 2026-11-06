@@ -100,12 +100,15 @@ public struct AutoHeader: Hashable, Sendable {
     public let isOverridable: Bool
     /// What macOS sends in this header's place once it is turned off, such as "*/*"; `nil` when nothing is sent.
     public let systemFallback: String?
+    /// Whether it is sent until turned off; one that is off by default (a WebSocket's `Origin`) is sent once turned on.
+    public let isOnByDefault: Bool
 
-    public init(name: String, value: String, isOverridable: Bool, systemFallback: String? = nil) {
+    public init(name: String, value: String, isOverridable: Bool, systemFallback: String? = nil, isOnByDefault: Bool = true) {
         self.name = name
         self.value = value
         self.isOverridable = isOverridable
         self.systemFallback = systemFallback
+        self.isOnByDefault = isOnByDefault
     }
 
     public var key: String {

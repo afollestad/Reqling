@@ -67,9 +67,7 @@ struct ContentView: View {
             ) { change in
                 Button("Change to \(change.kind.title)", role: .destructive) { model.applyKindChange(change) }
             } message: { change in
-                Text(change.kind == .grpc
-                    ? "Its auth, headers, host, and timeout carry over. Its method, query, body, and run history are discarded."
-                    : "Its auth, metadata, target, and deadline carry over. Its service, method, messages, and run history are discarded.")
+                Text(change.consequences)
             }
             .confirmationDialog(
                 "Move this project to the Trash?",
@@ -183,6 +181,9 @@ private struct DetailView: View {
                     .id(editor.identity)
             case .grpc(let grpc):
                 GRPCEditorView(editor: grpc, model: model)
+                    .id(editor.identity)
+            case .webSocket(let webSocket):
+                WebSocketEditorView(editor: webSocket, model: model)
                     .id(editor.identity)
             }
         } else if case .node(let project, let node)? = model.selection, let folder = model.library.document(project)?.folder(node) {
