@@ -6,6 +6,7 @@ enum WebSocketResponseTab: String, CaseIterable, Identifiable {
     case messages = "Messages"
     case handshake = "Handshake"
     case request = "Request"
+    case tests = "Tests"
 
     var id: Self {
         self
@@ -22,6 +23,7 @@ final class WebSocketResponseViewModel {
     /// Searching the messages tree.
     let search = BodySearchModel()
     /// The section bar's Expand All and Collapse All, reaching the tree on screen.
+    @ObservationIgnored private var scriptsCache = ScriptReportCache()
     @ObservationIgnored let treeController = BodyTreeController()
 
     let requestID: RequestNodeID
@@ -45,6 +47,23 @@ final class WebSocketResponseViewModel {
 
     var exchange: RequestExchange? {
         history.shownExchange
+    }
+
+    /// What the Tests tab and the status bar show of the run's scripts; `nil` when it has no report.
+    var scripts: ScriptReportPresentation? {
+        scriptsCache.presentation(of: exchange?.scriptReport)
+    }
+
+    /// Every tab but Tests, which shows only for a run with a script report.
+    var visibleTabs: [WebSocketResponseTab] {
+        let hasScripts = scripts != nil
+        return WebSocketResponseTab.allCases.filter { $0 != .tests || hasScripts }
+    }
+
+    /// The tab picked, or the first while the picked one is hidden, so picking Tests survives a run without scripts.
+    var shownTab: WebSocketResponseTab {
+        get { visibleTabs.contains(tab) ? tab : .messages }
+        set { tab = newValue }
     }
 
     var record: WebSocketRecord? {

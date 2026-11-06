@@ -8,6 +8,7 @@ enum ResponseTab: String, CaseIterable, Identifiable {
     case headers = "Headers"
     case timing = "Timing"
     case request = "Request"
+    case tests = "Tests"
 
     var id: Self {
         self
@@ -71,6 +72,7 @@ final class ResponseViewModel {
     /// Searching the body, whichever format shows it; the query carries over between formats.
     let search = BodySearchModel()
     /// The section bar's Expand All and Collapse All, reaching the tree on screen.
+    @ObservationIgnored private var scriptsCache = ScriptReportCache()
     @ObservationIgnored let treeController = BodyTreeController()
     @ObservationIgnored let runner: RequestRunner
     /// Results of background shaping for the exchange shown; writing it re-renders the body.
@@ -93,6 +95,23 @@ final class ResponseViewModel {
 
     var exchange: RequestExchange? {
         history.shownExchange
+    }
+
+    /// What the Tests tab and the status bar show of the run's scripts; `nil` when it has no report.
+    var scripts: ScriptReportPresentation? {
+        scriptsCache.presentation(of: exchange?.scriptReport)
+    }
+
+    /// Every tab but Tests, which shows only for a run with a script report.
+    var visibleTabs: [ResponseTab] {
+        let hasScripts = scripts != nil
+        return ResponseTab.allCases.filter { $0 != .tests || hasScripts }
+    }
+
+    /// The tab picked, or the first while the picked one is hidden, so picking Tests survives a run without scripts.
+    var shownTab: ResponseTab {
+        get { visibleTabs.contains(tab) ? tab : .body }
+        set { tab = newValue }
     }
 
     var isSending: Bool {

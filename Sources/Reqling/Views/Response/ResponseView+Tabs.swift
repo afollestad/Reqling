@@ -9,7 +9,7 @@ struct ResponseSectionBar: View {
 
     var body: some View {
         let isStream = response.eventStream != nil
-        if response.tab == .body {
+        if response.shownTab == .body {
             WidthAdaptive {
                 HStack(spacing: 12) {
                     tabs(isStream: isStream)
@@ -28,8 +28,13 @@ struct ResponseSectionBar: View {
     }
 
     private func tabs(isStream: Bool) -> some View {
-        SectionPicker("Response section", selection: $response.tab, options: ResponseTab.allCases) { tab in
-            tab == .body && isStream ? "Events" : tab.rawValue
+        let testsTitle = response.scripts?.tabTitle ?? ResponseTab.tests.rawValue
+        return SectionPicker("Response section", selection: $response.shownTab, options: response.visibleTabs) { tab in
+            switch tab {
+            case .body where isStream: "Events"
+            case .tests: testsTitle
+            default: tab.rawValue
+            }
         }
     }
 
@@ -50,7 +55,7 @@ struct ResponseTabContent: View {
     let model: AppModel
 
     var body: some View {
-        switch response.tab {
+        switch response.shownTab {
         case .body:
             if let stream = record.eventStream {
                 ResponseEventsView(response: response, stream: stream, isCacheShortened: exchange.isBodyTruncated)
@@ -63,6 +68,10 @@ struct ResponseTabContent: View {
             TimingView(record: record)
         case .request:
             ResolvedRequestView(request: exchange.request, sentBody: response.sentBody)
+        case .tests:
+            if let scripts = response.scripts {
+                ScriptReportView(scripts: scripts)
+            }
         }
     }
 }
@@ -197,24 +206,32 @@ private struct ResponseTreeFailure: View {
 
 private struct HeaderList: View {
     let headers: [KeyValuePair]
+    var scriptChanged: Set<String> = []
 
     var body: some View {
         ScrollView {
-            HeaderGrid(headers: headers)
+            HeaderGrid(headers: headers, scriptChanged: scriptChanged)
         }
     }
 }
 
-/// Names and values in two aligned columns: HTTP headers, gRPC metadata and trailers.
+/// Names and values in two aligned columns: HTTP headers, gRPC metadata and trailers. Rows named in `scriptChanged`
+/// (lower-cased) are marked as a pre-request script's.
 struct HeaderGrid: View {
     let headers: [KeyValuePair]
+    var scriptChanged: Set<String> = []
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
             ForEach(headers.indices, id: \.self) { index in
                 GridRow {
-                    Text(headers[index].key)
-                        .font(.system(.body, design: .monospaced).weight(.semibold))
+                    HStack(spacing: 4) {
+                        Text(headers[index].key)
+                            .font(.system(.body, design: .monospaced).weight(.semibold))
+                        if scriptChanged.contains(headers[index].key.lowercased()) {
+                            ScriptChangedMark()
+                        }
+                    }
                     Text(headers[index].value)
                         .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
@@ -323,7 +340,15 @@ private struct ResolvedRequestView: View {
                         .textSelection(.enabled)
                         .lineLimit(2)
                 }
-                HeaderList(headers: request.headers)
+                if let query = request.scriptChangedQuery {
+                    HStack(spacing: 4) {
+                        ScriptChangedMark()
+                        Text("A pre-request script set \(query.joined(separator: ", ")) in the query.")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                HeaderList(headers: request.headers, scriptChanged: Set(request.scriptChangedHeaders ?? []))
                     .frame(maxHeight: 180)
                 Text(Self.systemHeadersNote)
                     .font(.caption)
@@ -337,5 +362,16 @@ private struct ResolvedRequestView: View {
             Text("Nothing was sent.")
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Marks a header, metadata entry, or query parameter a pre-request script added or replaced.
+struct ScriptChangedMark: View {
+    var body: some View {
+        Image(systemName: "curlybraces")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help("Set by a pre-request script")
+            .accessibilityLabel("Set by a pre-request script")
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 /// compared.
 struct WebSocketResponseView: View {
     @Bindable var response: WebSocketResponseViewModel
+    let model: AppModel
 
     var body: some View {
         let history = response.history
@@ -21,8 +22,11 @@ struct WebSocketResponseView: View {
     private func connectionView(_ history: RunHistoryViewModel) -> some View {
         let exchange = response.exchange
         return VStack(spacing: 0) {
-            WebSocketStatusBar(exchange: exchange, isSending: response.isSending)
+            WebSocketStatusBar(exchange: exchange, isSending: response.isSending, scripts: response.scripts)
             PinnedRunBar(history: history)
+            if response.scripts?.isUntrusted == true {
+                ScriptsOffNotice(projectID: response.projectID, model: model)
+            }
             Divider()
             content(exchange)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,7 +39,7 @@ struct WebSocketResponseView: View {
     @ViewBuilder
     private func content(_ exchange: RequestExchange?) -> some View {
         if let failure = exchange?.failure {
-            ResponseFailureView(failure: failure)
+            ResponseFailureView(failure: failure, scripts: response.scripts)
         } else if let record = exchange?.webSocket, record.handshake != nil || record.end != nil {
             VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 WebSocketSectionBar(response: response)
@@ -63,6 +67,7 @@ struct WebSocketResponseView: View {
 private struct WebSocketStatusBar: View {
     let exchange: RequestExchange?
     let isSending: Bool
+    let scripts: ScriptReportPresentation?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -88,6 +93,9 @@ private struct WebSocketStatusBar: View {
             } else {
                 Text("Connection")
                     .font(.headline)
+            }
+            if let scripts {
+                ResponseTestsMetric(scripts: scripts, gotResponse: exchange?.failure == nil)
             }
             Spacer()
             if isSending {
@@ -142,7 +150,7 @@ private struct WebSocketSectionBar: View {
     @Bindable var response: WebSocketResponseViewModel
 
     var body: some View {
-        if response.tab == .messages {
+        if response.shownTab == .messages {
             WidthAdaptive {
                 HStack(spacing: 12) {
                     tabs
@@ -161,7 +169,10 @@ private struct WebSocketSectionBar: View {
     }
 
     private var tabs: some View {
-        SectionPicker("Response section", selection: $response.tab, options: WebSocketResponseTab.allCases, label: \.rawValue)
+        let testsTitle = response.scripts?.tabTitle ?? WebSocketResponseTab.tests.rawValue
+        return SectionPicker("Response section", selection: $response.shownTab, options: response.visibleTabs) { tab in
+            tab == .tests ? testsTitle : tab.rawValue
+        }
     }
 
     private var controls: some View {
@@ -179,7 +190,7 @@ private struct WebSocketTabContent: View {
     let record: WebSocketRecord
 
     var body: some View {
-        switch response.tab {
+        switch response.shownTab {
         case .messages:
             let notes = MessageTimelineView.notes(
                 trimmedCount: record.trimmedEntryCount,
@@ -212,6 +223,10 @@ private struct WebSocketTabContent: View {
             WebSocketHandshakeView(record: record, refusalBody: response.refusalBody)
         case .request:
             WebSocketRequestView(request: response.exchange?.request, url: record.url)
+        case .tests:
+            if let scripts = response.scripts {
+                ScriptReportView(scripts: scripts)
+            }
         }
     }
 
@@ -277,7 +292,7 @@ private struct WebSocketRequestView: View {
                 .textSelection(.enabled)
                 .lineLimit(2)
             ScrollView {
-                HeaderGrid(headers: request?.headers ?? [])
+                HeaderGrid(headers: request?.headers ?? [], scriptChanged: Set(request?.scriptChangedHeaders ?? []))
             }
             Text("The connection also sends Host, Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, and the project's cookies.")
                 .font(.caption)

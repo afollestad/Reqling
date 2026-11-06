@@ -5,6 +5,7 @@ import SwiftUI
 /// compared.
 struct GRPCResponseView: View {
     @Bindable var response: GRPCResponseViewModel
+    let model: AppModel
 
     var body: some View {
         let history = response.history
@@ -21,8 +22,11 @@ struct GRPCResponseView: View {
     private func callView(_ history: RunHistoryViewModel) -> some View {
         let exchange = response.exchange
         return VStack(spacing: 0) {
-            GRPCResponseStatusBar(exchange: exchange, isSending: response.isSending)
+            GRPCResponseStatusBar(exchange: exchange, isSending: response.isSending, scripts: response.scripts)
             PinnedRunBar(history: history)
+            if response.scripts?.isUntrusted == true {
+                ScriptsOffNotice(projectID: response.projectID, model: model)
+            }
             Divider()
             content(exchange)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,7 +39,7 @@ struct GRPCResponseView: View {
     @ViewBuilder
     private func content(_ exchange: RequestExchange?) -> some View {
         if let failure = exchange?.failure {
-            ResponseFailureView(failure: failure)
+            ResponseFailureView(failure: failure, scripts: response.scripts)
         } else if let call = exchange?.grpc {
             VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
                 GRPCResponseSectionBar(response: response)
@@ -58,6 +62,7 @@ struct GRPCResponseView: View {
 private struct GRPCResponseStatusBar: View {
     let exchange: RequestExchange?
     let isSending: Bool
+    let scripts: ScriptReportPresentation?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -84,6 +89,9 @@ private struct GRPCResponseStatusBar: View {
                 Text("Response")
                     .font(.headline)
             }
+            if let scripts {
+                ResponseTestsMetric(scripts: scripts, gotResponse: exchange?.failure == nil)
+            }
             Spacer()
             if isSending {
                 ProgressView()
@@ -105,7 +113,7 @@ private struct GRPCResponseSectionBar: View {
     @Bindable var response: GRPCResponseViewModel
 
     var body: some View {
-        if response.tab == .messages {
+        if response.shownTab == .messages {
             WidthAdaptive {
                 HStack(spacing: 12) {
                     tabs
@@ -124,7 +132,10 @@ private struct GRPCResponseSectionBar: View {
     }
 
     private var tabs: some View {
-        SectionPicker("Response section", selection: $response.tab, options: GRPCResponseTab.allCases, label: \.rawValue)
+        let testsTitle = response.scripts?.tabTitle ?? GRPCResponseTab.tests.rawValue
+        return SectionPicker("Response section", selection: $response.shownTab, options: response.visibleTabs) { tab in
+            tab == .tests ? testsTitle : tab.rawValue
+        }
     }
 
     private var controls: some View {
@@ -142,7 +153,7 @@ private struct GRPCResponseTabContent: View {
     let call: GRPCCallRecord
 
     var body: some View {
-        switch response.tab {
+        switch response.shownTab {
         case .messages:
             let notes = MessageTimelineView.notes(
                 trimmedCount: call.trimmedEventCount,
@@ -176,6 +187,10 @@ private struct GRPCResponseTabContent: View {
             GRPCMetadataView(initial: call.initialMetadata, trailers: call.trailers, isOpen: call.status == nil)
         case .request:
             GRPCCallRequestView(call: call)
+        case .tests:
+            if let scripts = response.scripts {
+                ScriptReportView(scripts: scripts)
+            }
         }
     }
 }
@@ -241,7 +256,7 @@ private struct GRPCCallRequestView: View {
                     Text("None.")
                         .foregroundStyle(.secondary)
                 } else {
-                    HeaderGrid(headers: call.sentMetadata)
+                    HeaderGrid(headers: call.sentMetadata, scriptChanged: Set(call.scriptChangedMetadata ?? []))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

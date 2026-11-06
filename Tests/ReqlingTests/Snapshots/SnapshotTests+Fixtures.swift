@@ -66,6 +66,7 @@ struct SnapshotProject {
             bodyPreview: nil,
             bodyByteCount: 0
         ),
+        scriptReport: ScriptReport? = nil,
         in fixture: AppFixture
     ) {
         RunHistoryStore(directory: fixture.profile.historyDirectory).save(RequestExchange(
@@ -74,7 +75,8 @@ struct SnapshotProject {
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             environmentName: "Default",
             request: sent,
-            outcome: outcome
+            outcome: outcome,
+            scriptReport: scriptReport
         ))
     }
 
@@ -85,6 +87,7 @@ struct SnapshotProject {
         for request: RequestNodeID,
         at seconds: TimeInterval,
         environment: String = "Default",
+        scriptReport: ScriptReport? = nil,
         in fixture: AppFixture
     ) -> RequestExchange {
         let exchange = RequestExchange(
@@ -94,7 +97,8 @@ struct SnapshotProject {
             environmentName: environment,
             spec: .http(HTTPRequestSpec(url: "https://api.example.com/users")),
             request: nil,
-            outcome: outcome
+            outcome: outcome,
+            scriptReport: scriptReport
         )
         RunHistoryStore(directory: fixture.profile.historyDirectory).save(exchange)
         return exchange

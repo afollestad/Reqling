@@ -46,7 +46,7 @@ extension SnapshotTests {
     func testGRPCResponseBidirectionalTimeline() async throws {
         let response = try await grpcResponse(Self.chatRecord(status: GRPCStatusRecord(code: 0, name: "OK", message: "")))
 
-        assertBothAppearances(GRPCResponseView(response: response), size: Self.grpcResponseSize)
+        assertBothAppearances(GRPCResponseView(response: response, model: fixture.model), size: Self.grpcResponseSize)
     }
 
     /// Text mode keeps each message's JSON as highlighted text under its header.
@@ -54,7 +54,7 @@ extension SnapshotTests {
         let response = try await grpcResponse(Self.chatRecord(status: GRPCStatusRecord(code: 0, name: "OK", message: "")))
         response.messagesMode = .text
 
-        assertBothAppearances(GRPCResponseView(response: response), size: Self.grpcResponseSize)
+        assertBothAppearances(GRPCResponseView(response: response, model: fixture.model), size: Self.grpcResponseSize)
     }
 
     /// An open call: Streaming… in place of a status, and its messages so far.
@@ -63,14 +63,14 @@ extension SnapshotTests {
         record.trailers = []
         let response = try await grpcResponse(record)
 
-        assertBothAppearances(GRPCResponseView(response: response), size: Self.grpcResponseSize)
+        assertBothAppearances(GRPCResponseView(response: response, model: fixture.model), size: Self.grpcResponseSize)
     }
 
     func testGRPCResponseMetadata() async throws {
         let response = try await grpcResponse(Self.chatRecord(status: GRPCStatusRecord(code: 5, name: "NOT_FOUND", message: "No such greeter.")))
         response.tab = .metadata
 
-        assertBothAppearances(GRPCResponseView(response: response), size: CGSize(width: 820, height: 300))
+        assertBothAppearances(GRPCResponseView(response: response, model: fixture.model), size: CGSize(width: 820, height: 300))
     }
 
     func testSidebarWithGRPCRequests() throws {

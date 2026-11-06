@@ -10,7 +10,7 @@ struct GRPCEditorView: View {
         VSplitView {
             GRPCEditorPane(editor: editor, model: model)
                 .frame(minHeight: 300, idealHeight: 400)
-            GRPCResponseView(response: editor.response)
+            GRPCResponseView(response: editor.response, model: model)
                 .frame(minHeight: 180)
         }
         .modifier(RunHistoryPresentations(history: editor.history))

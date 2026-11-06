@@ -32,6 +32,9 @@ struct RunHistoryRow: View, Equatable {
                 if let bytes = run.responseByteCount {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
                 }
+                if let tests = run.tests, tests.passed + tests.failed > 0 {
+                    RunTestsLabel(tests: tests)
+                }
                 if let environment = run.environmentName {
                     Label(environment, systemImage: "square.stack.3d.up")
                         .lineLimit(1)
@@ -43,6 +46,19 @@ struct RunHistoryRow: View, Equatable {
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// How a run's tests went: passed of those that ran, red when any failed.
+private struct RunTestsLabel: View {
+    let tests: ScriptTestCounts
+
+    var body: some View {
+        let ran = tests.passed + tests.failed
+        Label("\(tests.passed)/\(ran)", systemImage: tests.failed > 0 ? "xmark.circle" : "checkmark.circle")
+            .foregroundStyle(tests.failed > 0 ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            .help("\(tests.passed) of \(ran) tests passed")
+            .accessibilityLabel("\(tests.passed) of \(ran) tests passed")
     }
 }
 

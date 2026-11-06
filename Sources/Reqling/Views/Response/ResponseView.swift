@@ -21,8 +21,11 @@ struct ResponseView: View {
 
     private func exchangeView(_ history: RunHistoryViewModel) -> some View {
         VStack(spacing: 0) {
-            ResponseStatusBar(exchange: response.exchange, isSending: response.isSending)
+            ResponseStatusBar(exchange: response.exchange, isSending: response.isSending, scripts: response.scripts)
             PinnedRunBar(history: history)
+            if response.scripts?.isUntrusted == true {
+                ScriptsOffNotice(projectID: response.projectID, model: model)
+            }
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,7 +39,7 @@ struct ResponseView: View {
     private var content: some View {
         if let exchange = response.exchange {
             if let failure = exchange.failure {
-                ResponseFailureView(failure: failure)
+                ResponseFailureView(failure: failure, scripts: response.scripts)
             } else if let record = exchange.response {
                 let pendingShape = response.body.pendingShape
                 VStack(alignment: .leading, spacing: AppMetrics.sectionTabsSpacing) {
@@ -65,6 +68,7 @@ struct ResponseView: View {
 struct ResponseStatusBar: View {
     let exchange: RequestExchange?
     let isSending: Bool
+    let scripts: ScriptReportPresentation?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -94,6 +98,9 @@ struct ResponseStatusBar: View {
             } else {
                 Text("Response")
                     .font(.headline)
+            }
+            if let scripts {
+                ResponseTestsMetric(scripts: scripts, gotResponse: exchange?.failure == nil)
             }
             Spacer()
             if isSending {
@@ -142,16 +149,42 @@ struct ResponseMetric: View {
     }
 }
 
+/// Why a run got no response, with what its scripts did when they did anything: a failed pre-request script's tests
+/// and console are what explain it.
 struct ResponseFailureView: View {
     let failure: RunFailure
+    let scripts: ScriptReportPresentation?
 
     var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: failure.kind == .cancelled ? "xmark.circle" : "exclamationmark.triangle")
-        } description: {
-            Text(failure.message)
-                .textSelection(.enabled)
+        if let scripts, !scripts.groups.isEmpty || scripts.console != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: icon)
+                    .font(.title3.weight(.semibold))
+                // A failed script's report already names the error, under the script that threw it.
+                if failure.kind != .script {
+                    Text(failure.message)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ScriptReportView(scripts: scripts)
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, AppMetrics.detailPaneInset)
+            .padding(.vertical, AppMetrics.paneInset)
+        } else {
+            ContentUnavailableView {
+                Label(title, systemImage: icon)
+            } description: {
+                Text(failure.message)
+                    .textSelection(.enabled)
+            }
         }
+    }
+
+    private var icon: String {
+        failure.kind == .cancelled ? "xmark.circle" : "exclamationmark.triangle"
     }
 
     private var title: String {

@@ -50,14 +50,14 @@ extension SnapshotTests {
     func testWebSocketResponseTimelineTree() throws {
         let response = try socketResponse(Self.chatRecord())
 
-        assertBothAppearances(WebSocketResponseView(response: response), size: Self.socketResponseSize)
+        assertBothAppearances(WebSocketResponseView(response: response, model: fixture.model), size: Self.socketResponseSize)
     }
 
     func testWebSocketResponseTimelineText() throws {
         let response = try socketResponse(Self.chatRecord())
         response.messagesMode = .text
 
-        assertBothAppearances(WebSocketResponseView(response: response), size: Self.socketResponseSize)
+        assertBothAppearances(WebSocketResponseView(response: response, model: fixture.model), size: Self.socketResponseSize)
     }
 
     /// A refused handshake: the server's status in the status bar, its headers, and the body that says why.
@@ -77,7 +77,7 @@ extension SnapshotTests {
         let response = try socketResponse(record)
         response.tab = .handshake
 
-        assertBothAppearances(WebSocketResponseView(response: response), size: CGSize(width: 820, height: 340))
+        assertBothAppearances(WebSocketResponseView(response: response, model: fixture.model), size: CGSize(width: 820, height: 340))
     }
 
     func testSidebarWithWebSocketRequests() throws {

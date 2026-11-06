@@ -15,3 +15,11 @@ In each phase, the project's script runs first, then each folder's from the oute
 
 - **Runs after** lists the scripts that run before the one you're editing. Click one to open it.
 - **Run inherited scripts**, turned off on a request, runs only that request's own scripts. Turned off on a folder, it stops the scripts above that folder for every request inside it.
+
+## Results
+
+- **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON.
+- **Status bar.** **Tests 2/3** counts the tests that passed of those that ran. It's green when all of them passed and no script threw, and red otherwise.
+- **Failures.** A failed test, or a post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
+- **Request tab.** Headers, metadata, and query parameters that a pre-request script added or replaced are marked `{}`.
+- **History.** Each run in the history shows its test counts, and the history keeps the newest 512 KB of a run's console.

@@ -11,7 +11,7 @@ struct WebSocketEditorView: View {
         VSplitView {
             WebSocketEditorPane(editor: editor, model: model)
                 .frame(minHeight: 300, idealHeight: 400)
-            WebSocketResponseView(response: editor.response)
+            WebSocketResponseView(response: editor.response, model: model)
                 .frame(minHeight: 180)
         }
         .modifier(RunHistoryPresentations(history: editor.history))
