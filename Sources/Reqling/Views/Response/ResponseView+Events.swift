@@ -34,6 +34,7 @@ struct ResponseEventsView: View {
             )
         } else {
             MessageTimelineView(entries: response.eventTimeline, notes: notes, end: end)
+                .id(response.exchange?.id)
         }
     }
 

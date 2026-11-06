@@ -170,6 +170,7 @@ private struct GRPCResponseTabContent: View {
                 )
             } else {
                 MessageTimelineView(entries: response.timeline, failure: failure, notes: notes, end: end)
+                    .id(response.exchange?.id)
             }
         case .metadata:
             GRPCMetadataView(initial: call.initialMetadata, trailers: call.trailers, isOpen: call.status == nil)

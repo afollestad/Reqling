@@ -29,8 +29,9 @@ enum MessageTimelineKind {
 /// entries say what is left out, by cause: a long run keeps only its newest entries, one too fast to record loses some
 /// in between, and a saved response may have been shortened to fit the run history.
 ///
-/// A live timeline opens at its end and follows the newest entries; scrolling away pauses following and raises Jump
-/// to Bottom, and that, or scrolling back, resumes it. A finished one opens at the top.
+/// A live timeline opens at its end and follows the newest entries, and scrolling away pauses following; a finished one
+/// opens at the top. Either raises Jump to Bottom while away from its end, and that, or scrolling back, takes it to the
+/// newest entry, where a live one follows again. Callers key it by run, so each run starts afresh.
 struct MessageTimelineView: View {
     let entries: [MessageTimelineEntry]
     /// What went wrong, in red above the entries: a failed call's status message.
@@ -38,18 +39,29 @@ struct MessageTimelineView: View {
     let notes: [String]
     let end: MessageTimelineEnd
     @State private var position: ScrollPosition
-    @State private var follows = true
+    /// Keeps to the newest entry: a live timeline from the start, and either kind once Jump to Bottom, or the person's
+    /// own scroll, reaches its end. Only the person's scrolling clears it: a lazy stack's height is an estimate until
+    /// its rows lay out, so judged by position alone a jump to the end, or a batch of new entries, could clear it
+    /// mid-scroll and leave a live timeline stuck short of its end.
+    @State private var follows: Bool
+    /// Whether the list shows its end, as its geometry reads now.
+    @State private var isAtEnd = true
+    /// The person is scrolling (a drag, a swipe, or the wheel, and its deceleration), never a programmatic scroll.
+    @State private var isUserScrolling = false
 
     init(entries: [MessageTimelineEntry], failure: String? = nil, notes: [String] = [], end: MessageTimelineEnd) {
         self.entries = entries
         self.failure = failure
         self.notes = notes
         self.end = end
-        _position = State(initialValue: ScrollPosition(edge: end.isOpen ? .bottom : .top))
+        _follows = State(initialValue: end.isOpen)
+        // A live one starts at its end line, by ID, for the reason `scrollToEnd` gives.
+        _position = State(initialValue: end.isOpen ? ScrollPosition(id: Self.endID, anchor: .bottom) : ScrollPosition(edge: .top))
     }
 
     var body: some View {
-        let isPaused = end.isOpen && !follows
+        // Not while following: a growing list, or one mid-jump, reads as away from its end until the scroll lands.
+        let showsJump = !follows && !isAtEnd
         following(
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -59,21 +71,23 @@ struct MessageTimelineView: View {
                             .equatable()
                     }
                     end
+                        .id(Self.endID)
                 }
+                .scrollTargetLayout()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 4)
             }
             .scrollPosition($position)
         )
         .overlay(alignment: .bottom) {
-            if isPaused {
+            if showsJump {
                 JumpToBottomButton {
                     follows = true
-                    position.scrollTo(edge: .bottom)
+                    scrollToEnd()
                 }
             }
         }
-        .animation(.snappy, value: isPaused)
+        .animation(.snappy, value: showsJump)
     }
 
     /// What the timeline leaves out, by cause.
@@ -93,9 +107,9 @@ struct MessageTimelineView: View {
         return notes
     }
 
-    /// Content growing under a list at its end leaves it following, since a growing list reads as no longer at its
-    /// end before the scroll to the new end lands; only a scroll decides anew. A resize keeps a live timeline that
-    /// follows at its end: the pane growing or shrinking moves its bottom, which is not scrolling away.
+    /// Only the person's scrolling pauses or resumes following, as it leaves or reaches the end and where it comes to
+    /// rest; programmatic scrolls never do. A resize keeps a live timeline that follows at its end: the pane growing or
+    /// shrinking moves its bottom, which is not scrolling away.
     private func following<Content: View>(_ content: Content) -> some View {
         content
             .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
@@ -105,17 +119,40 @@ struct MessageTimelineView: View {
                     visibleHeight: geometry.containerSize.height
                 )
             } action: { old, new in
-                if old.visibleHeight != new.visibleHeight, follows, end.isOpen {
-                    position.scrollTo(edge: .bottom)
-                } else if old.offset != new.offset {
+                isAtEnd = new.isAtEnd
+                if isUserScrolling {
                     follows = new.isAtEnd
+                } else if old.visibleHeight != new.visibleHeight, follows, end.isOpen {
+                    scrollToEnd()
+                }
+            }
+            .onScrollPhaseChange { _, phase in
+                let wasScrolling = isUserScrolling
+                isUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                if wasScrolling, !isUserScrolling {
+                    follows = isAtEnd
                 }
             }
             .onChange(of: entries.last?.id) {
-                if follows {
-                    position.scrollTo(edge: .bottom)
+                if follows, end.isOpen {
+                    scrollToEnd()
                 }
             }
+    }
+
+    private static let endID = "end"
+
+    /// To the last view by its ID, not the content's bottom edge: a lazy stack's height is an estimate until its rows
+    /// lay out, so a long list of tall rows scrolled to its edge stopped short of the end. The end line, or the last
+    /// entry when that line shows nothing.
+    private func scrollToEnd() {
+        if end.isShown {
+            position.scrollTo(id: Self.endID, anchor: .bottom)
+        } else if let last = entries.last {
+            position.scrollTo(id: last.id, anchor: .bottom)
+        } else {
+            position.scrollTo(edge: .bottom)
+        }
     }
 
     private struct ScrollMetrics: Equatable {
@@ -159,6 +196,11 @@ struct MessageTimelineEnd: View {
     var ending: String?
     var endsInFailure = false
 
+    /// Whether it draws anything: a finished call with messages has nothing to add after them.
+    var isShown: Bool {
+        isOpen || ending != nil
+    }
+
     var body: some View {
         if isOpen {
             // The status bar's Streaming… already moves; this only marks where new entries land.
@@ -174,8 +216,8 @@ struct MessageTimelineEnd: View {
 }
 
 /// A timeline in Tree mode: its notes, then one tree with a row per message or event over its fields. Live, it opens
-/// at its end and follows like the Text timeline, with the same Jump to Bottom while scrolled away; a search pauses
-/// following until its find bar closes, so the button stays away meanwhile.
+/// at its end and follows like the Text timeline; either way, it raises the same Jump to Bottom while scrolled away
+/// from its end. A search pauses following until its find bar closes, so the button stays away meanwhile.
 struct MessageTimelineTreeView: View {
     let structure: BodyStructure
     var failure: String?
@@ -187,7 +229,7 @@ struct MessageTimelineTreeView: View {
     @State private var isAtEnd = true
 
     var body: some View {
-        let isPaused = end.isOpen && !isAtEnd && !search.isPresented
+        let showsJump = !isAtEnd && !search.isPresented
         VStack(alignment: .leading, spacing: 8) {
             MessageTimelineNotes(failure: failure, notes: notes)
             end
@@ -200,19 +242,19 @@ struct MessageTimelineTreeView: View {
                 onScrolledToEndChange: { isAtEnd = $0 }
             )
             .overlay(alignment: .bottom) {
-                if isPaused {
+                if showsJump {
                     JumpToBottomButton {
                         controller.scrollToEnd()
                     }
                 }
             }
-            .animation(.snappy, value: isPaused)
+            .animation(.snappy, value: showsJump)
         }
     }
 }
 
-/// Brings a live timeline scrolled away from its end back to the newest entry, which resumes following. It rises from
-/// the pane's bottom edge as following pauses, and sinks back once it resumes.
+/// Brings a timeline scrolled away from its end back to its newest entry, where a live one follows again. It rises from
+/// the pane's bottom edge while the timeline is scrolled away, and sinks back once it is at its end.
 struct JumpToBottomButton: View {
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -223,7 +265,7 @@ struct JumpToBottomButton: View {
         }
         .buttonStyle(JumpToBottomStyle())
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-        .help("Scroll to the newest and follow it again")
+        .help("Scroll to the newest entry")
         .padding(.bottom, 12)
         // With Reduce Motion on, it fades rather than slides.
         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))

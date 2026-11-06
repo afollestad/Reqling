@@ -212,6 +212,32 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertEqual(reports, [true, false, true], "only changes, and nothing before the pane had a size to report from")
     }
 
+    /// A finished timeline opens at its top, which is away from its end, so it says so once its pane has a size.
+    func testAFinishedTimelineOpensAtItsTopAwayFromItsEnd() async throws {
+        let scrollView = NSScrollView(frame: .zero)
+        scrollView.documentView = outline
+        coordinator.observeScrolling(of: scrollView)
+        let reported = expectation(description: "reports scrolled away")
+        coordinator.onScrolledToEndChange = { isAtEnd in
+            if !isAtEnd {
+                reported.fulfill()
+            }
+        }
+        let json = #"{"a": 1, "b": 2}"#
+        let messages = try (0..<100).map { sequence in
+            MessageTimeline.Message(
+                item: TimelineItem(sequence: sequence, offset: 0, byteCount: 1, text: json, header: .event(type: "message", id: nil)),
+                index: try JSONStructureIndex.build(Data(json.utf8))
+            )
+        }
+        coordinator.show(.messages(MessageTimeline(id: UUID(), messages: messages)))
+        scrollView.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        scrollView.tile()
+
+        await fulfillment(of: [reported], timeout: 5)
+        XCTAssertEqual(scrollView.contentView.bounds.minY, 0, "a finished timeline stays at its top")
+    }
+
     /// A streaming call updates its tree in place: new messages append, trimmed ones go, and what was expanded stays.
     func testATimelineUpdatesInPlaceKeepingExpansion() throws {
         func timeline(_ sequences: Range<Int>, id: UUID) throws -> BodyStructure {
