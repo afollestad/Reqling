@@ -30,11 +30,10 @@ extension AppModel {
         guard let selection, let project = library.project(selection.projectID) else {
             return DetailTitle(text: appInfo.name, subject: .app, isRenamable: false)
         }
-        let isWritable = project.document != nil && !project.isReadOnly
         if let nodeID = selection.nodeID, let node = project.document?.node(nodeID) {
-            return DetailTitle(text: node.name, subject: .node(project.id, nodeID), isRenamable: isWritable)
+            return DetailTitle(text: node.name, subject: .node(project.id, nodeID), isRenamable: canRename(.node(project.id, nodeID)))
         }
-        return DetailTitle(text: project.name, subject: .project(project.id), isRenamable: isWritable)
+        return DetailTitle(text: project.name, subject: .project(project.id), isRenamable: canRename(.project(project.id)))
     }
 
     /// Renames `subject` rather than the current title's, so an inline edit committed as the selection moves away

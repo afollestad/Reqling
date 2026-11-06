@@ -30,7 +30,7 @@ My API.reqling/
   requests/users/list-users.json
 ```
 
-Create a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar. **Add Project Folder…** opens one someone else shared. Renames move files rather than rewriting them, deletions go to the Trash, and edits made outside Reqling (a `git pull`, an editor) appear in the window as soon as they land. Filter the sidebar by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
+Create a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar. **Add Project Folder…** opens one someone else shared. Select a project, folder, or request and press Return to rename it in place; renames move files rather than rewriting them, deletions go to the Trash, and edits made outside Reqling (a `git pull`, an editor) appear in the window as soon as they land. Filter the sidebar by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
 
 ## Environments and variables
 

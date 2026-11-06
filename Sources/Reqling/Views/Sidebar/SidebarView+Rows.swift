@@ -44,9 +44,7 @@ private struct SidebarProjectLabel: View {
             .frame(width: 20, height: 20)
             .padding(.leading, Self.caretGap)
             .accessibilityHidden(true)
-            Text(project.name)
-                .fontWeight(.semibold)
-                .lineLimit(1)
+            SidebarRowName(item: .project(project.id), name: project.name, isEmphasized: true, model: model)
             Spacer(minLength: 4)
             if isAvailable {
                 SidebarCount(count: requestCount)
@@ -96,7 +94,8 @@ private struct SidebarProjectMenu: View {
             Divider()
             Button("Environments…") { model.sheet = .environments(project.id) }
             Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
-            Button("Rename…") { model.beginRename(nil, in: project.id) }
+            Button("Rename") { model.beginRename(.project(project.id)) }
+                .disabled(!model.canRename(.project(project.id)))
             Button("Clear Run History…") { model.requestClearHistory(of: project.id) }
             Divider()
         }
@@ -142,8 +141,7 @@ private struct SidebarRequestLabel: View {
     var body: some View {
         HStack(spacing: 8) {
             RequestKindPill(kind: request.kind)
-            Text(request.name)
-                .lineLimit(1)
+            SidebarRowName(item: .node(projectID, request.id), name: request.name, model: model)
         }
         .tag(SidebarItem.node(projectID, request.id))
         .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, request: request.kind.name, model: model) }
@@ -179,8 +177,7 @@ private struct SidebarFolderLabel: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
                 .accessibilityHidden(true)
-            Text(folder.name)
-                .lineLimit(1)
+            SidebarRowName(item: .node(projectID, folder.id), name: folder.name, model: model)
             Spacer(minLength: 4)
             SidebarCount(count: folder.children.count)
         }
@@ -209,7 +206,8 @@ private struct SidebarItemMenu: View {
         Button("New Request") { model.selection = .node(projectID, nodeID); model.newRequest(in: projectID) }
         Button("New Folder") { model.selection = .node(projectID, nodeID); model.newFolder(in: projectID) }
         Divider()
-        Button("Rename…") { model.beginRename(nodeID, in: projectID) }
+        Button("Rename") { model.beginRename(.node(projectID, nodeID)) }
+            .disabled(!model.canRename(.node(projectID, nodeID)))
         Button("Duplicate") { model.duplicate(nodeID, in: projectID) }
         if request == .http {
             Button("Copy as cURL") {
@@ -225,7 +223,8 @@ private struct SidebarItemMenu: View {
     }
 }
 
-/// A secondary count at the trailing edge of a project or folder row.
+/// A secondary count at the trailing edge of a project or folder row. Never compressed: the name truncates first, and a
+/// rename field, which outranks it for width, would otherwise squeeze it to nothing.
 private struct SidebarCount: View {
     let count: Int
 
@@ -233,6 +232,7 @@ private struct SidebarCount: View {
         Text("\(count)")
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            .fixedSize()
             .accessibilityLabel("\(count) item\(count == 1 ? "" : "s")")
     }
 }

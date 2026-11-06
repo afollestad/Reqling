@@ -1,19 +1,34 @@
 import AppKit
 import SwiftUI
 
-/// `InlineRenameTitle`'s field. AppKit rather than a SwiftUI `TextField`: `FocusState` cannot move focus into a field
-/// hosted in the window toolbar, where the title lives, so this one takes first responder itself as it appears, and
-/// reports Return, Escape, and focus moving elsewhere straight from its delegate.
+/// The field behind every in-place rename: `InlineRenameTitle` in the window title and `SidebarRowName` in sidebar
+/// rows. AppKit rather than a SwiftUI `TextField`: `FocusState` cannot move focus into a field hosted in the window
+/// toolbar, where the title lives, so this one takes first responder itself as it appears, and reports Return, Escape,
+/// and focus moving elsewhere straight from its delegate.
 struct InlineRenameField: NSViewRepresentable {
+    enum Sizing {
+        /// As wide as the name being typed, within bounds, so the field grows with it like Finder's.
+        case growsWithText
+        /// The width offered, as a list row's name has.
+        case fillsWidth
+    }
+
     private static let minWidth: CGFloat = 120
     private static let maxWidth: CGFloat = 360
 
     @Binding var text: String
     let font: NSFont
+    var sizing: Sizing = .growsWithText
     let accessibilityLabel: String
     /// Return, or focus moving elsewhere.
     let onCommit: () -> Void
     let onCancel: () -> Void
+
+    /// The name an edit commits: trimmed, and `nil` when that leaves it empty or unchanged, so either keeps the old one.
+    static func committedName(_ draft: String, replacing original: String) -> String? {
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty || name == original ? nil : name
+    }
 
     func makeNSView(context: Context) -> SelfFocusingTextField {
         let field = SelfFocusingTextField()
@@ -36,20 +51,27 @@ struct InlineRenameField: NSViewRepresentable {
         }
     }
 
-    /// As wide as the name being typed, within bounds, so the field grows with it like Finder's.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: SelfFocusingTextField, context: Context) -> CGSize? {
-        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width + 8
-        return CGSize(width: min(max(textWidth, Self.minWidth), Self.maxWidth), height: ceil(font.ascender - font.descender + font.leading) + 2)
+        let height = ceil(font.ascender - font.descender + font.leading) + 2
+        switch sizing {
+        case .growsWithText:
+            let textWidth = (text as NSString).size(withAttributes: [.font: font]).width + 8
+            return CGSize(width: min(max(textWidth, Self.minWidth), Self.maxWidth), height: height)
+        case .fillsWidth:
+            return CGSize(width: proposal.width ?? Self.minWidth, height: height)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: InlineRenameField
-        /// Set by Escape, so the end of editing that removing the field causes does not commit after all.
-        private var isCancelled = false
+        /// Set by Return and Escape, which report the end themselves, so the end of editing that handing focus back or
+        /// removing the field causes does not report it again.
+        private var hasEnded = false
 
         init(parent: InlineRenameField) {
             self.parent = parent
@@ -64,11 +86,14 @@ struct InlineRenameField: NSViewRepresentable {
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             switch selector {
             case #selector(NSResponder.cancelOperation(_:)):
-                isCancelled = true
+                hasEnded = true
                 parent.onCancel()
+                returnFocusToList(from: control)
                 return true
             case #selector(NSResponder.insertNewline(_:)):
+                hasEnded = true
                 parent.onCommit()
+                returnFocusToList(from: control)
                 return true
             default:
                 return false
@@ -76,10 +101,39 @@ struct InlineRenameField: NSViewRepresentable {
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
-            if !isCancelled {
+            if !hasEnded {
                 parent.onCommit()
             }
         }
+
+        /// A field in a list row hands the keyboard back to its list, as Finder's sidebar does, so the arrow keys keep
+        /// moving through it; without that, focus falls to the window. Outside a list, as in the title bar, it does nothing.
+        private func returnFocusToList(from control: NSControl) {
+            if let table = control.enclosingTableView {
+                control.window?.makeFirstResponder(table)
+            }
+        }
+    }
+}
+
+extension NSView {
+    /// The table view this view is hosted in, if any: a SwiftUI `List` row's content sits inside the `List`'s table.
+    var enclosingTableView: NSTableView? {
+        sequence(first: superview) { $0?.superview }
+            .lazy
+            .compactMap { $0 as? NSTableView }
+            .first
+    }
+}
+
+/// The background and accent border an in-place rename field draws, so the title's and the sidebar's look alike.
+struct InlineRenameChrome: ViewModifier {
+    @Environment(\.appAccent) private var accent
+
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius).strokeBorder(Color(nsColor: accent), lineWidth: 1))
     }
 }
 

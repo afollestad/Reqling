@@ -25,6 +25,7 @@ These are view-layer defaults for files under `Sources/Reqling/Views/` unless a 
 - **Give `ForEach` rows in a grouped `Form` IDs unique across all its sections.** Sections keyed by bare indices share IDs, and the form draws each card around the wrong rows.
 - End a sheet with `SheetFooter` and head a Settings page with `ScreenHeader`. In a column too narrow for `ContentUnavailableView`, which clips there, use `CompactEmptyState`.
 - **Never give a detail screen an in-page title.** The window's `DetailTitleBar` names and renames whatever the detail shows (`Sources/Reqling/App/AGENTS.md`).
+- **Rename projects, folders, and requests in place with `InlineRenameField`**, as `InlineRenameTitle` and `SidebarRowName` do; never bring back a rename alert.
 
 ## Render Cost
 

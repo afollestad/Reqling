@@ -43,11 +43,6 @@ struct ContentView: View {
                     .modifier(AlertPresenter(model: model, isInSheet: true))
             }
             .modifier(AlertPresenter(model: model, isInSheet: false))
-            .alert("Rename", isPresented: $model.isRenaming) {
-                TextField("Name", text: Binding(get: { model.renaming?.name ?? "" }, set: { model.renaming?.name = $0 }))
-                Button("Rename") { model.commitRename() }
-                Button("Cancel", role: .cancel) { model.cancelRename() }
-            }
             .alert(
                 "Restart to Update?",
                 isPresented: Binding(get: { model.updates.restartPrompt != nil }, set: { if !$0 { model.dismissUpdateRestartPrompt() } }),

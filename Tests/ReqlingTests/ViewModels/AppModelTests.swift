@@ -243,20 +243,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(model.selection)
     }
 
-    func testRenamingReadsTheTypedNameEvenWhenTheDialogClearsItsFlagFirst() throws {
-        let project = try makeProject()
-        model.newRequest()
-        let request = try XCTUnwrap(model.selection?.nodeID)
-        model.beginRename(request, in: project)
-        model.renaming?.name = "Renamed"
-
-        model.isRenaming = false
-        model.commitRename()
-
-        XCTAssertEqual(fixture.library.document(project)?.node(request)?.name, "Renamed")
-        XCTAssertNil(model.renaming)
-    }
-
     func testFolderAuthSavesAfterThePauseOrWhenTheSelectionMoves() async throws {
         let project = try makeProject()
         model.newFolder()

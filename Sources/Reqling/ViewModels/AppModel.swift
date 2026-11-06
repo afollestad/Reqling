@@ -31,17 +31,6 @@ enum AppSheet: Identifiable, Hashable {
     }
 }
 
-struct RenameTarget: Identifiable, Equatable {
-    let projectID: ProjectID
-    /// `nil` renames the project itself.
-    let nodeID: RequestNodeID?
-    var name: String
-
-    var id: String {
-        "\(projectID)/\(nodeID?.description ?? "")"
-    }
-}
-
 struct AppAlert: Identifiable, Equatable {
     let id = UUID()
     let title: String
@@ -87,11 +76,8 @@ final class AppModel {
     var kindChangePending: RequestKindChange?
     /// Run history awaiting confirmation before it is cleared, which cannot be undone.
     var historyClearPending: HistoryClearScope?
-    /// The project or item being renamed, with the name typed so far. Dismissing the dialog clears only `isRenaming`,
-    /// never this, so its Rename action reads the typed name whichever order SwiftUI runs the dismissal and action in.
-    var renaming: RenameTarget?
-    /// Drives the rename dialog; `renaming` holds its data.
-    var isRenaming = false
+    /// The sidebar row showing a name field in place of its name; `AppModel+Rename.swift` begins and ends it.
+    var renaming: SidebarItem?
     /// The selected request's editor, HTTP or gRPC.
     private(set) var editor: RequestEditor?
     /// A folder's auth while it is edited, so typing a token is not a disk write per keystroke. It saves after the

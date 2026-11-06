@@ -15,7 +15,6 @@ struct InlineRenameTitle: View {
 
     /// The edit in progress; `nil` while not editing.
     @State private var editing: Editing?
-    @Environment(\.appAccent) private var accent
 
     var body: some View {
         HStack(spacing: 6) {
@@ -60,8 +59,7 @@ struct InlineRenameTitle: View {
             onCancel: cancel
         )
         .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius).fill(Color(nsColor: .textBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius).strokeBorder(Color(nsColor: accent), lineWidth: 1))
+        .modifier(InlineRenameChrome())
     }
 
     private func beginEditing() {
@@ -73,8 +71,7 @@ struct InlineRenameTitle: View {
             return
         }
         self.editing = nil
-        let name = editing.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty, name != editing.original {
+        if let name = InlineRenameField.committedName(editing.draft, replacing: editing.original) {
             editing.onRename(name)
         }
     }

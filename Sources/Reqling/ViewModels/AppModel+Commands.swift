@@ -187,29 +187,6 @@ extension AppModel {
         }
     }
 
-    func beginRename(_ node: RequestNodeID?, in project: ProjectID) {
-        let name = node.flatMap { library.document(project)?.node($0)?.name } ?? library.project(project)?.name ?? ""
-        renaming = RenameTarget(projectID: project, nodeID: node, name: name)
-        isRenaming = true
-    }
-
-    func cancelRename() {
-        renaming = nil
-        isRenaming = false
-    }
-
-    func commitRename() {
-        guard let renaming else {
-            return
-        }
-        cancelRename()
-        if let node = renaming.nodeID {
-            rename(node, in: renaming.projectID, to: renaming.name)
-        } else {
-            renameProject(renaming.projectID, to: renaming.name)
-        }
-    }
-
     /// Whether dropping `node` onto `target` is a valid move: same project, and never into itself or a descendant.
     func canMove(_ node: RequestNodeID, in project: ProjectID, into parent: RequestNodeID?) -> Bool {
         guard let document = library.document(project), document.node(node) != nil else {
