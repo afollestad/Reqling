@@ -8,7 +8,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Methods.** Any, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
 - **Bodies.** Raw with any Content-Type, form-data, x-www-form-urlencoded, binary, and GraphQL (a query and its variables, sent as the JSON body GraphQL servers expect).
 - **Auth.** Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
-- **Auto-indent.** JSON editors and the GraphQL query editor indent as you press Return:
+- **Auto-indent.** JSON and JavaScript editors and the GraphQL query editor indent as you press Return:
   - A new line keeps the indentation above, one level deeper after `{` or `[`.
   - A bracket left open gets its closer on the next line, with the cursor between.
   - A `}` or `]` typed at the start of a line moves back to its opener's indentation.

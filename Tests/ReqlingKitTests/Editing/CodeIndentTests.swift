@@ -2,7 +2,7 @@ import Foundation
 import ReqlingKit
 import XCTest
 
-/// Return in JSON and GraphQL editors, with `|` marking the cursor before and after.
+/// Return in JSON, JavaScript, and GraphQL editors, with `|` marking the cursor before and after.
 final class CodeIndentTests: XCTestCase {
     func testAnOpenedBracketGetsItsCloserOnTheLineAfter() {
         XCTAssertEqual(pressReturn("{|"), "{\n  |\n}")
@@ -64,6 +64,23 @@ final class CodeIndentTests: XCTestCase {
         XCTAssertEqual(typeCloser("}", "# {\n  |", in: .graphQL), "# {\n  }|", "a comment opens nothing")
         XCTAssertEqual(typeCloser("}", "{\n  |", in: .plainText), "{\n  }|")
         XCTAssertNil(CodeIndent.typing("x", in: "{\n  ", at: 4, language: .json))
+    }
+
+    func testJavaScriptBlocksIndentAndClose() {
+        XCTAssertEqual(pressReturn("rq.test(\"ok\", () => {|", in: .javascript), "rq.test(\"ok\", () => {\n  |\n}")
+        XCTAssertEqual(pressReturn("if (a) {|}", in: .javascript), "if (a) {\n  |\n}")
+        XCTAssertEqual(pressReturn("const x = [|", in: .javascript), "const x = [\n  |\n]")
+        XCTAssertEqual(pressReturn("{{|", in: .javascript), "{{\n  |\n}", "`{{` is code in a script")
+        XCTAssertEqual(typeCloser("}", "function f() {\n  x()\n  |", in: .javascript), "function f() {\n  x()\n}|")
+    }
+
+    func testJavaScriptStringsTemplatesRegexesAndCommentsHoldNoBrackets() {
+        XCTAssertEqual(pressReturn("const s = \"{|\"", in: .javascript), "const s = \"{\n|\"")
+        XCTAssertEqual(pressReturn("const s = `a {|`", in: .javascript), "const s = `a {\n|`", "template text")
+        XCTAssertEqual(pressReturn("const r = /[{|]/", in: .javascript), "const r = /[{\n|]/")
+        XCTAssertEqual(pressReturn("  // opens {|", in: .javascript), "  // opens {\n  |")
+        XCTAssertEqual(pressReturn("const s = `${|`", in: .javascript), "const s = `${\n  |`", "a substitution's brace opens code")
+        XCTAssertEqual(typeCloser("}", "const s = `\n  |", in: .javascript), "const s = `\n  }|", "inside a template")
     }
 
     func testOtherLanguagesKeepAPlainLineBreak() {

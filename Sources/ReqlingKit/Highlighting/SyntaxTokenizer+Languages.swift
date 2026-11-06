@@ -47,21 +47,6 @@ struct CompiledSpec: @unchecked Sendable {
                     rule(#"\b-?\d+(\.\d+)?\b"#, .number)
                 ]
             ),
-            .javascript: CompiledSpec(
-                protected: [
-                    rule(#"//.*$"#, .comment), rule(#"/\*[\s\S]*?\*/"#, .comment),
-                    rule(doubleQuoted, .string), rule(singleQuoted, .string), rule(#"`([^`\\]|\\.)*`"#, .string)
-                ],
-                unprotected: [
-                    keywords([
-                        "function", "var", "let", "const", "if", "else", "for", "while", "return", "class", "extends",
-                        "import", "export", "from", "as", "try", "catch", "finally", "throw", "switch", "case",
-                        "default", "break", "continue", "new", "this", "super", "typeof", "instanceof", "in", "of",
-                        "null", "undefined", "true", "false", "async", "await", "yield"
-                    ]),
-                    rule(#"\b-?\d+(\.\d+)?\b"#, .number)
-                ]
-            ),
             .css: CompiledSpec(
                 protected: [rule(#"/\*[\s\S]*?\*/"#, .comment), rule(doubleQuoted, .string), rule(singleQuoted, .string)],
                 unprotected: [

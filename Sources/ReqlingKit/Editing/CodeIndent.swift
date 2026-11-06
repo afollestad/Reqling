@@ -1,9 +1,10 @@
 import Foundation
 
-/// How a JSON or GraphQL editor indents, worked out from the text alone. On Return the new line keeps the current one's
-/// indentation, one level deeper after `{` or `[`, and a bracket left open gets its closer on the line after, so the
-/// cursor lands between the two; a `}` or `]` typed at the start of its line moves back to its opener's indentation.
-/// Brackets inside strings, GraphQL comments, and `{{variables}}` are not brackets.
+/// How a JSON, JavaScript, or GraphQL editor indents, worked out from the text alone. On Return the new line keeps the
+/// current one's indentation, one level deeper after `{` or `[`, and a bracket left open gets its closer on the line
+/// after, so the cursor lands between the two; a `}` or `]` typed at the start of its line moves back to its opener's
+/// indentation. Brackets inside strings, comments, regexes, template text, and (outside scripts, where `{{` is plain
+/// code) `{{variables}}` are not brackets.
 public enum CodeIndent {
     /// What one indentation level adds, as Tab inserts in the editors.
     public static let indentUnit = "  "
@@ -25,7 +26,9 @@ public enum CodeIndent {
         }
         let line = units.lineRange(for: NSRange(location: cursor, length: 0))
         let indent = leadingWhitespace(in: units, from: line.location, upTo: cursor)
-        guard !context.cursorIsInComment, let opener = opener(context.lastBeforeCursor, in: units), let closer = closers[opener] else {
+        guard !context.cursorIsInComment,
+              let opener = opener(context.lastBeforeCursor, in: units, opensTemplates: language != .javascript),
+              let closer = closers[opener] else {
             return Edit(range: NSRange(location: cursor, length: 0), replacement: "\n" + indent, caret: 1 + indent.utf16.count)
         }
         let lineEnd = contentEnd(of: line, in: units)
@@ -89,12 +92,12 @@ public enum CodeIndent {
     }
 
     /// The opening bracket that ends the code before the cursor on its line; never the second `{` of a `{{` still
-    /// being typed, which opens a variable.
-    private static func opener(_ last: (unit: unichar, index: Int)?, in units: NSString) -> unichar? {
+    /// being typed, which opens a variable, where `opensTemplates` says the language has them.
+    private static func opener(_ last: (unit: unichar, index: Int)?, in units: NSString, opensTemplates: Bool) -> unichar? {
         guard let last, closers[last.unit] != nil else {
             return nil
         }
-        if last.unit == openBrace, last.index > 0, units.character(at: last.index - 1) == openBrace {
+        if opensTemplates, last.unit == openBrace, last.index > 0, units.character(at: last.index - 1) == openBrace {
             return nil
         }
         return last.unit
@@ -147,6 +150,8 @@ public enum CodeIndent {
                 self.init(json: units, cursor: cursor)
             case .graphQL:
                 self.init(graphQL: text, units: units, cursor: cursor)
+            case .javascript:
+                self.init(javaScript: text, units: units, cursor: cursor)
             default:
                 return nil
             }
@@ -197,6 +202,36 @@ public enum CodeIndent {
                     }
                     if token.range.location == last {
                         lastBeforeCursor = (unit, last)
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        /// From `JavaScriptLexer`'s tokens, so strings, template text, regexes, and comments are set apart exactly as
+        /// highlighting sees them. A template's `${` counts as the `{` it ends with, closed by its `}`.
+        init(javaScript text: String, units: NSString, cursor: Int) {
+            let lineStart = units.lineRange(for: NSRange(location: cursor, length: 0)).location
+            var last = cursor - 1
+            while last >= lineStart, CodeIndent.isBlank(units.character(at: last)) {
+                last -= 1
+            }
+            for token in JavaScriptLexer.tokens(in: text) {
+                switch token.kind {
+                case .string, .templateText, .regex:
+                    cursorIsInString = cursorIsInString || token.holds(cursor)
+                case .comment:
+                    cursorIsInComment = cursorIsInComment || token.holds(cursor)
+                case .punctuator where token.text == "${" || (token.range.length == 1 && CodeIndent.isBracket(units.character(at: token.end - 1))):
+                    let index = token.end - 1
+                    let unit = units.character(at: index)
+                    counts[unit, default: 0] += 1
+                    if index < cursor {
+                        track(unit, at: index)
+                    }
+                    if index == last {
+                        lastBeforeCursor = (unit, index)
                     }
                 default:
                     break
