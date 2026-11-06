@@ -159,7 +159,7 @@
                     repository. Edits from a <code>git pull</code> or your editor show up in the window as they land.
                 </p>
             </div>
-            <!-- The project format from main's README.md; keep them in step. -->
+            <!-- The project format from main's docs/projects.md; keep them in step. -->
             <!-- Focusable, since it scrolls when enlarged text outgrows a phone. -->
             <figure class="file-tree" tabindex="0">
                 <figcaption class="visually-hidden">The files in a Reqling project</figcaption>
@@ -191,95 +191,79 @@
         </div>
     </section>
 
-    <section class="section-feature section-centered" id="requests">
+    <section class="section-feature section-centered" id="protocols">
         <div class="container">
-            <p class="chip">Requests</p>
-            <h2>Build any request, then see where the time went</h2>
+            <p class="chip">Protocols</p>
+            <h2>Every kind of API, one window</h2>
             <p class="feature-copy">
-                Raw, form, binary, and GraphQL bodies, with auth set per request or inherited from a folder.
-                <code>{{variables}}</code> fill in from the active environment or a Global one every project shares,
-                and every response breaks its time down by phase.
+                Beyond plain HTTP, send GraphQL queries, gRPC calls, and WebSocket messages, or watch an event stream,
+                all with your variables, auth, and certificates.
             </p>
-            <picture>
-                <source srcset="images/body-dark.webp" type="image/webp" data-theme="dark"
-                    media="(prefers-color-scheme: dark)">
-                <img class="screenshot" src="images/body-light.webp"
-                    alt="The Create user request on its Body tab, a raw JSON body using {{name}} and {{$uuid}} variables, above the Timing tab of its 201 Created response: a waterfall from DNS lookup to download, 142 ms in total."
-                    width="1920" height="1248" loading="lazy" decoding="async">
-            </picture>
-        </div>
-    </section>
-
-    <section class="section-feature section-centered" id="graphql">
-        <div class="container">
-            <p class="chip">GraphQL</p>
-            <h2>Queries that know their schema</h2>
-            <p class="feature-copy">
-                Completion, descriptions, and checking come from the API's schema, read by introspection with the
-                request's own auth or from a schema file. Browse every type beside the request.
-            </p>
-            <picture>
-                <source srcset="images/graphql-dark.webp" type="image/webp" data-theme="dark"
-                    media="(prefers-color-scheme: dark)">
-                <img class="screenshot" src="images/graphql-light.webp"
-                    alt="The Search products GraphQL request in the Storefront project: a Search query taking a $q variable, checked against the 17 types in storefront.graphql, with q filled from {{searchTerm}} and a 200 OK response. Beside it the schema browser shows the Product type's fields, with price deprecated in favor of priceRange."
-                    width="1920" height="1248" loading="lazy" decoding="async">
-            </picture>
-        </div>
-    </section>
-
-    <section class="section-feature section-centered" id="grpc">
-        <div class="container">
-            <p class="chip">gRPC</p>
-            <h2>Streams in both directions</h2>
-            <p class="feature-copy">
-                Call unary and streaming methods with messages written as proto3 JSON. The schema comes from your
-                project's protos, a descriptor set, or server reflection, and every message lands on one timeline.
-            </p>
-            <picture>
-                <source srcset="images/grpc-dark.webp" type="image/webp" data-theme="dark"
-                    media="(prefers-color-scheme: dark)">
-                <img class="screenshot" src="images/grpc-light.webp"
-                    alt="The Chat gRPC request, a bidirectional stream to acme.greeter.v1.Greeter over TLS with its schema from greeter.binpb, above a timeline of two messages sent and two greetings received, ending OK in 48 ms."
-                    width="1920" height="1248" loading="lazy" decoding="async">
-            </picture>
-        </div>
-    </section>
-
-    <section class="section-feature section-centered" id="events">
-        <div class="container">
-            <p class="chip">Event streams</p>
-            <h2>Watch events as they arrive</h2>
-            <p class="feature-copy">
-                A <code>text/event-stream</code> response stays open and lists each event with its type, ID, and time,
-                its JSON opened to its fields. A GET stream reconnects with <code>Last-Event-ID</code>, as a browser's
-                would.
-            </p>
-            <picture>
-                <source srcset="images/events-dark.webp" type="image/webp" data-theme="dark"
-                    media="(prefers-color-scheme: dark)">
-                <img class="screenshot" src="images/events-light.webp"
-                    alt="The Order updates request in Acme API's Live folder, a GET to {{baseUrl}}/orders/stream?status=open with an Accept: text/event-stream header, above its stopped 200 OK stream: an order.created event and two order.updated events, with IDs 1041 to 1043, each opened to its fields."
-                    width="1920" height="1248" loading="lazy" decoding="async">
-            </picture>
-        </div>
-    </section>
-
-    <section class="section-feature section-centered" id="websockets">
-        <div class="container">
-            <p class="chip">WebSockets</p>
-            <h2>Keep the conversation going</h2>
-            <p class="feature-copy">
-                Save the messages a connection opens with, sent in order, then send more while it's live. Text and
-                binary go both ways on one timeline, with pings, pongs, and close codes.
-            </p>
-            <picture>
-                <source srcset="images/websocket-dark.webp" type="image/webp" data-theme="dark"
-                    media="(prefers-color-scheme: dark)">
-                <img class="screenshot" src="images/websocket-light.webp"
-                    alt="The Support chat WebSocket request, connected to {{baseUrl}}/support over the chat.v2 subprotocol, with “Thanks! Can you send me the tracking link?” drafted in its composer beside Ping, Save, and Send Message, above its saved auth message and that message's Send button. Below, the open connection's timeline: the auth message sent with its token masked, “Hi Grace, Ada here. How can I help?”, “Where's order 1041?”, “It ships today, tracking to follow.”, and a ping from the server, answered with a pong."
-                    width="1920" height="1248" loading="lazy" decoding="async">
-            </picture>
+            <!-- scripts/protocol-tabs.js reveals the tabs and shows one panel at a time; without JavaScript every
+                 panel shows, stacked under its own name. The panels keep the ids the protocols' old sections had,
+                 so links to them still land. -->
+            <div class="protocol-tabs" role="tablist" aria-label="Protocols" hidden>
+                <button type="button" role="tab" id="tab-graphql" aria-controls="graphql">GraphQL</button>
+                <button type="button" role="tab" id="tab-grpc" aria-controls="grpc">gRPC</button>
+                <button type="button" role="tab" id="tab-events" aria-controls="events">Event streams</button>
+                <button type="button" role="tab" id="tab-websockets" aria-controls="websockets">WebSockets</button>
+            </div>
+            <figure class="protocol-panel" id="graphql">
+                <h3 class="protocol-name">GraphQL</h3>
+                <picture>
+                    <source srcset="images/graphql-dark.webp" type="image/webp" data-theme="dark"
+                        media="(prefers-color-scheme: dark)">
+                    <img class="screenshot" src="images/graphql-light.webp"
+                        alt="The Search products GraphQL request in the Storefront project: a Search query taking a $q variable, checked against the 17 types in storefront.graphql, with q filled from {{searchTerm}} and a 200 OK response. Beside it the schema browser shows the Product type's fields, with price deprecated in favor of priceRange."
+                        width="1920" height="1248" loading="lazy" decoding="async">
+                </picture>
+                <figcaption>
+                    Write queries with completion and checking from the API's schema, read by introspection or from a
+                    file, and browse every type beside the request.
+                </figcaption>
+            </figure>
+            <figure class="protocol-panel" id="grpc">
+                <h3 class="protocol-name">gRPC</h3>
+                <picture>
+                    <source srcset="images/grpc-dark.webp" type="image/webp" data-theme="dark"
+                        media="(prefers-color-scheme: dark)">
+                    <img class="screenshot" src="images/grpc-light.webp"
+                        alt="The Chat gRPC request, a bidirectional stream to acme.greeter.v1.Greeter over TLS with its schema from greeter.binpb, above a timeline of two messages sent and two greetings received, ending OK in 48 ms."
+                        width="1920" height="1248" loading="lazy" decoding="async">
+                </picture>
+                <figcaption>
+                    Call unary and streaming methods in proto3 JSON, typed by your protos, a descriptor set, or server
+                    reflection, with every message on one timeline.
+                </figcaption>
+            </figure>
+            <figure class="protocol-panel" id="events">
+                <h3 class="protocol-name">Event streams</h3>
+                <picture>
+                    <source srcset="images/events-dark.webp" type="image/webp" data-theme="dark"
+                        media="(prefers-color-scheme: dark)">
+                    <img class="screenshot" src="images/events-light.webp"
+                        alt="The Order updates request in Acme API's Live folder, a GET to {{baseUrl}}/orders/stream?status=open with an Accept: text/event-stream header, above its stopped 200 OK stream: an order.created event and two order.updated events, with IDs 1041 to 1043, each opened to its fields."
+                        width="1920" height="1248" loading="lazy" decoding="async">
+                </picture>
+                <figcaption>
+                    A <code>text/event-stream</code> response stays open, listing each event with its type, ID, and
+                    time, and a GET stream reconnects with <code>Last-Event-ID</code>.
+                </figcaption>
+            </figure>
+            <figure class="protocol-panel" id="websockets">
+                <h3 class="protocol-name">WebSockets</h3>
+                <picture>
+                    <source srcset="images/websocket-dark.webp" type="image/webp" data-theme="dark"
+                        media="(prefers-color-scheme: dark)">
+                    <img class="screenshot" src="images/websocket-light.webp"
+                        alt="The Support chat WebSocket request, connected to {{baseUrl}}/support over the chat.v2 subprotocol, with “Thanks! Can you send me the tracking link?” drafted in its composer beside Ping, Save, and Send Message, above its saved auth message and that message's Send button. Below, the open connection's timeline: the auth message sent with its token masked, “Hi Grace, Ada here. How can I help?”, “Where's order 1041?”, “It ships today, tracking to follow.”, and a ping from the server, answered with a pong."
+                        width="1920" height="1248" loading="lazy" decoding="async">
+                </picture>
+                <figcaption>
+                    Save the messages a connection opens with, then send more while it's live, with text, binary, pings,
+                    and close codes on one timeline.
+                </figcaption>
+            </figure>
         </div>
     </section>
 
@@ -353,6 +337,7 @@
         </svg>
     </button>
 
+    <script src="scripts/protocol-tabs.js"></script>
     <script src="scripts/overview-return.js"></script>
 </body>
 

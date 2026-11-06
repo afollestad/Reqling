@@ -8,7 +8,8 @@ Built per the global `static-site-rules` skill, as a sibling of the Alveary, Chr
 
 - Colors come from the app on `main`: `--accent` is `AccentColor` (`#743a8a` light, `#aa86c2` dark), the title gradients run through `AppIcon.icon`'s plum body, lavender wing and cream beak, and the glows wash a purple down from the top (the wing in light, `AccentColor` in dark) with the beak's cream to the right. Keep them in step with the app and the contrast ratios in the theme sheets' comments.
 - The motif is the courier's dotted flight paths rising up the hero's sides to a packet each: an inline SVG in `index.html` and `og-image/og-image.html` (keep both copies equal), filled and stroked in `--trail`.
-- Window screenshots are centered under their text, like Alveary's, since a window needs the full width. `#projects` and `#mcp` split their text beside a code frame instead, alternating sides; `#projects`' file tree mirrors the project layout in `main`'s `README.md`, and `#mcp`'s command mirrors Settings ▸ MCP's Claude Code setup.
+- Window screenshots are centered under their text, like Alveary's, since a window needs the full width. `#projects` and `#mcp` split their text beside a code frame instead, alternating sides; `#projects`' file tree mirrors the project layout in `main`'s `docs/projects.md`, and `#mcp`'s command mirrors Settings ▸ MCP's Claude Code setup.
+- `#protocols` tabs its GraphQL, gRPC, event stream, and WebSocket captures through `scripts/protocol-tabs.js`. Its markup ships every panel shown and the tablist hidden, so without JavaScript the captures stack under their names; keep a new protocol's panel id, tab, and caption together.
 - `#details` is plain columns between hairlines, three to a row; keep the count a multiple of three so rows stay full.
 
 ## Theming
@@ -19,7 +20,7 @@ Built per the global `static-site-rules` skill, as a sibling of the Alveary, Chr
 
 ### Screenshots
 
-`images/{request,body,graphql,grpc,events,websocket}-{light,dark}.webp` are 1920x1248 captures of the main window from `main`'s screenshot mode, which seeds a fixed demo project (`ScreenshotDemoProject`), so the alt text describes that data. To regenerate:
+`images/{request,graphql,grpc,events,websocket}-{light,dark}.webp` are 1920x1248 captures of the main window from `main`'s screenshot mode, which seeds a fixed demo project (`ScreenshotDemoProject`), so the alt text describes that data. To regenerate:
 
 1. On `main`, run `./scripts/screenshots.sh -b` on a Retina display. It writes 2400x1560 PNGs of the window alone, with transparent rounded corners, to `.build/screenshots/<scene>-<light|dark>.png`.
 2. Downscale each by four fifths, which keeps both sides integral: `sips -z 1248 1920 <scene>-<theme>.png --out <tmp>.png`.

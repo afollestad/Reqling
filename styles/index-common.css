@@ -68,7 +68,8 @@ code {
 
 a:focus-visible,
 button:focus-visible,
-.file-tree:focus-visible {
+.file-tree:focus-visible,
+.protocol-panel:focus-visible {
     outline: 2px solid var(--accent-text);
     outline-offset: 2px;
 }
@@ -391,8 +392,8 @@ button:focus-visible,
     text-align: center;
 }
 
-/* Widened from 36rem so the longest copy (#requests) sets in three lines on
-   desktop, with a little room to spare, while lines stay near 80 characters. */
+/* Widened from 36rem so #protocols' copy sets in two lines on desktop, while
+   lines stay near 80 characters. */
 .section-centered .feature-copy {
     max-width: 42rem;
     margin-left: auto;
@@ -404,7 +405,7 @@ button:focus-visible,
 }
 
 /* Its floor gives way to 10vw only on a phone with enlarged text, so a long
-   word like "conversation" still fits a line whole. */
+   word still fits a line whole. */
 .section-feature h2 {
     margin-top: 1rem;
     font-size: clamp(min(1.9rem, 10vw), 3.5vw, 2.6rem);
@@ -437,6 +438,91 @@ button:focus-visible,
         inset 0 1px 0 rgba(255, 255, 255, .3),
         0 1px 2px rgba(0, 0, 0, .1),
         0 .35rem .9rem -.35rem var(--chip-bg);
+}
+
+/* Protocol tabs ---------------------------------------------------------- */
+
+/* A segmented control over #protocols' screenshots, which
+   scripts/protocol-tabs.js reveals. Unselected tabs are --secondary on
+   --surface (7.3:1 light, 8.6:1 dark); the selected one is a chip, so it holds
+   the chip's contrast. It wraps rather than overflowing a phone with enlarged
+   text, so its radius stays a rounded rectangle's. */
+.protocol-tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: .25rem;
+    max-width: 100%;
+    margin-top: 2.5rem;
+    padding: .3rem;
+    border: 1px solid var(--hairline);
+    border-radius: 1.5rem;
+    background: var(--surface);
+}
+
+/* display: inline-flex would otherwise override the hidden attribute. */
+.protocol-tabs[hidden] {
+    display: none;
+}
+
+.protocol-tabs button {
+    min-height: 2.25rem;
+    padding: .35rem 1rem;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    color: var(--secondary);
+    font: inherit;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color .2s ease, color .2s ease;
+}
+
+.protocol-tabs button[aria-selected="true"] {
+    background: var(--chip-bg);
+    color: var(--chip-fg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .protocol-tabs button[aria-selected="false"]:hover {
+        color: var(--fg);
+    }
+}
+
+/* Without JavaScript every panel shows, stacked under its own name; tabbed,
+   the tab names the panel instead. */
+.protocol-panel {
+    margin-top: 4.5rem;
+}
+
+.tabbed .protocol-panel {
+    margin-top: 2.5rem;
+}
+
+.protocol-name {
+    margin-bottom: 1.5rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.tabbed .protocol-name {
+    display: none;
+}
+
+.section-centered .protocol-panel .screenshot {
+    margin-top: 0;
+}
+
+/* Under the screenshot, so switching tabs never moves the window. */
+.protocol-panel figcaption {
+    max-width: 42rem;
+    margin: 1.75rem auto 0;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--secondary);
+    text-wrap: pretty;
 }
 
 /* Code frames ------------------------------------------------------------ */
