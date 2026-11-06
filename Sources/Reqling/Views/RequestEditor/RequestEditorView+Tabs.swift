@@ -50,10 +50,14 @@ private struct RequestOptionsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             LabeledRow("Timeout") {
-                TextField("Timeout", value: $options.timeoutSeconds, format: .number, prompt: Text("Default (\(Int(defaults.timeoutSeconds)) s)"))
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 160)
+                SecondsField(
+                    title: "Timeout",
+                    seconds: $options.timeoutSeconds,
+                    range: AppSettings.timeoutRange,
+                    step: 5,
+                    start: defaults.timeoutSeconds,
+                    prompt: "Default (\(Int(defaults.timeoutSeconds)))"
+                )
             }
             LabeledRow("Redirects") {
                 choice("Follow redirects", $options.followRedirects, default: defaults.followRedirects, onTitle: "Follow", offTitle: "Don't follow")

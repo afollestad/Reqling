@@ -280,23 +280,27 @@ private struct WebSocketOptionsEditor: View {
             LabeledRowNote(text: "Offered in order as Sec-WebSocket-Protocol; the server picks one or none.")
                 .font(.caption)
             LabeledRow("Timeout") {
-                TextField(
-                    "Timeout",
-                    value: $editor.spec.options.timeoutSeconds,
-                    format: .number,
-                    prompt: Text("Default (\(Int(defaults.timeoutSeconds)) s)")
+                SecondsField(
+                    title: "Timeout",
+                    seconds: $editor.spec.options.timeoutSeconds,
+                    range: AppSettings.timeoutRange,
+                    step: 5,
+                    start: defaults.timeoutSeconds,
+                    prompt: "Default (\(Int(defaults.timeoutSeconds)))"
                 )
-                .textFieldStyle(.roundedBorder)
-                .labelsHidden()
-                .frame(maxWidth: 160)
             }
             LabeledRowNote(text: "How long connecting may take. An open connection never times out.")
                 .font(.caption)
             LabeledRow("Keepalive") {
-                TextField("Keepalive", value: $editor.spec.options.keepaliveSeconds, format: .number, prompt: Text("Off"))
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 160)
+                // The arrows start at 30 s, under the 60 s idle timeout common to proxies and load balancers.
+                SecondsField(
+                    title: "Keepalive",
+                    seconds: $editor.spec.options.keepaliveSeconds,
+                    range: WebSocketRequestOptions.keepaliveRange,
+                    step: 5,
+                    start: 30,
+                    prompt: "Off"
+                )
             }
             LabeledRowNote(text: "Seconds of silence before a ping, applied live to an open connection. A ping unanswered by the next ends it.")
                 .font(.caption)

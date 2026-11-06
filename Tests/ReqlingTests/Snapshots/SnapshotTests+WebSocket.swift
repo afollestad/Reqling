@@ -37,6 +37,16 @@ extension SnapshotTests {
         await waitUntilObserved("the connection to close") { !editor.isSending }
     }
 
+    /// The seconds fields: Timeout empty on its default, Keepalive set, each with its arrows and unit.
+    func testWebSocketEditorOptions() throws {
+        var spec = Self.chatSpec()
+        spec.options.keepaliveSeconds = 30
+        let editor = try socketEditor(spec)
+        editor.tab = .options
+
+        assertBothAppearances(WebSocketEditorPane(editor: editor, model: fixture.model), size: CGSize(width: 920, height: 400))
+    }
+
     func testWebSocketResponseTimelineTree() throws {
         let response = try socketResponse(Self.chatRecord())
 

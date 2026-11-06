@@ -261,15 +261,14 @@ private struct GRPCOptionsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             LabeledRow("Deadline") {
-                TextField(
-                    "Deadline",
-                    value: $deadlineSeconds,
-                    format: .number,
-                    prompt: Text(isInteractive ? "None while the stream is open" : "Default (\(Int(defaults.grpcDeadlineSeconds)) s)")
+                SecondsField(
+                    title: "Deadline",
+                    seconds: $deadlineSeconds,
+                    range: AppSettings.timeoutRange,
+                    step: 5,
+                    start: defaults.grpcDeadlineSeconds,
+                    prompt: isInteractive ? "None" : "Default (\(Int(defaults.grpcDeadlineSeconds)))"
                 )
-                .textFieldStyle(.roundedBorder)
-                .labelsHidden()
-                .frame(maxWidth: 220)
             }
             if isInteractive {
                 LabeledRowNote(text: "The stream stays open until you end it, so the Settings default doesn't apply; set seconds to add one.")

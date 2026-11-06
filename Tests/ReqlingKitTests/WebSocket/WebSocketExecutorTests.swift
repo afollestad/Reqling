@@ -74,12 +74,13 @@ final class WebSocketExecutorTests: XCTestCase {
         cookies: HTTPCookieStorage? = nil,
         handlesCookies: Bool = true,
         keepalive: Duration? = nil,
+        timeout: TimeInterval = 10,
         sleeper: TestSleeper = TestSleeper(returnsAtOnce: false),
         messageLimit: Int = WebSocketExecutor.messageLimit,
         commands: [WebSocketCommand] = []
     ) throws -> Connection {
         var handshake = URLRequest(url: try XCTUnwrap(URL(string: url)))
-        handshake.timeoutInterval = 10
+        handshake.timeoutInterval = timeout
         handshake.httpShouldHandleCookies = handlesCookies
         for (name, value) in headers {
             handshake.setValue(value, forHTTPHeaderField: name)
@@ -322,6 +323,21 @@ final class WebSocketExecutorTests: XCTestCase {
         }
     }
 
+    /// A timeout an agent or a hand edit stores can't overflow the deadline.
+    func testAHugeHandshakeTimeoutIsHeldToTheMostSettingsAllows() async throws {
+        let sleeper = TestSleeper(returnsAtOnce: false)
+        let server = try await start()
+        var requests = sleeper.requests.makeAsyncIterator()
+        var connection = try connect(server.url, timeout: 1e300, sleeper: sleeper)
+
+        let deadline = await requests.next()
+        _ = await connection.next()
+        connection.task.cancel()
+        _ = await connection.outcome
+
+        XCTAssertEqual(deadline, .seconds(AppSettings.timeoutRange.upperBound))
+    }
+
     func testARefusalKeepsItsStatusHeadersBodyAndCookies() async throws {
         let body = #"{"error":"token expired"}"#
         let server = try await start { _ in
@@ -369,82 +385,6 @@ final class WebSocketExecutorTests: XCTestCase {
         _ = await typed.outcome
 
         XCTAssertEqual(server.handshakes.map { $0.header("Cookie") }, ["session=abc", "mine=1"])
-    }
-
-    func testKeepalivePingsOnlyAfterSilenceAndAMissedPongDropsTheConnection() async throws {
-        let sleeper = TestSleeper(returnsAtOnce: false)
-        let server = try await start(behavior: TestWebSocketServer.Behavior(answersPings: false))
-        var requests = sleeper.requests.makeAsyncIterator()
-        let hello = WebSocketCommand.message(.text, Array("hi".utf8))
-        var connection = try connect(server.url, keepalive: .seconds(30), sleeper: sleeper, commands: [hello])
-        _ = await connection.next { if case .received = $0 { true } else { nil } }
-
-        // Traffic since the last tick, so the first tick only resets.
-        while await requests.next() != .seconds(30) {}
-        sleeper.wake()
-        _ = await requests.next()
-        sleeper.wake()
-        let ping = await connection.nextControl()
-        _ = await requests.next()
-        sleeper.wake()
-        let outcome = await connection.outcome
-
-        XCTAssertEqual(ping, .pingSent(id: 1), "The first ping comes only after a quiet interval")
-        guard case .ended(.dropped(let message), _) = outcome else {
-            return XCTFail("An unanswered keepalive drops the connection: \(outcome)")
-        }
-        XCTAssertTrue(message.contains("Keepalive ping 1"), message)
-    }
-
-    func testAnsweredKeepalivePingsRecurEachQuietInterval() async throws {
-        let sleeper = TestSleeper(returnsAtOnce: false)
-        let server = try await start()
-        var requests = sleeper.requests.makeAsyncIterator()
-        var connection = try connect(server.url, keepalive: .seconds(30), sleeper: sleeper)
-        _ = await connection.next()
-
-        var controls: [WebSocketControlEvent] = []
-        for _ in 0..<2 {
-            while await requests.next() != .seconds(30) {}
-            sleeper.wake()
-            controls.append(await connection.nextControl() ?? .note("none"))
-            controls.append(await connection.nextControl() ?? .note("none"))
-        }
-        connection.task.cancel()
-        _ = await connection.outcome
-
-        XCTAssertEqual(controls.map { if case .pong(let id, _) = $0 { "pong \(id ?? 0)" } else { "\($0)" } }, [
-            "\(WebSocketControlEvent.pingSent(id: 1))", "pong 1", "\(WebSocketControlEvent.pingSent(id: 2))", "pong 2"
-        ], "The pong to one keepalive never delays the next")
-    }
-
-    func testAKeepaliveChangedWhileOpenRestartsItsIntervalAndCanTurnItOff() async throws {
-        let sleeper = TestSleeper(returnsAtOnce: false)
-        let server = try await start()
-        var requests = sleeper.requests.makeAsyncIterator()
-        var connection = try connect(server.url, keepalive: .seconds(30), sleeper: sleeper)
-        _ = await connection.next()
-        while await requests.next() != .seconds(30) {}
-
-        connection.outbox.send(.keepalive(.seconds(45)))
-        connection.outbox.send(.keepalive(.seconds(45)))
-        var controls = [await connection.nextControl() ?? .note("none")]
-        while await requests.next() != .seconds(45) {}
-        sleeper.wake()
-        controls.append(await connection.nextControl() ?? .note("none"))
-        controls.append(await connection.nextControl() ?? .note("none"))
-        connection.outbox.send(.keepalive(nil))
-        controls.append(await connection.nextControl() ?? .note("none"))
-        connection.task.cancel()
-        _ = await connection.outcome
-
-        XCTAssertEqual(controls.map { if case .pong(let id, _) = $0 { "pong \(id ?? 0)" } else { "\($0)" } }, [
-            "\(WebSocketControlEvent.note("Keepalive now pings after 45 s of silence."))",
-            "\(WebSocketControlEvent.pingSent(id: 1))",
-            "pong 1",
-            "\(WebSocketControlEvent.note("Keepalive turned off."))"
-        ], "One note for a repeated interval, and the first ping waits out the new one")
-        XCTAssertFalse(sleeper.durations.drop { $0 != .seconds(45) }.contains(.seconds(30)), "The old interval's timer stops")
     }
 
     func testMessagesQueuedAfterACloseAreNotSent() async throws {

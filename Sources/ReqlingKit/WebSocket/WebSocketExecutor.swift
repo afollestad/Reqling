@@ -93,9 +93,10 @@ struct WebSocketExecutor: Sendable {
         let trustFailure: TrustFailureRecorder
         let startedAt: Date
 
-        /// Bounds connecting, TLS, and the server's answer, a refusal's body included.
+        /// Bounds connecting, TLS, and the server's answer, a refusal's body included. Held to the most Settings allows,
+        /// as a gRPC deadline is (`GRPCRequestResolution.duration`), so a huge stored timeout can't overflow it.
         var timeout: Duration {
-            .milliseconds(Int64(max(request.handshake.timeoutInterval, 0.001) * 1_000))
+            .milliseconds(Int64(min(max(request.handshake.timeoutInterval, 0.001), AppSettings.timeoutRange.upperBound) * 1_000))
         }
 
         func record(body: Data = Data()) -> HTTPResponseRecord? {
