@@ -1,6 +1,6 @@
 ## Keep Guidance Current
 
-- Keep `docs/` focused on durable behavior and usage; omit work tracking, validation histories, and commit hashes.
+- **`docs/` is the user guide, for humans.** Keep it to durable behavior and usage; put agent rules in `AGENTS.md`, and omit work tracking, validation histories, and commit hashes.
 - Keep `AGENTS.md` accurate when changes create useful future-agent context; put new rules in the narrowest `AGENTS.md` that covers the affected files.
 - **Default to not writing the bullet.** A rule belongs here only when the code that would violate it is not the code that documents it; mechanism whose only reader is its own file belongs in that file's doc comment instead.
     - Keep what the code cannot show: cross-file couplings, deliberate absences, and prohibitions against reintroducing removed behavior.
@@ -14,7 +14,7 @@
 - **Give a cohesive subsystem its own folder and `AGENTS.md` once trimming and sectioning stop being enough.** `git mv` its files together, write the nested file, and leave the parent one line naming what the child now owns.
     - Create the sibling symlink with `ln -s AGENTS.md CLAUDE.md`; that symlink is what loads the file into context.
     - Inside a SwiftPM target, add the folder to that target's `guidanceFiles(in:)` list in `Package.swift`; SwiftPM warns about both files otherwise.
-- Update `README.md` plus scoped guidance when dependencies, project structure, or lint rules change.
+- **Keep `README.md` for developers.** Update the README plus scoped guidance when dependencies, project structure, or lint rules change, and the matching `docs/` page when user-facing behavior changes.
 
 ## Scoped Guidance
 
