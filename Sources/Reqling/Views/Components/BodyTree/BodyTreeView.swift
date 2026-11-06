@@ -13,6 +13,10 @@ struct BodyTreeView: NSViewRepresentable {
     var onFind: ((NSTextFinder.Action) -> Void)?
     /// A timeline scrolled to its end stays there as rows arrive; off while a search moves through its matches.
     var followsNewest = false
+    /// A live timeline opens at its end and stays there through resizes, where `followsNewest` keeps it.
+    var isLive = false
+    /// Whether the outline is scrolled to its end, reported as it changes.
+    var onScrolledToEndChange: ((Bool) -> Void)?
 
     /// How far a row's text starts inside its cell.
     static let cellTextInset: CGFloat = 2
@@ -38,6 +42,7 @@ struct BodyTreeView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        context.coordinator.observeScrolling(of: scrollView)
         return scrollView
     }
 
@@ -75,13 +80,15 @@ struct BodyTreeView: NSViewRepresentable {
         controller?.coordinator = coordinator
         coordinator.outline?.onFind = onFind
         coordinator.followsNewest = followsNewest
+        coordinator.isLive = isLive
+        coordinator.onScrolledToEndChange = onScrolledToEndChange
         coordinator.outline?.setAccessibilityLabel(accessibilityLabel)
         coordinator.show(structure)
         coordinator.reveal(currentMatch)
     }
 }
 
-/// How the section bar's Expand All and Collapse All reach the tree on screen.
+/// How the section bar's Expand All and Collapse All, and a timeline's Jump to Bottom, reach the tree on screen.
 @MainActor
 final class BodyTreeController {
     weak var coordinator: BodyTreeCoordinator?
@@ -92,6 +99,10 @@ final class BodyTreeController {
 
     func collapseAll() {
         coordinator?.collapseAll()
+    }
+
+    func scrollToEnd() {
+        coordinator?.scrollToEnd()
     }
 }
 
@@ -109,6 +120,12 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
     private(set) var rootCount = 0
     private var revealed: BodyTreeMatch?
     var followsNewest = false
+    var isLive = false
+    var onScrolledToEndChange: ((Bool) -> Void)?
+    /// What `onScrolledToEndChange` last heard, so it hears only changes.
+    var reportedAtEnd: Bool?
+    /// A start at the end still waiting for the scroll view to have a size to scroll within.
+    var pendingScrollToEnd = false
 
     // MARK: - Content
 
@@ -132,6 +149,10 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         rootCount = document.childNodes?.count ?? 0
         outline.reloadData()
         openSingleRoot()
+        // Set either way, so an earlier start that never landed can't move a finished timeline.
+        pendingScrollToEnd = isLive
+        scrollToEndOnceSized()
+        reportScrolledToEnd()
     }
 
     /// Opens the top-level value of a single document, and a timeline's messages or events, whose fields are what it is
@@ -201,6 +222,7 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         if follows, !inserted.isEmpty {
             scrollToEnd(outline)
         }
+        reportScrolledToEnd()
     }
 
     /// True for the top-level value of a single document, which reads as the whole document rather than an item.
@@ -422,34 +444,6 @@ struct BodyTreeControls: View {
             .accessibilityLabel("Collapse all")
         }
         .buttonStyle(IconButtonStyle())
-    }
-}
-
-/// A tree pane: the in-place search above a `BodyTreeView` on the editors' surface.
-struct BodyTreePane: View {
-    let structure: BodyStructure
-    @Bindable var search: BodySearchModel
-    let controller: BodyTreeController
-    let accessibilityLabel: String
-
-    var body: some View {
-        VStack(spacing: 6) {
-            if search.isPresented {
-                BodySearchBar(search: search)
-            }
-            BodyTreeView(
-                structure: structure,
-                currentMatch: search.isPresented ? search.currentTreeMatch : nil,
-                controller: controller,
-                accessibilityLabel: accessibilityLabel,
-                onFind: { search.perform($0) },
-                followsNewest: !search.isPresented
-            )
-            .editorChrome()
-        }
-        .task(id: search.key(for: .tree(structure))) {
-            await search.search(in: .tree(structure))
-        }
     }
 }
 

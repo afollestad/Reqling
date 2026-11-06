@@ -158,6 +158,60 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertTrue(outline.isItemExpanded(try XCTUnwrap(coordinator.roots.last)))
     }
 
+    /// A live timeline's tree opens at its end once its pane has a size, says when it is scrolled away, and Jump to
+    /// Bottom brings it back.
+    func testALiveTimelineOpensAtItsEndAndSaysWhenScrolledAway() async throws {
+        let scrollView = NSScrollView(frame: .zero)
+        scrollView.documentView = outline
+        coordinator.observeScrolling(of: scrollView)
+        let controller = BodyTreeController()
+        controller.coordinator = coordinator
+        var reports: [Bool] = []
+        var awaited: (expectation: XCTestExpectation, value: Bool)?
+        coordinator.onScrolledToEndChange = { isAtEnd in
+            reports.append(isAtEnd)
+            if let current = awaited, current.value == isAtEnd {
+                current.expectation.fulfill()
+            }
+        }
+        func report(_ isAtEnd: Bool, after change: () -> Void) async {
+            let expectation = expectation(description: "reports \(isAtEnd)")
+            awaited = (expectation, isAtEnd)
+            change()
+            await fulfillment(of: [expectation], timeout: 5)
+        }
+        let json = #"{"a": 1, "b": 2}"#
+        let messages = try (0..<100).map { sequence in
+            MessageTimeline.Message(
+                item: TimelineItem(sequence: sequence, offset: 0, byteCount: 1, text: json, header: .event(type: "message", id: nil)),
+                index: try JSONStructureIndex.build(Data(json.utf8))
+            )
+        }
+        coordinator.isLive = true
+        coordinator.show(.messages(MessageTimeline(id: UUID(), messages: messages)))
+
+        await report(true) {
+            scrollView.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+            scrollView.tile()
+        }
+        XCTAssertTrue(coordinator.isScrolledToEnd(outline), "opens at the end once it has a size to scroll within")
+        await report(false) {
+            scrollView.contentView.scroll(to: .zero)
+        }
+        await report(true) {
+            controller.scrollToEnd()
+        }
+        scrollView.frame.size.height = 150
+        scrollView.tile()
+        XCTAssertTrue(coordinator.isScrolledToEnd(outline), "a resize keeps a live timeline at its end")
+        let drained = expectation(description: "the main queue drains")
+        DispatchQueue.main.async {
+            drained.fulfill()
+        }
+        await fulfillment(of: [drained], timeout: 5)
+        XCTAssertEqual(reports, [true, false, true], "only changes, and nothing before the pane had a size to report from")
+    }
+
     /// A streaming call updates its tree in place: new messages append, trimmed ones go, and what was expanded stays.
     func testATimelineUpdatesInPlaceKeepingExpansion() throws {
         func timeline(_ sequences: Range<Int>, id: UUID) throws -> BodyStructure {

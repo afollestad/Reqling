@@ -27,6 +27,11 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.eventStreamSize)
     }
 
+    /// The pill a live timeline raises while scrolled away from its newest entry.
+    func testJumpToBottomButton() {
+        assertBothAppearances(JumpToBottomButton {}.padding(.horizontal, 16).padding(.top, 12), size: CGSize(width: 220, height: 64))
+    }
+
     private func eventStreamResponse(end: EventStreamRecord.End?) throws -> ResponseViewModel {
         let project = try SnapshotProject.make(in: fixture)
         let kinds: [(TimeInterval, EventStreamEntry.Kind)] = [

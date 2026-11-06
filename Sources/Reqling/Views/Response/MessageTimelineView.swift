@@ -29,17 +29,27 @@ enum MessageTimelineKind {
 /// entries say what is left out, by cause: a long run keeps only its newest entries, one too fast to record loses some
 /// in between, and a saved response may have been shortened to fit the run history.
 ///
-/// While scrolled to the end, new entries keep it there; scrolling away stops following, and scrolling back resumes.
+/// A live timeline opens at its end and follows the newest entries; scrolling away pauses following and raises Jump
+/// to Bottom, and that, or scrolling back, resumes it. A finished one opens at the top.
 struct MessageTimelineView: View {
     let entries: [MessageTimelineEntry]
     /// What went wrong, in red above the entries: a failed call's status message.
-    var failure: String?
-    var notes: [String] = []
+    let failure: String?
+    let notes: [String]
     let end: MessageTimelineEnd
-    @State private var position = ScrollPosition()
+    @State private var position: ScrollPosition
     @State private var follows = true
 
+    init(entries: [MessageTimelineEntry], failure: String? = nil, notes: [String] = [], end: MessageTimelineEnd) {
+        self.entries = entries
+        self.failure = failure
+        self.notes = notes
+        self.end = end
+        _position = State(initialValue: ScrollPosition(edge: end.isOpen ? .bottom : .top))
+    }
+
     var body: some View {
+        let isPaused = end.isOpen && !follows
         following(
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -55,6 +65,15 @@ struct MessageTimelineView: View {
             }
             .scrollPosition($position)
         )
+        .overlay(alignment: .bottom) {
+            if isPaused {
+                JumpToBottomButton {
+                    follows = true
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+        }
+        .animation(.snappy, value: isPaused)
     }
 
     /// What the timeline leaves out, by cause.
@@ -74,8 +93,9 @@ struct MessageTimelineView: View {
         return notes
     }
 
-    /// Content growing under a list at its end leaves it following; only a scroll, or the pane resizing, decides anew,
-    /// since a growing list reads as no longer at its end before the scroll to the new end lands.
+    /// Content growing under a list at its end leaves it following, since a growing list reads as no longer at its
+    /// end before the scroll to the new end lands; only a scroll decides anew. A resize keeps a live timeline that
+    /// follows at its end: the pane growing or shrinking moves its bottom, which is not scrolling away.
     private func following<Content: View>(_ content: Content) -> some View {
         content
             .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
@@ -85,7 +105,9 @@ struct MessageTimelineView: View {
                     visibleHeight: geometry.containerSize.height
                 )
             } action: { old, new in
-                if old.offset != new.offset || old.visibleHeight != new.visibleHeight {
+                if old.visibleHeight != new.visibleHeight, follows, end.isOpen {
+                    position.scrollTo(edge: .bottom)
+                } else if old.offset != new.offset {
                     follows = new.isAtEnd
                 }
             }
@@ -151,7 +173,9 @@ struct MessageTimelineEnd: View {
     }
 }
 
-/// A timeline in Tree mode: its notes, then one tree with a row per message or event over its fields.
+/// A timeline in Tree mode: its notes, then one tree with a row per message or event over its fields. Live, it opens
+/// at its end and follows like the Text timeline, with the same Jump to Bottom while scrolled away; a search pauses
+/// following until its find bar closes, so the button stays away meanwhile.
 struct MessageTimelineTreeView: View {
     let structure: BodyStructure
     var failure: String?
@@ -160,12 +184,101 @@ struct MessageTimelineTreeView: View {
     @Bindable var search: BodySearchModel
     let controller: BodyTreeController
     let accessibilityLabel: String
+    @State private var isAtEnd = true
 
     var body: some View {
+        let isPaused = end.isOpen && !isAtEnd && !search.isPresented
         VStack(alignment: .leading, spacing: 8) {
             MessageTimelineNotes(failure: failure, notes: notes)
             end
-            BodyTreePane(structure: structure, search: search, controller: controller, accessibilityLabel: accessibilityLabel)
+            BodyTreePane(
+                structure: structure,
+                search: search,
+                controller: controller,
+                accessibilityLabel: accessibilityLabel,
+                isLive: end.isOpen,
+                onScrolledToEndChange: { isAtEnd = $0 }
+            )
+            .overlay(alignment: .bottom) {
+                if isPaused {
+                    JumpToBottomButton {
+                        controller.scrollToEnd()
+                    }
+                }
+            }
+            .animation(.snappy, value: isPaused)
+        }
+    }
+}
+
+/// Brings a live timeline scrolled away from its end back to the newest entry, which resumes following. It rises from
+/// the pane's bottom edge as following pauses, and sinks back once it resumes.
+struct JumpToBottomButton: View {
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Label("Jump to Bottom", systemImage: "arrow.down")
+        }
+        .buttonStyle(JumpToBottomStyle())
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+        .help("Scroll to the newest and follow it again")
+        .padding(.bottom, 12)
+        // With Reduce Motion on, it fades rather than slides.
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
+/// A solid capsule over the timeline, its arrow in the accent and its words in the primary label color: readable
+/// in both appearances and with whatever accent the person chose, and the same whether or not its window is key, which
+/// `.borderedProminent` is not (macOS draws that gray in an inactive window).
+private struct JumpToBottomStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        JumpToBottomPill(isPressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+/// The pill itself, tinting under the pointer and more while pressed.
+private struct JumpToBottomPill<Content: View>: View {
+    let isPressed: Bool
+    @ViewBuilder let content: Content
+    @Environment(\.appAccent) private var accent
+    @State private var isHovered = false
+
+    /// Circular ends: a continuous capsule's border flattens where each end turns, which reads as a stray line.
+    private let shape = Capsule(style: .circular)
+
+    var body: some View {
+        content
+            .labelStyle(JumpToBottomLabelStyle(accent: Color(nsColor: accent)))
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background {
+                // The tint over the fill, beneath the words.
+                ZStack {
+                    shape.fill(Color(nsColor: .controlBackgroundColor))
+                    shape.fill(Color.primary.opacity(isPressed ? 0.12 : isHovered ? 0.06 : 0))
+                }
+            }
+            .overlay(shape.strokeBorder(Color(nsColor: .separatorColor)))
+            .contentShape(shape)
+            .onHover { isHovered = $0 }
+    }
+}
+
+/// The arrow in the accent beside the words.
+private struct JumpToBottomLabelStyle: LabelStyle {
+    let accent: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon
+                .foregroundStyle(accent)
+            configuration.title
         }
     }
 }
