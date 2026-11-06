@@ -38,8 +38,23 @@ extension RequestRunner {
                 defaultEnvironment: document.defaultEnvironment,
                 active: document.isDefaultEnvironment(environment.id) ? nil : environment
             ),
-            levels: levels
+            levels: levels,
+            secretSink: options.scriptSecrets
         )
+    }
+
+    /// Runs `request`'s pre-request scripts for something that only shows or fetches what it would send (a preview, an
+    /// introspection, a reflection lookup), so it matches what a send builds. Nothing they set is kept and nothing is
+    /// recorded; `nil` when no scripts would run. Scripts that fail or are stopped throw, as they stop a run.
+    func previewScripts(_ request: RequestNodeID, in project: ProjectID, options: RunOptions) async throws(RunFailure) -> ScriptSession? {
+        guard let item = item(request, in: project, options: options),
+              let session = scriptSession(for: item, in: project, options: options, mode: .preview) else {
+            return nil
+        }
+        if let failure = await runPreRequestScripts(session, key: nil, options: options) {
+            throw failure
+        }
+        return session
     }
 
     var scriptTimeLimit: Duration {
@@ -91,14 +106,17 @@ extension RequestRunner {
     }
 
     /// Runs the pre-request phase, when trusted; returns the failure that stops the run, if its scripts failed or were
-    /// stopped. What they set is committed either way.
-    func runPreRequestScripts(_ session: ScriptSession, key: RunKey, options: RunOptions) async -> RunFailure? {
+    /// stopped. What they set is committed either way, except in a preview. `key` is the run's, for `scriptPhases`; a
+    /// preview has none.
+    func runPreRequestScripts(_ session: ScriptSession, key: RunKey?, options: RunOptions) async -> RunFailure? {
         guard await resolveTrust(session, options: options), session.hasScripts(.preRequest) else {
             return nil
         }
-        scriptPhases[key] = .preRequest
+        if let key {
+            scriptPhases[key] = .preRequest
+        }
         let outcome = await session.run(.preRequest, response: nil, runner: scripts, timeLimit: scriptTimeLimit)
-        if scriptPhases[key] == .preRequest {
+        if let key, scriptPhases[key] == .preRequest {
             scriptPhases[key] = nil
         }
         session.commit(to: library)
@@ -154,5 +172,19 @@ extension RequestRunner {
         }
         session.skip(.postResponse, reason: .quit)
         return session.shownReport
+    }
+}
+
+extension RunFailure {
+    /// The failure, noting that the request's pre-request scripts didn't run when the project isn't trusted, since a
+    /// header they set may be what the server missed.
+    @MainActor
+    func noting(_ session: ScriptSession?) -> RunFailure {
+        guard let session, session.isTrusted == false, session.hasScripts(.preRequest) else {
+            return self
+        }
+        var noted = self
+        noted.message += " The request's pre-request scripts didn't run, since this project's scripts aren't trusted on this Mac."
+        return noted
     }
 }

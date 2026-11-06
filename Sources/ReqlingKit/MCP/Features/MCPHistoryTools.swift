@@ -95,6 +95,9 @@ struct MCPHistoryTools {
             "environment": run.environmentName.map(Value.string) ?? .null,
             "outcome": .string(run.outcomeKind.rawValue)
         ]
+        if let tests = run.tests {
+            description["tests"] = MCPExecutionTools.testSummary(tests)
+        }
         switch run.status {
         case .http(let code):
             description["status"] = .int(code)

@@ -45,6 +45,8 @@ public struct RunOptions: Sendable {
     /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
     /// neither shows in the window nor lands in the history.
     var unsaved: RequestItem?
+    /// Collects the secrets the run's scripts touch, for masking output built outside the run.
+    var scriptSecrets: ScriptSecretSink?
 }
 
 /// One request in one project. Runs are tracked by this, never by request ID alone: a request file copied between
@@ -184,13 +186,28 @@ public final class RequestRunner {
         history.outcome(for: request, in: project)
     }
 
-    /// Builds an HTTP request exactly as a run would, without sending it; a gRPC request fails.
+    /// Builds an HTTP request exactly as a run would, its pre-request scripts included, without sending it; nothing the
+    /// scripts set is kept. A gRPC or WebSocket request fails.
     public func prepare(
         _ request: RequestNodeID,
         in project: ProjectID,
         options: RunOptions = RunOptions()
-    ) throws(RunFailure) -> PreparedHTTPRequest {
-        try prepareRun(request, in: project, options: options).prepared
+    ) async throws(RunFailure) -> PreparedHTTPRequest {
+        try await previewHTTP(request, in: project, options: options).prepared
+    }
+
+    /// `prepare`, with the report of the pre-request scripts it ran.
+    func previewHTTP(
+        _ request: RequestNodeID,
+        in project: ProjectID,
+        options: RunOptions
+    ) async throws(RunFailure) -> (prepared: PreparedHTTPRequest, scriptReport: ScriptReport?) {
+        // A request that isn't HTTP fails before any script runs.
+        guard item(request, in: project, options: options)?.kind.httpSpec != nil else {
+            return (try prepareRun(request, in: project, options: options).prepared, nil)
+        }
+        let session = try await previewScripts(request, in: project, options: options)
+        return (try prepareRun(request, in: project, options: options, session: session).prepared, session?.shownReport)
     }
 
     /// Runs a saved request and waits for the result. Starting a run of a request that is already in flight in the

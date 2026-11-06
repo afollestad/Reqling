@@ -21,9 +21,9 @@ struct MCPExecutionTools {
             description: "Sends a saved request and waits for the response (HTTP) or the call's end (gRPC), resolving its "
                 + "{{variables}} against an environment. An event-stream response is read until it ends, streamSeconds pass, "
                 + "or streamEvents arrive, then returned with its events. A WebSocket connects, sends its on-connect messages "
-                + "(or `messages`), and returns everything that crossed it once it closes or reaches the same bounds. Fails "
-                + "before sending when a variable is undefined, listing the names, unless allowUnresolved is set. The run "
-                + "shows in Reqling's window.",
+                + "(or `messages`), and returns everything that crossed it once it closes or reaches the same bounds. Its "
+                + "scripts' tests and console come back too. Fails before sending when a variable is undefined, listing the "
+                + "names, unless allowUnresolved is set. The run shows in Reqling's window.",
             properties: Self.runProperties.merging([
                 "request": MCPSchema.request,
                 "overrides": MCPSchema.openObject("One-run changes to the spec, as a merge patch like update_request's `spec`. "
@@ -42,9 +42,11 @@ struct MCPExecutionTools {
             var options = try runOptions(arguments, in: document)
             options.spec = try Self.applyingMessages(arguments, to: kind)
             options.streamLimit = try Self.streamLimit(arguments, for: kind)
+            let secrets = ScriptSecretSink()
+            options.scriptSecrets = secrets
             let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
             let exchange = await context.runner.run(request.id, in: project.id, options: options)
-            var description = Self.describe(exchange, mask: mask)
+            var description = Self.describe(exchange, mask: secrets.masking(mask))
             // Only a recorded run can be read back with get_run; a run replaced by a newer one, or of a project removed
             // meanwhile, never was.
             if context.runner.latest[RunKey(request.id, in: project.id)]?.id == exchange.id {
@@ -76,9 +78,11 @@ struct MCPExecutionTools {
             options.streamLimit = try Self.streamLimit(arguments, for: item.kind)
             var unsaved = item
             unsaved.kind = try Self.applyingMessages(arguments, to: item.kind)
+            let secrets = ScriptSecretSink()
+            options.scriptSecrets = secrets
             let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
             let exchange = await context.runner.runUnsaved(unsaved, in: project.id, options: options)
-            return .object(Self.describe(exchange, mask: mask))
+            return .object(Self.describe(exchange, mask: secrets.masking(mask)))
         }
     }
 
@@ -86,8 +90,8 @@ struct MCPExecutionTools {
         MCPTool(
             "resolve_request",
             title: "Preview resolved request",
-            description: "What a saved request would send, {{variables}} resolved and secrets masked, without sending it. Lists "
-                + "any undefined variables.",
+            description: "What a saved request would send, {{variables}} resolved and secrets masked, without sending it. Its "
+                + "pre-request scripts run, but nothing they set is kept. Lists any undefined variables.",
             properties: [
                 "project": MCPSchema.project,
                 "request": MCPSchema.request,
@@ -101,28 +105,39 @@ struct MCPExecutionTools {
             let request = try context.request(try arguments.string("request"), in: document)
             var options = try runOptions(arguments, in: document)
             options.allowUnresolved = true
+            let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
             do {
+                var description: [String: Value]
+                let report: ScriptReport?
                 switch request.kind {
                 case .http:
-                    let prepared = try context.runner.prepare(request.id, in: project.id, options: options)
-                    return .object([
-                        "request": try MCPJSON.encode(prepared.summary),
-                        "unresolvedVariables": .array(prepared.unresolvedVariables.map(Value.string))
-                    ])
+                    let preview = try await context.runner.previewHTTP(request.id, in: project.id, options: options)
+                    description = [
+                        "request": try MCPJSON.encode(preview.prepared.summary),
+                        "unresolvedVariables": .array(preview.prepared.unresolvedVariables.map(Value.string))
+                    ]
+                    report = preview.scriptReport
                 case .grpc:
-                    let preview = try context.runner.previewGRPC(request.id, in: project.id, options: options)
-                    return .object([
+                    let preview = try await context.runner.previewGRPC(request.id, in: project.id, options: options)
+                    description = [
                         "target": .string(preview.target),
                         "rpc": .string(preview.methodPath),
                         "metadata": try MCPJSON.encode(preview.metadata),
                         "messages": .array(preview.messages.map(Value.string)),
                         "unresolvedVariables": .array(preview.unresolvedVariables.map(Value.string))
-                    ])
+                    ]
+                    report = preview.scriptReport
                 case .webSocket:
-                    return .object(try Self.resolved(context.runner.previewWebSocket(request.id, in: project.id, options: options)))
+                    let preview = try await context.runner.previewWebSocket(request.id, in: project.id, options: options)
+                    description = try Self.resolved(preview)
+                    report = preview.scriptReport
                 }
+                if let report {
+                    description.merge(Self.scripts(report, mask: mask)) { $1 }
+                }
+                return .object(description)
             } catch let failure as RunFailure {
-                throw MCPToolError(failure.message)
+                throw MCPToolError(mask(failure.message))
             }
         }
     }
@@ -263,6 +278,9 @@ struct MCPExecutionTools {
             description["connection"] = .object(webSocket(record, cachedCut: exchange.isBodyTruncated, mask: mask))
         case .failure(let failure):
             description["failure"] = ["kind": .string(failure.kind.rawValue), "message": .string(mask(failure.message))]
+        }
+        if let report = exchange.scriptReport {
+            description.merge(scripts(report, mask: mask)) { $1 }
         }
         return description
     }

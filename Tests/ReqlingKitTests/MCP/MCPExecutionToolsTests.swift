@@ -7,10 +7,10 @@ import XCTest
 /// what was really sent and what the tool shows.
 @MainActor
 final class MCPExecutionToolsTests: XCTestCase {
-    private var fixture: MCPFixture!
-    private var server: TestHTTPServer!
-    private var project: ProjectID!
-    private var request: String!
+    var fixture: MCPFixture!
+    var server: TestHTTPServer!
+    var project: ProjectID!
+    var request: String!
 
     override func setUp() async throws {
         fixture = try MCPFixture()
@@ -39,7 +39,7 @@ final class MCPExecutionToolsTests: XCTestCase {
         fixture.cleanUp()
     }
 
-    private func execute(_ extra: [String: Value] = [:]) async throws -> [String: Value] {
+    func execute(_ extra: [String: Value] = [:]) async throws -> [String: Value] {
         try await fixture.success("execute_request", ["project": .string(project.description), "request": .string(request)].merging(extra) { $1 })
     }
 

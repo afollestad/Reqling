@@ -7,7 +7,7 @@ Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agen
 - Create and edit projects, environments, variables, and saved requests, and reset or save the current values scripts set.
 - Compile protos.
 - Read a GraphQL request's schema and check queries against it.
-- Send requests and read their responses. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
+- Send requests and read their responses, with their scripts' test results and console. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
 - Look back through each request's run history.
 
 ## Setup
@@ -21,5 +21,6 @@ claude mcp add --transport http reqling http://127.0.0.1:39717/mcp --header "Aut
 ## Security
 
 - **Local only.** The server listens on `127.0.0.1` and requires its bearer token, which is kept in your Keychain and can be regenerated.
-- **Secrets are write-only.** No tool returns one, and resolved requests and responses show them masked, even where a server echoes one back.
+- **Secrets are write-only.** No tool returns one, and resolved requests and responses show them masked, even where a server echoes one back. Values a script makes secret are masked too.
+- **Scripts run only in projects you trust.** An agent can't trust a project for you; in one you haven't trusted, its requests go out without their scripts, and the agent is told why.
 - **Deletions** go to the Trash.

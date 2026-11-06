@@ -30,6 +30,7 @@ final class ScriptSession {
     let environments: VariableScope.Environments
     /// The scripts each phase runs, outermost level first; a phase with none is absent.
     let levels: [ScriptPhase: [ScriptLevelSource]]
+    let secretSink: ScriptSecretSink?
     /// `nil` until the run has decided; `false` runs the request without its scripts.
     var isTrusted: Bool?
     private(set) var layers: VariableLayers
@@ -46,13 +47,15 @@ final class ScriptSession {
         mode: Mode,
         scope: VariableScope,
         environments: VariableScope.Environments,
-        levels: [ScriptPhase: [ScriptLevelSource]]
+        levels: [ScriptPhase: [ScriptLevelSource]],
+        secretSink: ScriptSecretSink?
     ) {
         self.project = project
         self.item = item
         self.mode = mode
         self.environments = environments
         self.levels = levels
+        self.secretSink = secretSink
         environmentID = environments.active?.id ?? environments.defaultEnvironment.id
         layers = scope.layers
     }
@@ -143,6 +146,7 @@ final class ScriptSession {
             outcome = .failed
         }
         report.phases.append(phaseReport)
+        secretSink?.collect(secretValues)
         return outcome
     }
 

@@ -243,7 +243,7 @@ struct MCPRequestTools {
             var options = RunOptions(variableOverrides: try arguments.stringMap("variables") ?? [:], allowUnresolved: true)
             options.environmentID = try arguments.optionalString("environment").map { try context.environment($0, in: document).id }
             do {
-                let prepared = try context.runner.prepare(request.id, in: project.id, options: options)
+                let prepared = try await context.runner.prepare(request.id, in: project.id, options: options)
                 return .object([
                     "command": .string(CurlCodec.export(prepared, masked: true)),
                     "unresolvedVariables": .array(prepared.unresolvedVariables.map(Value.string))

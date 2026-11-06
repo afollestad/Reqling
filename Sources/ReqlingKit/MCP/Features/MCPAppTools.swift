@@ -73,8 +73,8 @@ struct MCPAppTools {
         MCPTool(
             "get_settings",
             title: "Get settings",
-            description: "Reqling's preferences: theme, HTTP request defaults, the gRPC deadline, the protoc path override, and "
-                + "how long and how much run history stays on this Mac.",
+            description: "Reqling's preferences: theme, HTTP request defaults, the gRPC deadline, the scripts' time limit, the "
+                + "protoc path override, and how long and how much run history stays on this Mac.",
             annotations: .read
         ) { _ in
             .object(Self.describe(context.settings.settings))
@@ -93,6 +93,11 @@ struct MCPAppTools {
                 "followRedirects": MCPSchema.boolean("Whether HTTP requests follow redirects by default."),
                 "verifyTLS": MCPSchema.boolean("Whether requests verify servers' TLS certificates by default."),
                 "grpcDeadlineSeconds": MCPSchema.number("The default gRPC deadline.", minimum: 1, maximum: 600),
+                "scriptTimeLimitSeconds": MCPSchema.number(
+                    "How long each phase of a request's scripts may run before it's stopped.",
+                    minimum: AppSettings.scriptTimeLimitRange.lowerBound,
+                    maximum: AppSettings.scriptTimeLimitRange.upperBound
+                ),
                 "protocPath": MCPSchema.string("A protoc to compile with instead of searching for one. Empty clears it."),
                 "historyRetention": MCPSchema.enumeration(
                     HistoryRetention.allCases.map(\.rawValue),
@@ -108,6 +113,7 @@ struct MCPAppTools {
             let theme = try Self.choice(arguments, "theme", AppTheme.self)
             let timeout = try arguments.optionalNumber("requestTimeoutSeconds", in: AppSettings.timeoutRange)
             let deadline = try arguments.optionalNumber("grpcDeadlineSeconds", in: AppSettings.timeoutRange)
+            let scriptTimeLimit = try arguments.optionalNumber("scriptTimeLimitSeconds", in: AppSettings.scriptTimeLimitRange)
             let followRedirects = try arguments.optionalBool("followRedirects")
             let verifyTLS = try arguments.optionalBool("verifyTLS")
             let protocPath = try arguments.optionalRawString("protocPath")
@@ -117,6 +123,7 @@ struct MCPAppTools {
                 settings.theme = theme ?? settings.theme
                 settings.requestTimeoutSeconds = timeout ?? settings.requestTimeoutSeconds
                 settings.grpcDeadlineSeconds = deadline ?? settings.grpcDeadlineSeconds
+                settings.scriptTimeLimitSeconds = scriptTimeLimit ?? settings.scriptTimeLimitSeconds
                 settings.followRedirects = followRedirects ?? settings.followRedirects
                 settings.verifyTLS = verifyTLS ?? settings.verifyTLS
                 if let protocPath {
@@ -205,6 +212,7 @@ struct MCPAppTools {
             "followRedirects": .bool(settings.followRedirects),
             "verifyTLS": .bool(settings.verifyTLS),
             "grpcDeadlineSeconds": .double(settings.grpcDeadlineSeconds),
+            "scriptTimeLimitSeconds": .double(settings.scriptTimeLimitSeconds),
             "protocPath": settings.protocPath.map(Value.string) ?? .null,
             "historyRetention": .string(settings.historyRetention.rawValue),
             "historySizeLimit": .string(settings.historySizeLimit.rawValue)

@@ -26,6 +26,9 @@ extension RequestRunner {
     /// The schema a gRPC request would use, resolved as a run would resolve it (target, auth, TLS), for the editor's
     /// service and method pickers and its Example message. Reflection is asked only when the request's schema source
     /// needs it, and its result is cached by `GRPCSchemaService`.
+    ///
+    /// Before asking the server, the request's pre-request scripts run in preview, so metadata they compute reaches it.
+    /// A cached schema needs none, and scripts can't change what one is cached under: the target and its security.
     public func grpcSchema(
         for request: RequestNodeID,
         in project: ProjectID,
@@ -35,9 +38,28 @@ extension RequestRunner {
         guard let spec = context.item.kind.grpcSpec else {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
         }
-        let usesReflection = spec.schema == .reflection || (spec.schema == .automatic && context.document.grpc.isEmpty)
-        let endpoint = usesReflection ? try connection(for: spec, context: context, project: project, options: options) : nil
-        return try await schema(for: spec, context: context, project: project, endpoint: endpoint)
+        guard spec.schema == .reflection || (spec.schema == .automatic && context.document.grpc.isEmpty) else {
+            return try await schema(for: spec, context: context, project: project, endpoint: nil)
+        }
+        // Only for the cache key, so a name only the scripts define doesn't fail before they run.
+        var probeOptions = options
+        probeOptions.allowUnresolved = true
+        let probe = try connection(for: spec, context: context, project: project, options: probeOptions)
+        if grpcSchemas?.hasReflection(Self.reflectionTarget(probe), in: project) != false {
+            return try await schema(for: spec, context: context, project: project, endpoint: probe)
+        }
+        let session = try await previewScripts(request, in: project, options: options)
+        do throws(RunFailure) {
+            let scripted = try session.map { session throws(RunFailure) in try runContext(request, in: project, options: options, session: session) }
+                ?? context
+            guard let scriptedSpec = scripted.item.kind.grpcSpec else {
+                throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
+            }
+            let endpoint = try connection(for: scriptedSpec, context: scripted, project: project, options: options)
+            return try await schema(for: scriptedSpec, context: scripted, project: project, endpoint: endpoint)
+        } catch {
+            throw error.noting(session)
+        }
     }
 
     /// The whole of a gRPC run, inside the run's task so `cancel` and `forget` reach every await: its pre-request
@@ -227,14 +249,7 @@ extension RequestRunner {
         guard let grpcSchemas else {
             throw RunFailure(kind: .invalidRequest, message: "gRPC schemas are not available here.")
         }
-        let reflection = endpoint.map { endpoint in
-            GRPCReflectionTarget(
-                target: endpoint.resolved.target,
-                security: endpoint.security,
-                metadata: endpoint.resolved.metadata,
-                timeout: endpoint.resolved.requestedTimeout ?? endpoint.resolved.defaultTimeout
-            )
-        }
+        let reflection = endpoint.map(Self.reflectionTarget)
         do {
             return try await grpcSchemas.schema(
                 for: spec,
@@ -246,6 +261,15 @@ extension RequestRunner {
         } catch {
             throw Self.failure(for: error).redacting(context.redaction)
         }
+    }
+
+    private static func reflectionTarget(_ endpoint: Connection) -> GRPCReflectionTarget {
+        GRPCReflectionTarget(
+            target: endpoint.resolved.target,
+            security: endpoint.security,
+            metadata: endpoint.resolved.metadata,
+            timeout: endpoint.resolved.requestedTimeout ?? endpoint.resolved.defaultTimeout
+        )
     }
 
     private static func failure(for error: GRPCSchemaLookupError) -> RunFailure {
@@ -284,24 +308,36 @@ public struct GRPCRequestPreview: Sendable {
     /// Every message in the spec, in order, whatever the method's kind; the call sends only those its kind takes.
     public let messages: [String]
     public let unresolvedVariables: [String]
+    /// What the pre-request scripts the preview ran did; `nil` when none would run.
+    public let scriptReport: ScriptReport?
 }
 
 extension RequestRunner {
-    /// Resolves a gRPC request's target, metadata (auth included), and messages as a run would, with secrets masked;
-    /// unresolved names are listed rather than refused.
+    /// Resolves a gRPC request's target, metadata (auth included), and messages as a run would, its pre-request scripts
+    /// included, with secrets masked; unresolved names are listed rather than refused, and nothing the scripts set is
+    /// kept.
     public func previewGRPC(
         _ request: RequestNodeID,
         in project: ProjectID,
         options: RunOptions = RunOptions()
-    ) throws(RunFailure) -> GRPCRequestPreview {
+    ) async throws(RunFailure) -> GRPCRequestPreview {
         var options = options
         options.allowUnresolved = true
-        let context = try runContext(request, in: project, options: options)
+        // A request that isn't gRPC fails before any script runs.
+        let unscripted = try runContext(request, in: project, options: options)
+        guard unscripted.item.kind.grpcSpec != nil else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(unscripted.item.name)” is not a gRPC request.")
+        }
+        let session = try await previewScripts(request, in: project, options: options)
+        let context = try runContext(request, in: project, options: options, session: session)
         guard let spec = context.item.kind.grpcSpec else {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
         }
         var templates = RunTemplates(resolver: context.resolver)
-        let endpoint = try GRPCRequestResolution.endpoint(spec, templates: &templates, authChain: context.authChain, defaults: settings.settings)
+        var endpoint = try GRPCRequestResolution.endpoint(spec, templates: &templates, authChain: context.authChain, defaults: settings.settings)
+        if let session {
+            endpoint.markScriptChanges(session.changes, redaction: context.redaction)
+        }
         var messages: [String] = []
         for message in spec.messages {
             messages.append(try templates.resolve(message).shown)
@@ -311,7 +347,8 @@ extension RequestRunner {
             methodPath: spec.methodPath,
             metadata: endpoint.shownMetadata,
             messages: messages,
-            unresolvedVariables: templates.unresolved
+            unresolvedVariables: templates.unresolved,
+            scriptReport: session?.shownReport
         )
     }
 

@@ -164,13 +164,19 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
     // MARK: - App
 
     func testSettingsChangeWithinRangeAndNeverIncludeTheServer() async throws {
-        let updated = try await fixture.success("update_settings", ["theme": "dark", "requestTimeoutSeconds": 45, "verifyTLS": false])
+        let updated = try await fixture.success("update_settings", [
+            "theme": "dark", "requestTimeoutSeconds": 45, "verifyTLS": false, "scriptTimeLimitSeconds": 30
+        ])
+        let scriptLimitOutOfRange = await fixture.failure("update_settings", ["scriptTimeLimitSeconds": 0])
         let outOfRange = await fixture.failure("update_settings", ["grpcDeadlineSeconds": 9_000])
         let serverSetting = await fixture.failure("update_settings", ["mcpEnabled": false])
 
         XCTAssertEqual(updated["theme"], "dark")
         XCTAssertEqual(fixture.settings.settings.requestTimeoutSeconds, 45)
         XCTAssertFalse(fixture.settings.settings.verifyTLS)
+        XCTAssertEqual(updated["scriptTimeLimitSeconds"], .double(30))
+        XCTAssertEqual(fixture.settings.settings.scriptTimeLimitSeconds, 30)
+        XCTAssertTrue(scriptLimitOutOfRange.contains("must be from 1.0 to 300.0"), scriptLimitOutOfRange)
         XCTAssertTrue(outOfRange.contains("must be from 1.0 to 600.0"), outOfRange)
         XCTAssertTrue(serverSetting.contains("unsupported field"), serverSetting)
     }

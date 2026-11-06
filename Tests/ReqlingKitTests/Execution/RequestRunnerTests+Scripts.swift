@@ -283,6 +283,32 @@ extension RequestRunnerTests {
         XCTAssertEqual(exchange.scriptReport?.testCounts, ScriptTestCounts(passed: 2))
     }
 
+    func testAPreviewRunsPreRequestScriptsButKeepsAndRecordsNothing() async throws {
+        let server = try await authServer()
+        let project = try scriptedProject(base: server.baseURL)
+        try setScripts(project, request: project.profile.id, ScriptSet(preRequest: """
+        rq.environment.set("seen", "1")
+        rq.request.headers.upsert("Authorization", "Bearer " + rq.environment.get("seen"))
+        """))
+        let runner = makeRunner()
+
+        let prepared = try await runner.prepare(project.profile.id, in: project.id)
+        try setScripts(project, request: project.profile.id, ScriptSet(preRequest: "throw new Error('nope')"))
+        var failure: RunFailure?
+        do {
+            _ = try await runner.prepare(project.profile.id, in: project.id)
+        } catch {
+            failure = error
+        }
+
+        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Authorization"), "Bearer 1")
+        XCTAssertEqual(prepared.summary.scriptChangedHeaders, ["authorization"])
+        XCTAssertTrue(fixture.library.currentValues.values(in: .environment(project.id, project.defaultEnvironment)).isEmpty)
+        XCTAssertEqual(failure?.kind, .script)
+        XCTAssertTrue(server.requests.isEmpty)
+        XCTAssertNil(runner.latest[RunKey(project.profile.id, in: project.id)], "A preview is no run")
+    }
+
     private func runner(exchange: RequestExchange) -> RunOutcomeKind {
         RunSummary(exchange).outcomeKind
     }

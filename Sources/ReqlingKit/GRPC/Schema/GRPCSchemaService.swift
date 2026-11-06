@@ -53,6 +53,11 @@ public final class GRPCSchemaService {
         }
     }
 
+    /// Whether a lookup through `target` would come from the cache, without asking the server.
+    func hasReflection(_ target: GRPCReflectionTarget, in project: ProjectID) -> Bool {
+        reflected[ReflectionKey(project: project, endpoint: target.cacheKey)] != nil
+    }
+
     /// Drops the project's reflection results, so the next lookup asks the server again.
     public func refreshReflection(in project: ProjectID) {
         generations[project, default: 0] += 1

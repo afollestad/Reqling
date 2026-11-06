@@ -291,7 +291,10 @@ final class GraphQLSchemaServiceTests: XCTestCase {
         HTTPBody(mode: .graphQL, graphQL: GraphQLBody(query: "{ ping }", schema: schema))
     }
 
-    func makeRunner(fetcher: any GraphQLIntrospectionFetching = LiveGraphQLIntrospectionFetcher()) -> RequestRunner {
+    func makeRunner(
+        fetcher: any GraphQLIntrospectionFetching = LiveGraphQLIntrospectionFetcher(),
+        scripts: any ScriptRunning = ScriptFixtures.realRunner
+    ) -> RequestRunner {
         RequestRunner(
             library: fixture.library,
             workspace: workspace,
@@ -304,7 +307,7 @@ final class GraphQLSchemaServiceTests: XCTestCase {
                 store: GraphQLSchemaStore(directory: fixture.directory.file("Support/GraphQLSchemas")),
                 fetcher: fetcher
             ),
-            scripts: ScriptFixtures.realRunner
+            scripts: scripts
         )
     }
 

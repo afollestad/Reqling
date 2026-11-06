@@ -270,23 +270,35 @@ public struct WebSocketRequestPreview: Sendable {
     /// The on-connect messages in order, masked: text as resolved, binary as its base64.
     public let messages: [(format: WebSocketMessageFormat, text: String)]
     public let unresolvedVariables: [String]
+    /// What the pre-request scripts the preview ran did; `nil` when none would run.
+    public let scriptReport: ScriptReport?
 }
 
 extension RequestRunner {
-    /// Resolves a WebSocket request's handshake and on-connect messages as a run would, with secrets masked; unresolved
-    /// names are listed rather than refused, and nothing is checked that only connecting would.
+    /// Resolves a WebSocket request's handshake and on-connect messages as a run would, its pre-request scripts
+    /// included, with secrets masked; unresolved names are listed rather than refused, nothing is checked that only
+    /// connecting would, and nothing the scripts set is kept.
     public func previewWebSocket(
         _ request: RequestNodeID,
         in project: ProjectID,
         options: RunOptions = RunOptions()
-    ) throws(RunFailure) -> WebSocketRequestPreview {
+    ) async throws(RunFailure) -> WebSocketRequestPreview {
         var options = options
         options.allowUnresolved = true
-        let context = try runContext(request, in: project, options: options)
+        // A request that isn't a WebSocket fails before any script runs.
+        let unscripted = try runContext(request, in: project, options: options)
+        guard unscripted.item.kind.webSocketSpec != nil else {
+            throw RunFailure(kind: .invalidRequest, message: "“\(unscripted.item.name)” is not a WebSocket request.")
+        }
+        let session = try await previewScripts(request, in: project, options: options)
+        let context = try runContext(request, in: project, options: options, session: session)
         guard let spec = context.item.kind.webSocketSpec?.normalized() else {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a WebSocket request.")
         }
-        let prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+        var prepared = try preparedHTTP(spec.handshake, context: context, options: options)
+        if let session {
+            prepared.markScriptChanges(session.changes, redaction: context.redaction)
+        }
         var summary = prepared.summary
         summary.url = Self.webSocketURL(shown: summary.url)
         var templates = RunTemplates(resolver: context.resolver)
@@ -297,7 +309,8 @@ extension RequestRunner {
         return WebSocketRequestPreview(
             request: summary,
             messages: messages,
-            unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) }
+            unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) },
+            scriptReport: session?.shownReport
         )
     }
 }

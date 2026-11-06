@@ -191,9 +191,12 @@ final class GRPCRunnerTests: XCTestCase {
         let server = try await start()
         let (project, request) = try makeProject(echoSpec("Unary"), server: server)
 
-        XCTAssertThrowsError(try makeRunner().prepare(request, in: project)) { error in
+        do {
+            _ = try await makeRunner().prepare(request, in: project)
+            XCTFail("A gRPC request has no HTTP form")
+        } catch {
             let message = "“Echo” is a gRPC request; this works only with HTTP requests."
-            XCTAssertEqual(error as? RunFailure, RunFailure(kind: .invalidRequest, message: message))
+            XCTAssertEqual(error, RunFailure(kind: .invalidRequest, message: message))
         }
     }
 }
@@ -207,7 +210,7 @@ extension GRPCRunnerTests {
         return server
     }
 
-    func makeRunner(schemas: GRPCSchemaService? = nil) -> RequestRunner {
+    func makeRunner(schemas: GRPCSchemaService? = nil, scripts: any ScriptRunning = ScriptFixtures.realRunner) -> RequestRunner {
         RequestRunner(
             library: fixture.library,
             workspace: workspace,
@@ -217,7 +220,7 @@ extension GRPCRunnerTests {
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
             grpcSchemas: schemas ?? makeSchemas(),
-            scripts: ScriptFixtures.realRunner
+            scripts: scripts
         )
     }
 

@@ -55,7 +55,7 @@ struct ReqlingCommands: Commands {
             // HTTP only: a gRPC call or WebSocket has no cURL form.
             Button("Copy as cURL") { model.editor?.asHTTP?.copyAsCurl() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
-                .disabled(model.editor?.asHTTP == nil)
+                .disabled(model.editor?.asHTTP.map { $0.isCopyingCurl } ?? true)
             Divider()
             Button(model.showsRunHistory ? "Hide Run History" : "Show Run History") { model.toggleRunHistory() }
                 .keyboardShortcut("y", modifiers: .command)

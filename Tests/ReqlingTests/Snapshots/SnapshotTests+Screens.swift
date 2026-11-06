@@ -60,7 +60,7 @@ extension SnapshotTests {
         fixture.model.showSettings(.requests)
 
         // Wide enough that capping the content's width would show as a trailing gap wider than the leading inset.
-        assertBothAppearances(SettingsScreen(model: fixture.model), size: CGSize(width: 1200, height: 460))
+        assertBothAppearances(SettingsScreen(model: fixture.model), size: CGSize(width: 1200, height: 560))
     }
 
     func testSettingsCompact() {

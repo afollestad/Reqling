@@ -1,4 +1,5 @@
 import Foundation
+import GRPCReflectionService
 @testable import ReqlingKit
 import ReqlingTemplating
 import XCTest
@@ -42,5 +43,32 @@ extension GRPCRunnerTests {
 
     private func setScripts(_ scripts: ScriptSet, on request: RequestNodeID, in project: ProjectID) throws {
         try fixture.library.mutate(project) { try $0.updateRequest(request) { $0.scripts = scripts } }
+    }
+}
+
+@MainActor
+extension GRPCRunnerTests {
+    func testReflectionAndPreviewsRunPreRequestScriptsWithoutKeepingAnything() async throws {
+        let server = try await start([try ReflectionService(descriptorSetFileURLs: [try ProtocFixtures.codecDescriptorSet])])
+        var spec = echoSpec("Unary", schema: .reflection)
+        spec.metadata = [KeyValuePair(key: "x-sig", value: "{{sig}}")]
+        let (project, request) = try makeProject(spec, server: server)
+        workspace.updateProject(project) { $0.scriptTrust = .trusted }
+        try fixture.library.mutate(project) { document in
+            try document.updateRequest(request) { $0.scripts.preRequest = "rq.variables.set('sig', 'abc')\nrq.globals.set('kept', 'no')" }
+        }
+        let scripts = ScriptFixtures.countingRunner()
+        let runner = makeRunner(scripts: scripts)
+
+        let schema = try await runner.grpcSchema(for: request, in: project)
+        _ = try await runner.grpcSchema(for: request, in: project)
+        let preview = try await runner.previewGRPC(request, in: project)
+
+        XCTAssertEqual(schema.source, .reflection)
+        XCTAssertEqual(scripts.launches, 2, "Reflection asked once, then came from the cache; the preview ran them again")
+        XCTAssertTrue(preview.metadata.contains(key: "x-sig", value: "abc"))
+        XCTAssertNil(preview.scriptReport?.phase(.preRequest)?.error)
+        XCTAssertTrue(fixture.library.currentValues.values(in: .global).isEmpty, "A preview keeps nothing a script set")
+        XCTAssertNil(runner.latest[RunKey(request, in: project)])
     }
 }

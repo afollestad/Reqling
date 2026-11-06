@@ -2,6 +2,7 @@ import Foundation
 @testable import ReqlingKit
 import ReqlingScriptProtocol
 import ReqlingTemplating
+import Synchronization
 
 /// Runs scripts in the real `ReqlingScriptRunner`, which `swift test` builds beside this bundle, over the runtime in the
 /// repository. Its time limit passes only when the test calls `deadline.wake()`, so no test depends on wall time.
@@ -25,6 +26,11 @@ struct ScriptFixtures {
 
     var runner: HelperScriptRunner {
         HelperScriptRunner(executable: Self.helper, runtimeDirectory: Self.runtime, sleep: deadline.sleep)
+    }
+
+    /// The real helper with a real time limit, counting the phases handed to it.
+    nonisolated static func countingRunner() -> CountingScriptRunner {
+        CountingScriptRunner(realRunner)
     }
 
     /// The real helper with a real time limit, for suites that never let a script run that long.
@@ -146,3 +152,22 @@ struct ScriptRun {
 }
 
 private final class ScriptFixtureBundleToken {}
+
+/// Hands every phase to another runner, counting them, so a test can tell whether scripts ran at all.
+final class CountingScriptRunner: ScriptRunning {
+    private let base: any ScriptRunning
+    private let count = Mutex(0)
+
+    init(_ base: any ScriptRunning) {
+        self.base = base
+    }
+
+    var launches: Int {
+        count.withLock { $0 }
+    }
+
+    func run(_ input: ScriptRunnerInput, blobs: [Data], timeLimit: Duration) -> ScriptExecution {
+        count.withLock { $0 += 1 }
+        return base.run(input, blobs: blobs, timeLimit: timeLimit)
+    }
+}

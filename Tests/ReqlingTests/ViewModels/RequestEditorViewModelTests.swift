@@ -286,11 +286,14 @@ final class RequestEditorViewModelTests: XCTestCase {
         XCTAssertEqual(editor.notice, "Choose the file for the “file” form field.")
     }
 
-    func testCopyAsCurlUsesTheResolvedRequest() {
+    func testCopyAsCurlUsesTheResolvedRequest() async {
         editor.urlText = "{{base}}/me"
         editor.spec.headers = [KeyValuePair(key: "Authorization", value: "Bearer {{token}}")]
 
-        editor.copyAsCurl()
+        let copy = editor.copyAsCurl()
+        XCTAssertTrue(editor.isCopyingCurl)
+        XCTAssertNil(editor.copyAsCurl(), "A second copy waits for the first")
+        await copy?.value
 
         let command = fixture.system.pasteboard ?? ""
         XCTAssertTrue(command.contains("'https://api.test/me'"), command)

@@ -36,6 +36,8 @@ final class RequestEditorViewModel {
     var tab: RequestEditorTab = .params
     /// A non-blocking note, such as what a cURL import could not carry over.
     var notice: String?
+    /// While Copy as cURL waits on the request's pre-request scripts; the menu items wait too, rather than copy twice.
+    private(set) var isCopyingCurl = false
     let history: RunHistoryViewModel
     let response: ResponseViewModel
     /// The GraphQL body's schema and checking, while the request sends one (`RequestEditorViewModel+GraphQL`).
@@ -206,12 +208,23 @@ final class RequestEditorViewModel {
         app.runner.cancel(requestID, in: projectID)
     }
 
-    func copyAsCurl() {
+    /// Copies the request as a send would build it, its pre-request scripts included; nothing they set is kept. It
+    /// may ask to trust the project's scripts, as Send does. Returns the copy's task, or `nil` while one is underway.
+    @discardableResult
+    func copyAsCurl() -> Task<Void, Never>? {
+        guard !isCopyingCurl else {
+            return nil
+        }
         flush()
-        do {
-            app.system.copyToPasteboard(CurlCodec.export(try app.runner.prepare(requestID, in: projectID)))
-        } catch {
-            app.alert = AppAlert(title: "Couldn't Copy as cURL", message: error.message)
+        isCopyingCurl = true
+        return Task {
+            defer { isCopyingCurl = false }
+            do {
+                let prepared = try await app.runner.prepare(requestID, in: projectID, options: RunOptions(mayPromptForTrust: true))
+                app.system.copyToPasteboard(CurlCodec.export(prepared))
+            } catch {
+                app.alert = AppAlert(title: "Couldn't Copy as cURL", message: error.message)
+            }
         }
     }
 
