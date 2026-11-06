@@ -8,6 +8,7 @@ enum GRPCEditorTab: CaseIterable, Identifiable {
     case messages
     case metadata
     case auth
+    case scripts
     case options
 
     var id: Self {
@@ -28,7 +29,7 @@ final class GRPCEditorViewModel {
     let requestID: RequestNodeID
     var spec: GRPCRequestSpec {
         didSet {
-            draft.draftDidChange(spec)
+            draft.draftDidChange(content)
             if Self.changesSchema(from: oldValue, to: spec) {
                 schema.scheduleReload()
             }
@@ -46,15 +47,30 @@ final class GRPCEditorViewModel {
     let schema: GRPCSchemaLoader
 
     @ObservationIgnored private unowned let app: AppModel
-    @ObservationIgnored private let draft: RequestDraft<GRPCRequestSpec>
+    /// The request's own scripts, which the draft saves with the spec.
+    let scriptsEditor: ScriptsEditorModel
+
+    @ObservationIgnored private let draft: DocumentDraft<RequestContent<GRPCRequestSpec>>
 
     init(projectID: ProjectID, requestID: RequestNodeID, app: AppModel) {
         self.projectID = projectID
         self.requestID = requestID
         self.app = app
-        let draft = RequestDraft(projectID: projectID, requestID: requestID, app: app, coding: Self.coding, fallback: GRPCRequestSpec())
+        let draft = DocumentDraft(
+            projectID: projectID,
+            app: app,
+            coding: Self.coding(requestID),
+            fallback: RequestContent(spec: GRPCRequestSpec(), scripts: ScriptSet(), runsInheritedScripts: true)
+        )
         self.draft = draft
-        spec = draft.saved
+        spec = draft.saved.spec
+        scriptsEditor = ScriptsEditorModel(
+            projectID: projectID,
+            owner: .request(requestID),
+            scripts: draft.saved.scripts,
+            runsInheritedScripts: draft.saved.runsInheritedScripts,
+            app: app
+        )
         history = RunHistoryViewModel(projectID: projectID, requestID: requestID, app: app)
         response = GRPCResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner, history: history)
         schema = GRPCSchemaLoader(projectID: projectID, requestID: requestID, app: app)
@@ -62,7 +78,13 @@ final class GRPCEditorViewModel {
             guard let self else {
                 return
             }
-            show(self.draft.autosave(spec))
+            show(self.draft.autosave(content))
+        }
+        scriptsEditor.onChange = { [weak self] in
+            guard let self else {
+                return
+            }
+            self.draft.draftDidChange(content)
         }
         schema.prepare = { [weak self] in
             self?.flush()
@@ -95,11 +117,11 @@ final class GRPCEditorViewModel {
     }
 
     var hasStrandedChanges: Bool {
-        draft.hasStrandedChanges(spec)
+        draft.hasStrandedChanges(content)
     }
 
     var hasUnsavedChanges: Bool {
-        draft.isDirty(spec)
+        draft.isDirty(content)
     }
 
     var tokenContext: TemplateTokenContext {
@@ -287,24 +309,31 @@ final class GRPCEditorViewModel {
     // MARK: - Saving
 
     func flush() {
-        show(draft.flush(spec))
+        show(draft.flush(content))
     }
 
     func adoptExternalChange() {
-        show(draft.adoptExternalChange(spec))
+        show(draft.adoptExternalChange(content))
     }
 
-    private func show(_ stored: GRPCRequestSpec?) {
-        if let stored, stored != spec {
-            spec = stored
+    private var content: RequestContent<GRPCRequestSpec> {
+        RequestContent(spec: spec, scripts: scriptsEditor.scripts, runsInheritedScripts: scriptsEditor.runsInheritedScripts)
+    }
+
+    /// Shows a stored version: the scripts first, so the spec's observer sees both stored and schedules no save.
+    private func show(_ stored: RequestContent<GRPCRequestSpec>?) {
+        guard let stored else {
+            return
+        }
+        scriptsEditor.show(stored.scripts, runsInheritedScripts: stored.runsInheritedScripts)
+        if stored.spec != spec {
+            spec = stored.spec
         }
     }
 
-    private static let coding = RequestDraft<GRPCRequestSpec>.Coding(
-        read: { $0.grpcSpec },
-        wrap: { .grpc($0) },
-        merge: merge(base:draft:stored:)
-    )
+    private static func coding(_ requestID: RequestNodeID) -> DocumentDraft<RequestContent<GRPCRequestSpec>>.Coding {
+        DocumentDraft.request(requestID, read: { $0.grpcSpec }, wrap: { .grpc($0) }, merge: merge(base:draft:stored:))
+    }
 
     /// A three-way merge per top-level field: each field the draft changed since `base` keeps the draft's value, and
     /// every other field takes the stored one. Metadata merges row by row by ID (`ListMerge`); the messages, which

@@ -36,7 +36,8 @@ struct RequestEditorPane: View {
                 SectionPicker("Section", selection: $editor.tab, options: RequestEditorTab.allCases, collapsesToMenu: true, label: \.rawValue)
                 RequestEditorTabContent(editor: editor, model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .disabled(editor.isReadOnly)
+                    // The Scripts pane disables only its script, so a read-only request's other phase stays browsable.
+                    .disabled(editor.isReadOnly && editor.tab != .scripts)
             }
         }
         .padding(.horizontal, AppMetrics.detailPaneInset)

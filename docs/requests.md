@@ -8,6 +8,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Methods.** Any, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
 - **Bodies.** Raw with any Content-Type, form-data, x-www-form-urlencoded, binary, and GraphQL (a query and its variables, sent as the JSON body GraphQL servers expect).
 - **Auth.** Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
+- **Scripts.** JavaScript that runs before the request and after its response, in the **Scripts** tab ([Scripts](scripts.md)).
 - **Auto-indent.** JSON and JavaScript editors and the GraphQL query editor indent as you press Return:
   - A new line keeps the indentation above, one level deeper after `{` or `[`.
   - A bracket left open gets its closer on the next line, with the cursor between.
@@ -16,7 +17,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Automatic headers** are listed alongside yours, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`).
   - Add a header with the same name to replace one.
   - Switching off `User-Agent`, `Accept`, or `Content-Type` stops Reqling setting it, and macOS then sends its own default.
-- **cURL.** Paste a cURL command into the URL field to import it. **Copy as cURL** (⌥⌘C) exports the resolved request.
+- **cURL.** Paste a cURL command into the URL field to import it. **Copy as cURL** (⌥⌘C) exports the resolved request, after its pre-request scripts run; nothing they set is kept.
 
 ## Responses
 

@@ -142,6 +142,10 @@ private struct SidebarRequestLabel: View {
         HStack(spacing: 8) {
             RequestKindPill(kind: request.kind)
             SidebarRowName(item: .node(projectID, request.id), name: request.name, model: model)
+            if !request.scripts.isEmpty {
+                Spacer(minLength: 4)
+                SidebarScriptsBadge()
+            }
         }
         .tag(SidebarItem.node(projectID, request.id))
         .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, request: request.kind.name, model: model) }
@@ -179,6 +183,9 @@ private struct SidebarFolderLabel: View {
                 .accessibilityHidden(true)
             SidebarRowName(item: .node(projectID, folder.id), name: folder.name, model: model)
             Spacer(minLength: 4)
+            if !folder.scripts.isEmpty {
+                SidebarScriptsBadge()
+            }
             SidebarCount(count: folder.children.count)
         }
             .tag(SidebarItem.node(projectID, folder.id))
@@ -192,6 +199,17 @@ private struct SidebarFolderLabel: View {
                 }
                 return moved
             }
+    }
+}
+
+/// Marks a request or folder with scripts of its own.
+private struct SidebarScriptsBadge: View {
+    var body: some View {
+        Image(systemName: "curlybraces")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .help("Has scripts")
+            .accessibilityLabel("Has scripts")
     }
 }
 

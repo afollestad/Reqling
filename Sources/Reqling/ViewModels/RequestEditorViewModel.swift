@@ -7,6 +7,7 @@ enum RequestEditorTab: String, CaseIterable, Identifiable {
     case headers = "Headers"
     case body = "Body"
     case auth = "Auth"
+    case scripts = "Scripts"
     case options = "Options"
 
     var id: Self {
@@ -29,7 +30,7 @@ final class RequestEditorViewModel {
             if !Self.urlBar(typedURL, describes: spec) {
                 typedURL = spec.displayURL
             }
-            draft.draftDidChange(spec)
+            draft.draftDidChange(content)
             syncGraphQL(from: oldValue)
         }
     }
@@ -49,7 +50,10 @@ final class RequestEditorViewModel {
     private var typedURL: String
 
     @ObservationIgnored unowned let app: AppModel
-    @ObservationIgnored private let draft: RequestDraft<HTTPRequestSpec>
+    /// The request's own scripts, which the draft saves with the spec.
+    let scriptsEditor: ScriptsEditorModel
+
+    @ObservationIgnored private let draft: DocumentDraft<RequestContent<HTTPRequestSpec>>
     /// `autoHeaders`' memo, keyed on the only parts of the spec it reads; the user agent is fixed for the app's life.
     @ObservationIgnored private var autoHeadersCache: (key: AutoHeadersKey, value: [AutoHeader])?
 
@@ -57,17 +61,35 @@ final class RequestEditorViewModel {
         self.projectID = projectID
         self.requestID = requestID
         self.app = app
-        let draft = RequestDraft(projectID: projectID, requestID: requestID, app: app, coding: Self.coding, fallback: HTTPRequestSpec())
+        let draft = DocumentDraft(
+            projectID: projectID,
+            app: app,
+            coding: Self.coding(requestID),
+            fallback: RequestContent(spec: HTTPRequestSpec(), scripts: ScriptSet(), runsInheritedScripts: true)
+        )
         self.draft = draft
-        spec = draft.saved
-        typedURL = draft.saved.displayURL
+        spec = draft.saved.spec
+        scriptsEditor = ScriptsEditorModel(
+            projectID: projectID,
+            owner: .request(requestID),
+            scripts: draft.saved.scripts,
+            runsInheritedScripts: draft.saved.runsInheritedScripts,
+            app: app
+        )
+        typedURL = draft.saved.spec.displayURL
         history = RunHistoryViewModel(projectID: projectID, requestID: requestID, app: app)
         response = ResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner, history: history)
         draft.onAutosave = { [weak self] in
             guard let self else {
                 return
             }
-            show(self.draft.autosave(spec))
+            show(self.draft.autosave(content))
+        }
+        scriptsEditor.onChange = { [weak self] in
+            guard let self else {
+                return
+            }
+            self.draft.draftDidChange(content)
         }
         history.editor = self
         syncGraphQL(from: nil)
@@ -118,11 +140,11 @@ final class RequestEditorViewModel {
     }
 
     var hasStrandedChanges: Bool {
-        draft.hasStrandedChanges(spec)
+        draft.hasStrandedChanges(content)
     }
 
     var hasUnsavedChanges: Bool {
-        draft.isDirty(spec)
+        draft.isDirty(content)
     }
 
     /// The URL bar's text: the URL plus enabled query rows, kept as typed. Setting it applies the text to `spec`.
@@ -231,24 +253,31 @@ final class RequestEditorViewModel {
     // MARK: - Saving
 
     func flush() {
-        show(draft.flush(spec))
+        show(draft.flush(content))
     }
 
     func adoptExternalChange() {
-        show(draft.adoptExternalChange(spec))
+        show(draft.adoptExternalChange(content))
     }
 
-    private func show(_ stored: HTTPRequestSpec?) {
-        if let stored, stored != spec {
-            spec = stored
+    private var content: RequestContent<HTTPRequestSpec> {
+        RequestContent(spec: spec, scripts: scriptsEditor.scripts, runsInheritedScripts: scriptsEditor.runsInheritedScripts)
+    }
+
+    /// Shows a stored version: the scripts first, so the spec's observer sees both stored and schedules no save.
+    private func show(_ stored: RequestContent<HTTPRequestSpec>?) {
+        guard let stored else {
+            return
+        }
+        scriptsEditor.show(stored.scripts, runsInheritedScripts: stored.runsInheritedScripts)
+        if stored.spec != spec {
+            spec = stored.spec
         }
     }
 
-    private static let coding = RequestDraft<HTTPRequestSpec>.Coding(
-        read: { $0.httpSpec?.normalized() },
-        wrap: { .http($0) },
-        merge: merge(base:draft:stored:)
-    )
+    private static func coding(_ requestID: RequestNodeID) -> DocumentDraft<RequestContent<HTTPRequestSpec>>.Coding {
+        DocumentDraft.request(requestID, read: { $0.httpSpec?.normalized() }, wrap: { .http($0) }, merge: merge(base:draft:stored:))
+    }
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. The body and

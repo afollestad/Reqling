@@ -10,6 +10,10 @@ struct GRPCEditorTabContent: View {
     var body: some View {
         if editor.tab == .messages {
             GRPCMessagesEditor(editor: editor)
+        } else if editor.tab == .scripts {
+            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly) { link in
+                model.openScripts(link, phase: editor.scriptsEditor.phase, in: editor.projectID)
+            }
         } else {
             GRPCEditorSettingsTab(editor: editor, model: model)
                 .disabled(editor.isReadOnly)
@@ -24,7 +28,7 @@ private struct GRPCEditorSettingsTab: View {
 
     var body: some View {
         switch editor.tab {
-        case .messages:
+        case .messages, .scripts:
             EmptyView()
         case .metadata:
             ScrollView {

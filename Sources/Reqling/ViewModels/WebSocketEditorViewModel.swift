@@ -7,6 +7,7 @@ enum WebSocketEditorTab: String, CaseIterable, Identifiable {
     case params = "Params"
     case headers = "Headers"
     case auth = "Auth"
+    case scripts = "Scripts"
     case options = "Options"
 
     var id: Self {
@@ -33,7 +34,7 @@ final class WebSocketEditorViewModel {
             if Self.subprotocols(in: typedSubprotocols) != spec.subprotocols {
                 typedSubprotocols = spec.subprotocols.joined(separator: ", ")
             }
-            draft.draftDidChange(spec)
+            draft.draftDidChange(content)
         }
     }
     var tab: WebSocketEditorTab = .messages
@@ -53,7 +54,10 @@ final class WebSocketEditorViewModel {
     private var typedSubprotocols: String
 
     @ObservationIgnored private unowned let app: AppModel
-    @ObservationIgnored private let draft: RequestDraft<WebSocketRequestSpec>
+    /// The request's own scripts, which the draft saves with the spec.
+    let scriptsEditor: ScriptsEditorModel
+
+    @ObservationIgnored private let draft: DocumentDraft<RequestContent<WebSocketRequestSpec>>
     /// `autoHeaders`' memo, keyed on the only parts of the spec it reads; the user agent is fixed for the app's life.
     @ObservationIgnored private var autoHeadersCache: (key: AutoHeadersKey, value: [AutoHeader])?
 
@@ -61,18 +65,36 @@ final class WebSocketEditorViewModel {
         self.projectID = projectID
         self.requestID = requestID
         self.app = app
-        let draft = RequestDraft(projectID: projectID, requestID: requestID, app: app, coding: Self.coding, fallback: WebSocketRequestSpec())
+        let draft = DocumentDraft(
+            projectID: projectID,
+            app: app,
+            coding: Self.coding(requestID),
+            fallback: RequestContent(spec: WebSocketRequestSpec(), scripts: ScriptSet(), runsInheritedScripts: true)
+        )
         self.draft = draft
-        spec = draft.saved
-        typedURL = draft.saved.displayURL
-        typedSubprotocols = draft.saved.subprotocols.joined(separator: ", ")
+        spec = draft.saved.spec
+        scriptsEditor = ScriptsEditorModel(
+            projectID: projectID,
+            owner: .request(requestID),
+            scripts: draft.saved.scripts,
+            runsInheritedScripts: draft.saved.runsInheritedScripts,
+            app: app
+        )
+        typedURL = draft.saved.spec.displayURL
+        typedSubprotocols = draft.saved.spec.subprotocols.joined(separator: ", ")
         history = RunHistoryViewModel(projectID: projectID, requestID: requestID, app: app)
         response = WebSocketResponseViewModel(requestID: requestID, projectID: projectID, runner: app.runner, history: history)
         draft.onAutosave = { [weak self] in
             guard let self else {
                 return
             }
-            show(self.draft.autosave(spec))
+            show(self.draft.autosave(content))
+        }
+        scriptsEditor.onChange = { [weak self] in
+            guard let self else {
+                return
+            }
+            self.draft.draftDidChange(content)
         }
         history.editor = self
     }
@@ -96,11 +118,11 @@ final class WebSocketEditorViewModel {
     }
 
     var hasStrandedChanges: Bool {
-        draft.hasStrandedChanges(spec)
+        draft.hasStrandedChanges(content)
     }
 
     var hasUnsavedChanges: Bool {
-        draft.isDirty(spec)
+        draft.isDirty(content)
     }
 
     /// Connecting, open, or closing.
@@ -231,24 +253,31 @@ final class WebSocketEditorViewModel {
     // MARK: - Saving
 
     func flush() {
-        show(draft.flush(spec))
+        show(draft.flush(content))
     }
 
     func adoptExternalChange() {
-        show(draft.adoptExternalChange(spec))
+        show(draft.adoptExternalChange(content))
     }
 
-    private func show(_ stored: WebSocketRequestSpec?) {
-        if let stored, stored != spec {
-            spec = stored
+    private var content: RequestContent<WebSocketRequestSpec> {
+        RequestContent(spec: spec, scripts: scriptsEditor.scripts, runsInheritedScripts: scriptsEditor.runsInheritedScripts)
+    }
+
+    /// Shows a stored version: the scripts first, so the spec's observer sees both stored and schedules no save.
+    private func show(_ stored: RequestContent<WebSocketRequestSpec>?) {
+        guard let stored else {
+            return
+        }
+        scriptsEditor.show(stored.scripts, runsInheritedScripts: stored.runsInheritedScripts)
+        if stored.spec != spec {
+            spec = stored.spec
         }
     }
 
-    private static let coding = RequestDraft<WebSocketRequestSpec>.Coding(
-        read: { $0.webSocketSpec?.normalized() },
-        wrap: { .webSocket($0) },
-        merge: merge(base:draft:stored:)
-    )
+    private static func coding(_ requestID: RequestNodeID) -> DocumentDraft<RequestContent<WebSocketRequestSpec>>.Coding {
+        DocumentDraft.request(requestID, read: { $0.webSocketSpec?.normalized() }, wrap: { .webSocket($0) }, merge: merge(base:draft:stored:))
+    }
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. Each list

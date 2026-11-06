@@ -47,6 +47,10 @@ struct WebSocketEditorTabContent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .disabled(editor.isReadOnly)
+        case .scripts:
+            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly) { link in
+                model.openScripts(link, phase: editor.scriptsEditor.phase, in: editor.projectID)
+            }
         case .options:
             WebSocketOptionsEditor(editor: editor, defaults: model.settings.settings.requestDefaults)
                 .disabled(editor.isReadOnly)

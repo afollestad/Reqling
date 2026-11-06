@@ -24,6 +24,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 - [GraphQL](docs/graphql.md): schema-aware queries and the schema browser
 - [gRPC](docs/grpc.md): calls, streams, and schema sources
 - [WebSockets](docs/websockets.md): handshakes, messages, and timelines
+- [Scripts](docs/scripts.md): pre-request and post-response JavaScript
 - [MCP server](docs/mcp.md): letting AI agents work with your projects
 - [TLS](docs/tls.md): client certificates and extra CAs
 - [Updates](docs/updates.md): how Reqling checks, verifies, and installs updates

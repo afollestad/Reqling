@@ -53,6 +53,7 @@ struct GRPCEditorPane: View {
         case .messages: listsMessages ? "Messages" : "Message"
         case .metadata: "Metadata"
         case .auth: "Auth"
+        case .scripts: "Scripts"
         case .options: "Options"
         }
     }

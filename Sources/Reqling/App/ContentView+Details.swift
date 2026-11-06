@@ -21,15 +21,18 @@ struct ProjectDetailView: View {
                     if !project.issues.isEmpty {
                         ProjectIssues(issues: project.issues)
                     }
-                    if document.hasScripts {
-                        ProjectScriptTrustToggle(project: project.id, model: model)
-                    }
                     HStack {
                         Button("New Request") { model.newRequest(in: project.id) }
                             .buttonStyle(.borderedProminent)
                         Button("Environments…") { model.sheet = .environments(project.id) }
                         Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
                         Button("Reveal in Finder") { model.revealProject(project.id) }
+                    }
+                    if let scripts = model.containerScripts, scripts.projectID == project.id, scripts.folderID == nil {
+                        ContainerScriptsSection(editor: scripts, model: model)
+                        if document.hasScripts {
+                            ProjectScriptTrustToggle(project: project.id, model: model)
+                        }
                     }
                 }
                 .padding(AppMetrics.screenInset)
@@ -64,6 +67,28 @@ private struct ProjectScriptTrustToggle: View {
             Text("Scripts can read this project's variables and Global's, secrets included. Off, its requests run without them.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A folder's or the project's scripts, which run for every request inside, before the request's own.
+private struct ContainerScriptsSection: View {
+    let editor: ContainerScriptsEditor
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Scripts")
+                .font(.headline)
+            Text(editor.folderID == nil
+                ? "These run for every request in the project, before its folders' scripts and its own."
+                : "These run for every request inside, before its own.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            ScriptsPane(scripts: editor.scripts, isReadOnly: editor.isReadOnly) { link in
+                model.openScripts(link, phase: editor.scripts.phase, in: editor.projectID)
+            }
+            .frame(height: 280)
         }
     }
 }
@@ -126,6 +151,9 @@ struct FolderDetailView: View {
                     )
                     // A read-only project refuses every save; editing it would only raise an alert per keystroke.
                     .disabled(isReadOnly)
+                }
+                if let scripts = model.containerScripts, scripts.projectID == projectID, scripts.folderID == folder.id {
+                    ContainerScriptsSection(editor: scripts, model: model)
                 }
                 HStack {
                     Button("New Request") { model.newRequest(in: projectID) }

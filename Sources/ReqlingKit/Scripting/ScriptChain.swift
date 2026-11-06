@@ -7,12 +7,19 @@ extension ProjectDocument {
     /// The owners of `item`'s scripts in run order, whatever their phases hold. An item the project doesn't hold, such
     /// as an agent's unsaved request, sits at the top level.
     public func scriptOwners(of item: RequestItem) -> [ScriptOwner] {
-        var owners: [ScriptOwner] = [.request(item)]
-        guard item.runsInheritedScripts else {
-            return owners
+        let node = request(item.id) == nil ? nil : item.id
+        return inheritedScriptOwners(of: node, runsInherited: item.runsInheritedScripts) + [.request(item)]
+    }
+
+    /// The owners whose scripts run before those of the request or folder `node` (`nil` for one at the top level),
+    /// outermost first: nothing when `runsInherited` is off, else its folders up to the first that turns inheriting
+    /// off, else up to the project.
+    public func inheritedScriptOwners(of node: RequestNodeID?, runsInherited: Bool) -> [ScriptOwner] {
+        guard runsInherited else {
+            return []
         }
-        let ancestors = request(item.id) == nil ? [] : ancestors(of: item.id)
-        for folder in ancestors.reversed() {
+        var owners: [ScriptOwner] = []
+        for folder in (node.map(ancestors(of:)) ?? []).reversed() {
             owners.insert(.folder(folder), at: 0)
             if !folder.runsInheritedScripts {
                 return owners

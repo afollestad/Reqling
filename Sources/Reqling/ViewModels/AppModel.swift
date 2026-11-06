@@ -91,6 +91,8 @@ final class AppModel {
     /// autosave pause, or sooner through `flushPendingEdits()`.
     private(set) var folderAuthDraft: FolderAuthDraft?
     @ObservationIgnored private var folderAuthSaveTask: Task<Void, Never>?
+    /// The selected folder's or project's scripts while its detail pane shows them (`AppModel+Scripts`).
+    var containerScripts: ContainerScriptsEditor?
     /// `tokenContext(for:)`'s memo, per project.
     @ObservationIgnored private var tokenContexts: [ProjectID: (key: TokenContextKey, value: TemplateTokenContext)] = [:]
     @ObservationIgnored private(set) lazy var sidebar = SidebarViewModel(app: self)
@@ -183,6 +185,7 @@ final class AppModel {
     private func selectionDidChange(from oldValue: SidebarItem?) {
         flushPendingEdits()
         syncEditor()
+        syncContainerScripts()
         if selection != nil {
             isShowingSettings = false
             selectionBeforeSettings = nil
@@ -215,6 +218,7 @@ final class AppModel {
         }
         syncEditor()
         editor?.adoptExternalChange()
+        syncContainerScripts()
     }
 
     /// `item` while the library still lists it, its project once only the item is gone, and nil once the project left.
@@ -339,7 +343,9 @@ final class AppModel {
             flushFolderAuth()
         }
         editor?.flush()
-        guard !isQuittingForUpdate, isFolderAuthStranded || editor?.hasStrandedChanges == true else {
+        containerScripts?.flush()
+        let isStranded = isFolderAuthStranded || editor?.hasStrandedChanges == true || containerScripts?.hasStrandedChanges == true
+        guard !isQuittingForUpdate, isStranded else {
             return true
         }
         return system.confirmQuitDiscardingUnsavedChanges()
@@ -357,6 +363,7 @@ final class AppModel {
     func flushPendingEdits() {
         flushFolderAuth()
         editor?.flush()
+        containerScripts?.flush()
     }
 
     /// The auth a folder's editor shows: its pending draft, else the saved value.
