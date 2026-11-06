@@ -167,6 +167,7 @@
                     <li class="folder">My API.reqling/
                         <ul>
                             <li>project.json</li>
+                            <li>project.pre.js</li>
                             <li class="folder">environments/
                                 <ul>
                                     <li>default.json</li>
@@ -180,6 +181,7 @@
                                             <li>_folder.json</li>
                                             <li>get-user.json</li>
                                             <li>create-user.json</li>
+                                            <li>create-user.post.js</li>
                                         </ul>
                                     </li>
                                 </ul>
@@ -264,6 +266,25 @@
                         width="1920" height="1248" loading="lazy" decoding="async">
                 </picture>
             </figure>
+        </div>
+    </section>
+
+    <section class="section-feature section-centered" id="scripts">
+        <div class="container">
+            <p class="chip">Scripts</p>
+            <h2>Requests that sign, chain, and check themselves</h2>
+            <p class="feature-copy">
+                Run JavaScript before a request and after its response, on the request, its folders, or the whole
+                project: sign it, save a login's token for the next request, and test what came back. Scripts from
+                Postman run as they are.
+            </p>
+            <picture>
+                <source srcset="images/scripts-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/scripts-light.webp"
+                    alt="The Create user request in Acme API's Users folder, a POST to {{baseUrl}}/users, on its Scripts tab: a post-response script that runs after the Users folder's, testing that the user is created, gets the viewer role, and is sent a welcome email, then saving the new user's ID for later requests. Below, its 201 Created response's Tests tab shows 3 of 4 tests passing, “sends a welcome email” failing with “expected false to be true”, and the console line “Created user 43”."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
         </div>
     </section>
 
