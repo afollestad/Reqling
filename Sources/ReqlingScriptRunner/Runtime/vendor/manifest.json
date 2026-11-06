@@ -1,0 +1,18 @@
+{
+  "crypto-js": {
+    "file": "crypto-js.js",
+    "license": "crypto-js.LICENSE",
+    "sha256": "ee02257ffbaf0a9b481c7039b0f3bb20c360c9674fe4be8b38ae709b2ea59bbe",
+    "source": "https://registry.npmjs.org/crypto-js/-/crypto-js-4.2.0.tgz",
+    "tarballIntegrity": "sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==",
+    "version": "4.2.0"
+  },
+  "lodash": {
+    "file": "lodash.min.js",
+    "license": "lodash.LICENSE",
+    "sha256": "a9705dfc47c0763380d851ab1801be6f76019f6b67e40e9b873f8b4a0603f7a9",
+    "source": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
+    "tarballIntegrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==",
+    "version": "4.17.21"
+  }
+}

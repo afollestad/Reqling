@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// Saves a `ProjectDocument` by reconciling the folder against the last-known `ProjectDiskIndex`: renamed and moved
 /// items are moved on disk (so git sees renames, not delete-and-add), removed items go to the Trash, and only files

@@ -1,9 +1,6 @@
-/// When a script runs: before its request is resolved and sent, or after the response arrives or the stream, call, or
-/// connection ends.
-public enum ScriptPhase: String, Hashable, Sendable, Codable, CaseIterable {
-    case preRequest
-    case postResponse
+import ReqlingScriptProtocol
 
+extension ScriptPhase {
     /// What follows the owner's file name in the phase's file: `list-users.pre.js`, `_folder.post.js`.
     var fileSuffix: String {
         switch self {

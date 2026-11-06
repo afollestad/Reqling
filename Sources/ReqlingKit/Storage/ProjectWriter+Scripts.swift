@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// Scripts in a save. Each is a file beside its owner's JSON (`ProjectLayout.scriptPath`), written byte for byte as
 /// typed and compared like any other file. A request's scripts move with its JSON (`ProjectWriter+Moves.swift`), and a

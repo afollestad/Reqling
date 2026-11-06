@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// Loads a project folder into a `ProjectDocument` plus the `ProjectDiskIndex` saves need.
 ///

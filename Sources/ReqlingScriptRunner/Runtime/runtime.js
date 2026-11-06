@@ -1,0 +1,441 @@
+// Reqling's script runtime: `rq`, `console`, timers, `crypto`, `btoa`/`atob`, and `require`, built over the natives the
+// script runner installs as `__native` (ScriptLevelHost+Natives.swift). Every member here is documented in
+// ScriptAPICatalog, and a conformance test fails when the two disagree.
+'use strict';
+(function (native) {
+  delete globalThis.__native;
+  const info = native.info();
+  const phase = info.phase;
+  const isPre = phase === 'preRequest';
+
+  function fail(message) {
+    throw new Error(message);
+  }
+
+  /// What a `set` stores: strings as they are, `undefined` as empty, and anything else as JSON, which reads back the
+  /// same way through `JSON.parse`.
+  function variableText(value) {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value === undefined) {
+      return '';
+    }
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return String(value);
+    }
+    return JSON.stringify(value);
+  }
+
+  // MARK: Console
+
+  /// Objects print as indented JSON, with cycles and functions named rather than dropped; strings print as they are.
+  function describe(value) {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value instanceof Error) {
+      return value.stack ? `${value.name}: ${value.message}` : String(value);
+    }
+    if (typeof value === 'function') {
+      return `[Function ${value.name || 'anonymous'}]`;
+    }
+    if (typeof value === 'symbol' || typeof value === 'bigint' || value === undefined) {
+      return String(value);
+    }
+    const seen = new WeakSet();
+    try {
+      const text = JSON.stringify(value, function (key, item) {
+        if (typeof item === 'function') {
+          return `[Function ${item.name || 'anonymous'}]`;
+        }
+        if (typeof item === 'bigint') {
+          return String(item);
+        }
+        if (item === undefined) {
+          return '[undefined]';
+        }
+        if (item !== null && typeof item === 'object') {
+          if (seen.has(item)) {
+            return '[Circular]';
+          }
+          seen.add(item);
+        }
+        return item;
+      }, 2);
+      return text === undefined ? String(value) : text;
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  const consoleObject = {};
+  for (const severity of ['log', 'info', 'warn', 'error', 'debug']) {
+    consoleObject[severity] = function (...values) {
+      native.log(severity, values.map(describe).join(' '));
+    };
+  }
+  globalThis.console = Object.freeze(consoleObject);
+
+  // MARK: Timers
+
+  globalThis.setTimeout = function (callback, delay, ...values) {
+    if (typeof callback !== 'function') {
+      fail('setTimeout needs a function.');
+    }
+    return native.setTimer(() => callback(...values), Number(delay) || 0, false);
+  };
+  globalThis.setInterval = function (callback, delay, ...values) {
+    if (typeof callback !== 'function') {
+      fail('setInterval needs a function.');
+    }
+    return native.setTimer(() => callback(...values), Number(delay) || 0, true);
+  };
+  globalThis.clearTimeout = globalThis.clearInterval = function (id) {
+    if (typeof id === 'number') {
+      native.clearTimer(id);
+    }
+  };
+
+  // MARK: Crypto and base64
+
+  globalThis.btoa = (text) => native.btoa(String(text));
+  globalThis.atob = (text) => native.atob(String(text));
+
+  globalThis.crypto = Object.freeze({
+    getRandomValues(array) {
+      if (!ArrayBuffer.isView(array) || array instanceof Float32Array || array instanceof Float64Array) {
+        throw new TypeError('crypto.getRandomValues needs an integer typed array.');
+      }
+      if (array.byteLength > 65536) {
+        fail('crypto.getRandomValues can fill at most 65536 bytes at a time.');
+      }
+      new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(native.randomBytes(array.byteLength));
+      return array;
+    },
+    randomUUID: () => native.uuid(),
+  });
+
+  function digest(algorithm) {
+    return function (data, options) {
+      const settings = options || {};
+      return native.digest(algorithm, variableText(data), settings.inputEncoding || 'utf8', settings.encoding || 'hex');
+    };
+  }
+
+  const cryptoHelpers = Object.freeze({
+    md5: digest('md5'),
+    sha1: digest('sha1'),
+    sha256: digest('sha256'),
+    sha384: digest('sha384'),
+    sha512: digest('sha512'),
+    hmac(algorithm, key, data, options) {
+      const settings = options || {};
+      return native.hmac(
+        String(algorithm), variableText(key), settings.keyEncoding || 'utf8',
+        variableText(data), settings.inputEncoding || 'utf8', settings.encoding || 'hex'
+      );
+    },
+    randomUUID: () => native.uuid(),
+  });
+
+  // MARK: require
+
+  const libraries = {};
+  globalThis.require = function (name) {
+    const key = String(name);
+    if (Object.prototype.hasOwnProperty.call(libraries, key)) {
+      return libraries[key];
+    }
+    const source = native.loadLibrary(key);
+    const module = { exports: {} };
+    // Cached before it runs, as Node does for a cyclic require: lodash reads `_` from the global object as it loads,
+    // which is this getter, and would load itself again forever.
+    libraries[key] = module.exports;
+    new Function('module', 'exports', source)(module, module.exports);
+    libraries[key] = module.exports;
+    return module.exports;
+  };
+  Object.defineProperty(globalThis, 'CryptoJS', { get: () => globalThis.require('crypto-js'), configurable: true });
+  Object.defineProperty(globalThis, '_', { get: () => globalThis.require('lodash'), configurable: true });
+
+  // MARK: Variables
+
+  function variableScope(scope, name) {
+    const object = {
+      get: (key) => native.varGet(scope, String(key)),
+      set(key, value, options) {
+        native.varSet(scope, String(key), variableText(value), Boolean(options && options.secret));
+      },
+      unset(key) {
+        native.varSet(scope, String(key), null, false);
+      },
+      has: (key) => native.varGet(scope, String(key)) !== undefined,
+      isSecret: (key) => native.varIsSecret(scope, String(key)),
+      toObject: () => native.varValues(scope),
+    };
+    if (name !== undefined) {
+      object.name = name;
+    }
+    return object;
+  }
+
+  const variables = variableScope('variables');
+  variables.replaceIn = (text) => native.replaceIn(String(text));
+
+  // MARK: Rows
+
+  /// Headers ignore case, as HTTP does; query parameters don't.
+  function rowList(read, target, mutable) {
+    const matches = target === 'query'
+      ? (name, row) => row[0] === name
+      : (name, row) => row[0].toLowerCase() === name.toLowerCase();
+    const list = {
+      get(name) {
+        const row = read().find((candidate) => matches(String(name), candidate));
+        return row ? row[1] : undefined;
+      },
+      has: (name) => read().some((candidate) => matches(String(name), candidate)),
+      all: () => read().map(([name, value]) => ({ name, value })),
+      toObject() {
+        const object = {};
+        for (const [name, value] of read()) {
+          object[name] = value;
+        }
+        return object;
+      },
+    };
+    if (mutable) {
+      const change = (operation, name, value) => native.requestChange(operation, target, String(name), value);
+      list.upsert = (name, value) => change('upsert', name, variableText(value));
+      list.add = (name, value) => change('add', name, variableText(value));
+      list.remove = (name) => change('remove', name, null);
+    }
+    return Object.freeze(list);
+  }
+
+  // MARK: Request
+
+  function buildRequest() {
+    const template = native.request();
+    const request = {
+      protocol: template.protocol,
+      url: template.url,
+      headers: rowList(() => native.requestRows('header'), 'header', true),
+    };
+    if (template.protocol === 'grpc') {
+      request.metadata = request.headers;
+      request.service = template.service;
+      request.rpc = template.rpc;
+      request.messages = Object.freeze(template.messages.slice());
+    } else {
+      request.query = rowList(() => native.requestRows('query'), 'query', true);
+    }
+    if (template.protocol === 'http') {
+      request.method = template.method;
+      request.body = template.body === null ? null : Object.freeze({
+        mode: template.body.mode,
+        raw: template.body.raw,
+        fields: Object.freeze(template.body.fields.map(([name, value]) => Object.freeze({ name, value }))),
+        graphQL: template.body.graphQL === null ? null : Object.freeze(Object.assign({}, template.body.graphQL)),
+      });
+    }
+    if (template.protocol === 'websocket') {
+      request.messages = Object.freeze(template.messages.slice());
+    }
+    return Object.freeze(request);
+  }
+
+  // MARK: Response
+
+  function parseJSON(text, what) {
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      throw new SyntaxError(`${what} isn't JSON: ${error.message}`);
+    }
+  }
+
+  function staticRows(rows) {
+    return rowList(() => rows, 'header', false);
+  }
+
+  function buildResponse() {
+    const response = native.response();
+    switch (response.kind) {
+      case 'http': {
+        let text;
+        const body = () => (text === undefined ? (text = native.responseText()) : text);
+        return Object.freeze({
+          code: response.code,
+          status: response.status,
+          headers: staticRows(response.headers),
+          size: response.size,
+          truncated: response.truncated,
+          responseTime: response.responseTime,
+          text: body,
+          json: () => parseJSON(body(), 'The response body'),
+          base64: () => native.responseBase64(),
+        });
+      }
+      case 'eventStream':
+        return Object.freeze({
+          code: response.code,
+          status: response.status,
+          headers: staticRows(response.headers),
+          events: Object.freeze(response.events.map((event) => Object.freeze({
+            id: event.id,
+            event: event.event,
+            data: event.data,
+            retry: event.retry,
+            json: () => parseJSON(event.data, 'The event\'s data'),
+          }))),
+          end: response.end,
+          omittedEventCount: response.omittedEventCount,
+          responseTime: response.responseTime,
+          text: () => '',
+          json: () => fail('An event stream has no single body; read rq.response.events.'),
+        });
+      case 'grpc': {
+        const messages = Object.freeze(response.messages.map((message) => Object.freeze({
+          text: () => message,
+          json: () => parseJSON(message, 'The message'),
+        })));
+        return Object.freeze({
+          code: response.status.code,
+          status: Object.freeze(Object.assign({}, response.status)),
+          metadata: staticRows(response.metadata),
+          trailers: staticRows(response.trailers),
+          messages,
+          sentCount: response.sentCount,
+          receivedCount: response.receivedCount,
+          responseTime: response.responseTime,
+          json: () => (messages.length === 0
+            ? fail('The call received no message.')
+            : messages[messages.length - 1].json()),
+        });
+      }
+      case 'webSocket':
+        return Object.freeze({
+          code: response.code,
+          headers: staticRows(response.headers),
+          subprotocol: response.subprotocol,
+          messages: Object.freeze(response.messages.map((message) => Object.freeze({
+            direction: message.direction,
+            text: message.text,
+            isBinary: message.text === null,
+            base64: message.base64,
+            json: () => (message.text === null
+              ? fail('A binary message isn\'t JSON.')
+              : parseJSON(message.text, 'The message')),
+          }))),
+          close: response.close === null ? null : Object.freeze(Object.assign({}, response.close)),
+          end: response.end,
+          responseTime: response.responseTime,
+        });
+      default:
+        return fail('Reqling sent a response this runtime doesn\'t know.');
+    }
+  }
+
+  // MARK: Tests
+
+  const pendingTests = new Set();
+
+  function errorMessage(error) {
+    if (error instanceof Error) {
+      return error.message || String(error);
+    }
+    return describe(error);
+  }
+
+  function test(name, callback) {
+    const title = String(name);
+    if (typeof callback !== 'function') {
+      native.test(title, 'failed', 'rq.test needs a function to run.');
+      return;
+    }
+    let outcome;
+    try {
+      outcome = callback();
+    } catch (error) {
+      native.test(title, 'failed', errorMessage(error));
+      return;
+    }
+    if (outcome !== null && typeof outcome === 'object' && typeof outcome.then === 'function') {
+      const entry = { title };
+      pendingTests.add(entry);
+      outcome.then(() => {
+        if (pendingTests.delete(entry)) {
+          native.test(title, 'passed', undefined);
+        }
+      }, (error) => {
+        if (pendingTests.delete(entry)) {
+          native.test(title, 'failed', errorMessage(error));
+        }
+      });
+      return;
+    }
+    native.test(title, 'passed', undefined);
+  }
+  test.skip = function (name) {
+    native.test(String(name), 'skipped', undefined);
+  };
+
+  // MARK: rq
+
+  let request;
+  let response;
+  const rq = {
+    info: Object.freeze({
+      phase,
+      level: info.level,
+      levelName: info.levelName,
+      requestName: info.requestName,
+      requestId: info.requestId,
+      protocol: info.protocol,
+      environment: info.environment,
+      iteration: 0,
+    }),
+    environment: Object.freeze(variableScope('environment', info.environment)),
+    defaultEnvironment: Object.freeze(variableScope('defaultEnvironment', info.defaultEnvironment)),
+    globals: Object.freeze(variableScope('global', 'Global')),
+    variables: Object.freeze(variables),
+    test,
+    crypto: cryptoHelpers,
+  };
+  Object.defineProperty(rq, 'request', {
+    get: () => (request === undefined ? (request = buildRequest()) : request),
+    enumerable: true,
+  });
+  Object.defineProperty(rq, 'response', {
+    get() {
+      if (isPre) {
+        fail('rq.response is only available in post-response scripts.');
+      }
+      return response === undefined ? (response = buildResponse()) : response;
+    },
+    enumerable: true,
+  });
+  Object.defineProperty(globalThis, 'rq', { value: rq, enumerable: false });
+
+  // What the runner's wrapper and drain loop call; `expect.js` adds `expect` to `rq` before it's frozen.
+  Object.defineProperty(globalThis, '__rq', {
+    value: {
+      runLevel(body) {
+        body().then(() => native.settled(undefined), (error) => native.settled(error instanceof Error ? error : new Error(errorMessage(error))));
+      },
+      pendingTestCount: () => pendingTests.size,
+      abandonPendingTests() {
+        for (const entry of pendingTests) {
+          native.test(entry.title, 'failed', 'The test didn\'t finish before its script ended.');
+        }
+        pendingTests.clear();
+      },
+      describe,
+      fail,
+      variableText,
+    },
+    enumerable: false,
+  });
+})(globalThis.__native);

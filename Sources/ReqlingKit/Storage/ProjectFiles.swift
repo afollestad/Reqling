@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// The on-disk layout of a project folder:
 ///

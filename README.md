@@ -48,7 +48,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against; `--token` requires a bearer token, `--no-introspection` refuses introspection |
 | `./scripts/generate-protos.sh` | Regenerates protobuf code and descriptor sets after a `.proto` change |
 
-- **Launch through `run.sh`**, not `swift run` or Xcode. Reqling is a SwiftPM package, and only the `.app` bundle `build.sh` assembles has the Info.plist, the assets compiled with `actool`, `ReqlingPKCS12Probe`, and the signature.
+- **Launch through `run.sh`**, not `swift run` or Xcode. Reqling is a SwiftPM package, and only the `.app` bundle `build.sh` assembles has the Info.plist, the assets compiled with `actool`, the `ReqlingPKCS12Probe` and `ReqlingScriptRunner` helpers with the script runtime, and the signature.
 - **Dependency injection** uses [Needle](https://github.com/uber/needle). The build and test scripts regenerate its providers before compiling, which is why `setup.sh` installs the matching `needle` CLI.
 - **Updates.** Builds run from `.build/` can check for updates but not install them.
 
@@ -60,6 +60,8 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `Sources/Reqling` | The app: lifecycle, dependency injection, view models, and views |
 | `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
 | `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |
+| `Sources/ReqlingScriptProtocol` | What the app and the script runner exchange: the input, the events, and their framing |
+| `Sources/ReqlingScriptRunner` | A helper that runs pre-request and post-response scripts in JavaScriptCore, killed at its time limit, with its JavaScript runtime and the vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
 | `Sources/ReqlingPKCS12Probe` | A helper that opens each PKCS#12 file first, so a file that crashes Apple's importer can't take the app down |
 | `Tools/GraphQLFixtureServer` | A separate package that executes a real schema, for the tests and `graphql-server.sh` |
 | `Tests` | `ReqlingKitTests` and `ReqlingTests`, including snapshots |

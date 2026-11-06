@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// The moving half of a save. Renames run in two phases through `ProjectLayout.syncScratchDirectory`, so swapping two
 /// names, or moving an item out of a folder deleted in the same save, never collides or trashes the moved item.

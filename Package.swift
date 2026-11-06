@@ -16,7 +16,10 @@ let package = Package(
     products: [
         .executable(name: "Reqling", targets: ["Reqling"]),
         // Bundled beside the app: opens PKCS#12 files in a throwaway process first (`HelperPKCS12ImportProbe`).
-        .executable(name: "ReqlingPKCS12Probe", targets: ["ReqlingPKCS12Probe"])
+        .executable(name: "ReqlingPKCS12Probe", targets: ["ReqlingPKCS12Probe"]),
+        // Bundled beside the app: runs pre-request and post-response scripts in JavaScriptCore, killed at its time limit
+        // (`HelperScriptRunner`).
+        .executable(name: "ReqlingScriptRunner", targets: ["ReqlingScriptRunner"])
     ],
     dependencies: [
         .package(url: "https://github.com/uber/needle.git", revision: "69f7a889d2736f2621c6083ac29e0a75d158f249"),
@@ -62,13 +65,16 @@ let package = Package(
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "MCP", package: "swift-sdk"),
                 "ReqlingGraphQLEngine",
-                "ReqlingTemplating"
+                "ReqlingTemplating",
+                "ReqlingScriptProtocol"
             ],
-            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL")
+            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL", "Scripting")
         ),
         // `{{variable}}` parsing, expansion, and precedence, Foundation only, so the script runner resolves templates
         // with the same code a run does.
         .target(name: "ReqlingTemplating", exclude: guidanceFiles(in: "")),
+        // What the app and the script runner exchange, Foundation only like the runner itself.
+        .target(name: "ReqlingScriptProtocol", dependencies: ["ReqlingTemplating"], exclude: guidanceFiles(in: "")),
         // GraphQLSwift behind Foundation types, imported implementation-only so its declarations never reach ReqlingKit
         // (`GraphQLEngine`); the feature has the compiler check that nothing public exposes them.
         .target(
@@ -81,17 +87,22 @@ let package = Package(
             dependencies: [
                 "ReqlingKit",
                 "ReqlingTemplating",
+                "ReqlingScriptProtocol",
                 .product(name: "NeedleFoundation", package: "needle")
             ],
             exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "ViewModels")
         ),
         // Foundation and Security only, so each launch stays fast.
         .executableTarget(name: "ReqlingPKCS12Probe"),
+        // Foundation, JavaScriptCore, and CryptoKit only, so each launch stays fast. Its JavaScript runtime is copied
+        // into the app by `scripts/build.sh` and read by path, not built as SwiftPM resources.
+        .executableTarget(name: "ReqlingScriptRunner", dependencies: ["ReqlingScriptProtocol"], exclude: guidanceFiles(in: "") + ["Runtime"]),
         .testTarget(
             name: "ReqlingKitTests",
             dependencies: [
                 "ReqlingKit",
                 "ReqlingTemplating",
+                "ReqlingScriptProtocol",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
@@ -119,6 +130,7 @@ let package = Package(
                 "Reqling",
                 "ReqlingKit",
                 "ReqlingTemplating",
+                "ReqlingScriptProtocol",
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
             ],
             exclude: guidanceFiles(in: "Snapshots") + ["Snapshots/__Snapshots__"]

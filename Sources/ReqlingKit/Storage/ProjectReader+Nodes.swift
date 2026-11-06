@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// Reading the request tree and what an interrupted save left in scratch, then settling node IDs across all of it.
 extension ProjectReader {

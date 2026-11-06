@@ -33,7 +33,7 @@ generate_needle
 
 # The `+` guards keep macOS's bash 3.2 from treating an empty array as unbound under `set -u`.
 swift_build=(swift build -c "$configuration" ${build_flags[@]+"${build_flags[@]}"} ${typecheck_budget_flags[@]+"${typecheck_budget_flags[@]}"})
-# No `--product`: one build makes both the app and the PKCS#12 helper it bundles.
+# No `--product`: one build makes the app and the helpers it bundles.
 run_filtered build "${swift_build[@]}"
 typecheck_budget_report_offenders "$logs_dir/build.log"
 bin_path=$("${swift_build[@]}" --show-bin-path)
@@ -43,9 +43,14 @@ dsym="$app.dSYM"
 rm -rf "$app" "$dsym"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_path/$app_name" "$app/Contents/MacOS/"
-# The app opens every PKCS#12 file in this helper first and finds it beside its own executable, by this name.
-helper="$app/Contents/MacOS/ReqlingPKCS12Probe"
-cp "$bin_path/ReqlingPKCS12Probe" "$helper"
+# The app finds each helper beside its own executable, by these names: it opens every PKCS#12 file in the first, and
+# runs scripts in the second, which reads its JavaScript from `Contents/Resources/ScriptRuntime`.
+helpers=()
+for helper_name in ReqlingPKCS12Probe ReqlingScriptRunner; do
+  helpers+=("$app/Contents/MacOS/$helper_name")
+  cp "$bin_path/$helper_name" "$app/Contents/MacOS/$helper_name"
+done
+ditto "$repo_root/Sources/ReqlingScriptRunner/Runtime" "$app/Contents/Resources/ScriptRuntime"
 cp Resources/Info.plist "$app/Contents/"
 
 # Dependencies that declare SwiftPM resources (privacy manifests, for one) build a `<package>_<target>.bundle` beside the
@@ -90,15 +95,17 @@ if [ "$configuration" = debug ]; then
 else
   # Ship a stripped binary; the dSYM beside the bundle symbolicates its crash reports.
   ditto "$bin_path/$app_name.dSYM" "$dsym"
-  strip -rSTx "$app/Contents/MacOS/$app_name" "$helper"
+  strip -rSTx "$app/Contents/MacOS/$app_name" "${helpers[@]}"
 fi
 
-# Each branch signs the helper before the bundle, the same way: the bundle's signature seals its nested code, and
+# Each branch signs the helpers before the bundle, the same way: the bundle's signature seals its nested code, and
 # updates verify it with `codesign --deep --strict`.
 identity=${CODESIGN_IDENTITY:--}
 if [ "$identity" != - ]; then
   # Notarization requires the hardened runtime and a secure timestamp.
-  codesign --force --options runtime --timestamp --sign "$identity" "$helper"
+  for helper in "${helpers[@]}"; do
+    codesign --force --options runtime --timestamp --sign "$identity" "$helper"
+  done
   codesign --force --options runtime --timestamp --sign "$identity" "$app"
 elif [ "$configuration" = debug ]; then
   # macOS ties Keychain items to the code that may read them twice: the ACL checks the designated requirement, and the
@@ -110,8 +117,12 @@ elif [ "$configuration" = debug ]; then
   if [ -z "$debug_identity" ]; then
     debug_identity=$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2}' | head -n 1 || true)
   fi
-  # Only the app takes the requirement: the helper reads no Keychain item and holds no privacy grant.
-  if ! codesign --force --timestamp=none --sign "${debug_identity:--}" "$helper" \
+  # Only the app takes the requirement: the helpers read no Keychain item and hold no privacy grant.
+  signed_helpers=true
+  for helper in "${helpers[@]}"; do
+    codesign --force --timestamp=none --sign "${debug_identity:--}" "$helper" || signed_helpers=false
+  done
+  if [ "$signed_helpers" != true ] \
     || ! codesign --force --timestamp=none --sign "${debug_identity:--}" \
       --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"; then
     # Over SSH the login keychain is usually locked, so codesign can't reach the identity's private key.
@@ -121,7 +132,9 @@ elif [ "$configuration" = debug ]; then
     exit 1
   fi
 else
-  codesign --force --sign - "$helper"
+  for helper in "${helpers[@]}"; do
+    codesign --force --sign - "$helper"
+  done
   codesign --force --sign - "$app"
 fi
 echo "Built $app"

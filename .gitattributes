@@ -1,0 +1,2 @@
+# Vendored files stay byte for byte as published, so whitespace checks skip them.
+Sources/ReqlingScriptRunner/Runtime/vendor/** -whitespace
