@@ -19,8 +19,9 @@ struct MCPExecutionTools {
             "execute_request",
             title: "Send request",
             description: "Sends a saved request and waits for the response (HTTP) or the call's end (gRPC), resolving its "
-                + "{{variables}} against an environment. Fails before sending when a variable is undefined, listing the names, "
-                + "unless allowUnresolved is set. The run shows in Reqling's window.",
+                + "{{variables}} against an environment. An event-stream response is read until it ends, streamSeconds pass, "
+                + "or streamEvents arrive, then returned with its events. Fails before sending when a variable is undefined, "
+                + "listing the names, unless allowUnresolved is set. The run shows in Reqling's window.",
             properties: Self.runProperties.merging([
                 "request": MCPSchema.request,
                 "overrides": MCPSchema.openObject("One-run changes to the spec, as a merge patch like update_request's `spec`. "
@@ -38,6 +39,7 @@ struct MCPExecutionTools {
             }
             var options = try runOptions(arguments, in: document)
             options.spec = try Self.applyingMessages(arguments, to: kind)
+            options.streamLimit = try Self.streamLimit(arguments, for: kind)
             let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
             let exchange = await context.runner.run(request.id, in: project.id, options: options)
             var description = Self.describe(exchange, mask: mask)
@@ -67,7 +69,8 @@ struct MCPExecutionTools {
         ) { arguments in
             let (project, document) = try context.document(try arguments.string("project"))
             let item = RequestItem(name: try arguments.optionalString("name") ?? "Unsaved request", kind: try Self.adHocKind(arguments))
-            let options = try runOptions(arguments, in: document)
+            var options = try runOptions(arguments, in: document)
+            options.streamLimit = try Self.streamLimit(arguments, for: item.kind)
             var unsaved = item
             unsaved.kind = try Self.applyingMessages(arguments, to: item.kind)
             let mask = context.runner.maskingSecrets(in: project.id, variableOverrides: options.variableOverrides)
@@ -146,7 +149,8 @@ struct MCPExecutionTools {
         MCPTool(
             "cancel_request",
             title: "Cancel request",
-            description: "Stops a saved request's run in flight, whether it started in the window or from execute_request.",
+            description: "Stops a saved request's run in flight, whether it started in the window or from execute_request. A "
+                + "stopped event stream keeps the events so far.",
             properties: ["project": MCPSchema.project, "request": MCPSchema.request],
             required: ["project", "request"],
             annotations: .edit
@@ -170,7 +174,7 @@ struct MCPExecutionTools {
             "gRPC only: the messages to send in order, as proto3 JSON objects or strings, in place of the spec's."
         ),
         "allowUnresolved": MCPSchema.boolean("Send even with undefined {{variables}}, which go out as written.")
-    ]
+    ].merging(streamProperties) { $1 }
 
     private func runOptions(_ arguments: MCPArguments, in document: ProjectDocument) throws -> RunOptions {
         var options = RunOptions(
@@ -248,6 +252,9 @@ struct MCPExecutionTools {
         }
         if let tlsVersion = response.tlsVersion {
             description["tlsVersion"] = .string(tlsVersion)
+        }
+        if let stream = response.eventStream {
+            return description.merging(eventStream(stream, cachedCut: cachedCut, mask: mask)) { $1 }
         }
         if let text = String(data: response.body, encoding: .utf8) {
             let cut = prefix(text, utf8Limit: bodyLimit)

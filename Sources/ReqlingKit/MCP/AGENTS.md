@@ -14,6 +14,7 @@ These instructions cover `Sources/ReqlingKit/MCP/`: the built-in MCP server (`Se
 - **Change projects through `MCPToolContext.mutate` and `ProjectLifecycle`, and Global through `MCPToolContext.mutateGlobalEnvironment`,** the paths the window uses, so secrets, the Trash, local paths, and the window's live update all stay right. Never write project files here.
 - **Never return a secret value.** Describe variables with `MCPDescriptions.variable`, and mask anything a run or a server produced with `RequestRunner.maskingSecrets(in:variableOverrides:)`, since servers echo credentials back.
 - **Read and write specs, auth, and certificate entries in their on-disk JSON,** so what `get_request` returns is exactly what `create_request` and `update_request` take. Row IDs follow `Sources/ReqlingKit/Storage/AGENTS.md`.
+- **Give every streaming run an agent starts a time bound** (`RunOptions.streamLimit`, as `MCPExecutionTools.streamLimit` does), or the tool waits out its timeout and returns none of what arrived.
 - **Reach the window only through `MCPAppHost`.** It is `nil` in tests and before launch, so a tool that needs it says so instead of failing silently.
 - Mark deletions `destructive: false` and apply them without a confirmation round trip: they move files to the Trash. Clearing run history deletes for good, so it is `.destroy`.
 

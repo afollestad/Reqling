@@ -17,7 +17,11 @@ final class MCPFixture {
     let host = StubMCPHost()
     private let suiteName = "com.afollestad.reqling.tests.mcp.\(UUID().uuidString)"
 
-    init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws {
+    /// `sleep` times out tool calls; `runnerSleep` waits out an event stream's reconnects and time limit.
+    init(
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        runnerSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) throws {
         storage = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: storage.directory.file("Support/workspace.json"))
         settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
@@ -38,7 +42,8 @@ final class MCPFixture {
             graphQLSchemas: GraphQLSchemaService(
                 store: GraphQLSchemaStore(directory: storage.directory.file("Support/GraphQLSchemas")),
                 fetcher: LiveGraphQLIntrospectionFetcher()
-            )
+            ),
+            sleep: runnerSleep
         )
         context = MCPToolContext(
             library: storage.library,
