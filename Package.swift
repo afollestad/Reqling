@@ -28,8 +28,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.39.0"),
         // Test-only: a reflection server for the gRPC integration suite.
         .package(url: "https://github.com/grpc/grpc-swift-extras.git", exact: "2.2.2"),
-        // NIO and its TLS are used by the gRPC transport; tests also use them for loopback HTTP(S) servers, with
-        // certificates minted at runtime.
+        // NIO and its TLS carry the gRPC transport and WebSocket connections; tests also use them for loopback HTTP(S)
+        // and WebSocket servers, with certificates minted at runtime.
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.104.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.5"),
         .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.21.0"),
@@ -55,6 +55,11 @@ let package = Package(
                 // NIOSSL reads PEM client keys into the in-memory PKCS#12 that `PEMIdentityImporter` builds.
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                // WebSocket connections: a Posix client bootstrap, the HTTP/1.1 upgrade, frames, and TLS's handshake event.
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOWebSocket", package: "swift-nio"),
+                .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "MCP", package: "swift-sdk"),
                 "ReqlingGraphQLEngine"
             ],
@@ -84,6 +89,7 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOWebSocket", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "Crypto", package: "swift-crypto"),

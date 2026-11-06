@@ -171,6 +171,12 @@ public final class HTTPExecutor: Sendable {
         return configuration
     }
 
+    /// The project's cookie jar, which WebSocket handshakes read and fill too (`WebSocketExecutor`), so a session
+    /// cookie from an HTTP login carries into a socket opened in the same project.
+    var cookies: HTTPCookieStorage? {
+        pool.cookies
+    }
+
     /// Cancels every request in flight and closes every connection. Later requests fail as cancelled.
     public func invalidate() {
         pool.invalidate()

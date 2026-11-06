@@ -26,7 +26,8 @@ final class HTTPSessionPool: Sendable {
     }
 
     private let makeConfiguration: @Sendable () -> URLSessionConfiguration
-    private let cookies: HTTPCookieStorage?
+    /// The one jar every session shares; `nil` when the configuration keeps none.
+    let cookies: HTTPCookieStorage?
     private let state = Mutex(State())
 
     init(configuration: @escaping @Sendable () -> URLSessionConfiguration) {
