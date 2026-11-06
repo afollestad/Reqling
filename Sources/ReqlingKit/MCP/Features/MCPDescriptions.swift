@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import ReqlingTemplating
 
 /// How tools describe Reqling's data to agents. Specs, auth, and certificate entries use their on-disk JSON, so what an
 /// agent reads is exactly what it can send back to the create and update tools.
@@ -49,6 +50,21 @@ enum MCPDescriptions {
         ]
         if !variable.isSecret {
             description["value"] = .string(variable.value)
+        }
+        return .object(description)
+    }
+
+    /// A current value a script set: its value unless it's secret, or `unset: true` for a marker hiding the saved value.
+    static func currentValue(_ current: CurrentVariable, key: String) -> Value {
+        var description: [String: Value] = ["key": .string(key)]
+        switch current {
+        case .value(let variable):
+            description["secret"] = .bool(variable.isSecret)
+            if !variable.isSecret {
+                description["value"] = .string(variable.value)
+            }
+        case .unset:
+            description["unset"] = .bool(true)
         }
         return .object(description)
     }

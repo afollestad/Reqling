@@ -309,11 +309,13 @@ extension RequestRunner {
         guard let document = library.document(project) else {
             return { $0 }
         }
+        let currentValues = library.currentValues.snapshot(for: project)
         let redactions = document.allEnvironments.map { environment in
             let scope = VariableScope(
                 global: library.globalEnvironment,
                 document: document,
                 activeEnvironmentID: environment.id,
+                currentValues: currentValues,
                 overrides: variableOverrides
             )
             return SecretRedaction(resolver: TemplateResolver(scope: scope, dynamic: dynamic))

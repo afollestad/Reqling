@@ -16,12 +16,16 @@ final class EnvironmentEditorModel {
     var defaultEnvironment: RequestEnvironment
     var environments: [RequestEnvironment]
     var selectedID: EnvironmentID
+    /// Current values Reset, or Save as Value, is to drop on Done, by environment (`EnvironmentEditorModel+CurrentValues`).
+    var stagedCurrentValueResets: [EnvironmentID: Set<String>] = [:]
+    /// Environments whose every current value Reset All is to drop on Done, including any a script sets meanwhile.
+    var stagedCurrentValueResetAll: Set<EnvironmentID> = []
 
-    @ObservationIgnored private unowned let app: AppModel
+    @ObservationIgnored unowned let app: AppModel
     /// The environments as loaded or last saved: the base of Done's merge.
-    @ObservationIgnored private var baseGlobalEnvironment: RequestEnvironment
-    @ObservationIgnored private var baseDefaultEnvironment: RequestEnvironment
-    @ObservationIgnored private var baseEnvironments: [RequestEnvironment]
+    @ObservationIgnored private(set) var baseGlobalEnvironment: RequestEnvironment
+    @ObservationIgnored private(set) var baseDefaultEnvironment: RequestEnvironment
+    @ObservationIgnored private(set) var baseEnvironments: [RequestEnvironment]
 
     init(projectID: ProjectID, app: AppModel) {
         self.projectID = projectID
@@ -150,6 +154,7 @@ final class EnvironmentEditorModel {
         if mergedEnvironments.contains(where: { $0.id == selectedID }) || selectedID == mergedDefault.id {
             app.setActiveEnvironment(selectedID, for: projectID)
         }
+        applyStagedCurrentValueResets()
         return true
     }
 

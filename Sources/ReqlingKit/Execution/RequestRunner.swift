@@ -339,6 +339,7 @@ public final class RequestRunner {
             global: library.globalEnvironment,
             document: document,
             activeEnvironmentID: environment.id,
+            currentValues: library.currentValues.snapshot(for: projectID),
             overrides: options.variableOverrides
         )
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)

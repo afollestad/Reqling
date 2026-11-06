@@ -267,12 +267,18 @@ final class AppModel {
         guard let document = library.document(project) else {
             return VariableScope()
         }
-        return VariableScope(global: library.globalEnvironment, document: document, activeEnvironmentID: activeEnvironmentID(for: project))
+        return VariableScope(
+            global: library.globalEnvironment,
+            document: document,
+            activeEnvironmentID: activeEnvironmentID(for: project),
+            currentValues: library.currentValues.snapshot(for: project)
+        )
     }
 
-    /// What the editors know about the variables in `project`, rebuilt only when Global, its environments, or the active
-    /// one change. Every `TemplateField` and `CodeEditor` compares this in `updateNSView`, and a request screen re-renders
-    /// once per frame of a resize, so building a fresh scope per read multiplied across every field.
+    /// What the editors know about the variables in `project`, rebuilt only when Global, its environments, the active
+    /// one, or what scripts set on this Mac change. Every `TemplateField` and `CodeEditor` compares this in
+    /// `updateNSView`, and a request screen re-renders once per frame of a resize, so building a fresh scope per read
+    /// multiplied across every field.
     func tokenContext(for project: ProjectID) -> TemplateTokenContext {
         // Read every observable input before consulting the cache, so observation keeps tracking them.
         let document = library.document(project)
@@ -280,7 +286,8 @@ final class AppModel {
             globalEnvironment: library.globalEnvironment,
             defaultEnvironment: document?.defaultEnvironment,
             environments: document?.environments ?? [],
-            activeEnvironmentID: activeEnvironmentID(for: project)
+            activeEnvironmentID: activeEnvironmentID(for: project),
+            currentValuesRevision: library.currentValues.revision
         )
         if let cached = tokenContexts[project], cached.key == key {
             return cached.value
@@ -464,4 +471,5 @@ private struct TokenContextKey: Equatable {
     let defaultEnvironment: RequestEnvironment?
     let environments: [RequestEnvironment]
     let activeEnvironmentID: EnvironmentID?
+    let currentValuesRevision: Int
 }

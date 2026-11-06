@@ -20,6 +20,22 @@ extension SecretStore {
     public func setSecrets(_ secrets: [String: String], for project: ProjectID) throws {
         try setSecrets(secrets, for: .project(project))
     }
+
+    /// One read-modify-write of an account's secrets that touches only the listed keys, so values nobody changed (or
+    /// that a failed Keychain read left blank in memory) are never overwritten. Writes nothing when nothing changes.
+    func update(_ account: SecretAccount, storing values: [String: String], deleting keys: Set<String>) throws {
+        guard !values.isEmpty || !keys.isEmpty else {
+            return
+        }
+        let stored = try secrets(for: account)
+        var updated = stored.merging(values) { _, new in new }
+        for key in keys {
+            updated[key] = nil
+        }
+        if updated != stored {
+            try setSecrets(updated, for: account)
+        }
+    }
 }
 
 /// Whose secrets a Keychain item holds.
@@ -52,6 +68,12 @@ public enum SecretKey {
 
     public static func variable(_ id: VariableID, in environment: EnvironmentID) -> String {
         "\(variablePrefix)\(environment).\(id)"
+    }
+
+    /// A secret current value a script set (`CurrentValueStore`), keyed by the variable's key rather than an ID, since
+    /// a script can set a key no saved variable has.
+    static func currentValue(_ key: String, in environment: EnvironmentID) -> String {
+        "current.\(environment).\(key)"
     }
 
     public static func certificatePassphrase(_ id: CertificateEntryID) -> String {

@@ -32,3 +32,11 @@ My API.reqling/
 - **Built-ins** such as `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, and `{{$randomInt}}` generate a value on each send.
 - **Pills.** Variables render as pills, red when undefined, and typing `{{` offers completion.
 - **Secrets.** Mark a variable secret to keep its value in your Keychain instead of the project's files.
+
+## Current values
+
+- **Set by scripts.** When a script sets an environment or Global variable, the value is kept on your Mac as that environment's *current value*, which overrides the saved value by key. It never goes into the project, so running requests never changes `git status`.
+- **Secret ones** stay in your Keychain and are masked wherever they show. A value is secret when its variable is, when the script asks for it, or when it contains another secret, such as `"Bearer " + token`.
+- **Unset.** A script that unsets a variable hides its saved value until you reset it.
+- **In the Environments sheet,** current values are listed under the variables. Reset one, or all of them, to use the saved values again, or Save as Value to make one the saved value everyone shares.
+- **Editing a variable's saved value** in Reqling drops its current value, so your edit takes effect. Changes pulled from git leave current values alone.

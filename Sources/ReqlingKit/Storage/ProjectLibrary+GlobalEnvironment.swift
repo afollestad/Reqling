@@ -27,6 +27,7 @@ extension ProjectLibrary {
         globalEnvironment = new
         // The file no longer references these; a failure here only leaves unused values in the Keychain.
         try? updateSecrets(of: .global, storing: [:], deleting: secrets.deleted)
+        resetCurrentValues(old: [old], new: [new]) { _ in .global }
         return result
     }
 

@@ -5,8 +5,8 @@ import XCTest
 
 @MainActor
 final class MCPEnvironmentToolsTests: XCTestCase {
-    private var fixture: MCPFixture!
-    private var project: ProjectID!
+    var fixture: MCPFixture!
+    var project: ProjectID!
 
     override func setUp() async throws {
         fixture = try MCPFixture()
@@ -17,7 +17,7 @@ final class MCPEnvironmentToolsTests: XCTestCase {
         fixture.cleanUp()
     }
 
-    private var projectArgument: Value {
+    var projectArgument: Value {
         .string(project.description)
     }
 

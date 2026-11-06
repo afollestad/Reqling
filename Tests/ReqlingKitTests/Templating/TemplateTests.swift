@@ -75,7 +75,7 @@ final class TemplateResolverTests: XCTestCase {
 
     /// A scope with an empty Global, for tests about the project's own environments.
     private func scope(_ document: ProjectDocument, active: EnvironmentID?) -> VariableScope {
-        VariableScope(global: .global(), document: document, activeEnvironmentID: active)
+        VariableScope(global: .global(), document: document, activeEnvironmentID: active, currentValues: .empty)
     }
 
     func testTheActiveEnvironmentOverridesDefaultAndOverridesWin() {
@@ -84,7 +84,13 @@ final class TemplateResolverTests: XCTestCase {
         let defaultOnly = TemplateResolver(scope: scope(document, active: nil), dynamic: fixedDynamic)
         let onStaging = TemplateResolver(scope: scope(document, active: staging), dynamic: fixedDynamic)
         let overridden = TemplateResolver(
-            scope: VariableScope(global: .global(), document: document, activeEnvironmentID: staging, overrides: ["host": "local"]),
+            scope: VariableScope(
+                global: .global(),
+                document: document,
+                activeEnvironmentID: staging,
+                currentValues: .empty,
+                overrides: ["host": "local"]
+            ),
             dynamic: fixedDynamic
         )
 
@@ -103,8 +109,14 @@ final class TemplateResolverTests: XCTestCase {
             Variable(key: "off", value: "hidden", isEnabled: false)
         ])
 
-        let scope = VariableScope(global: global, document: document, activeEnvironmentID: staging, overrides: ["region": "us"])
-        let defaultOnly = VariableScope(global: global, document: document, activeEnvironmentID: nil)
+        let scope = VariableScope(
+            global: global,
+            document: document,
+            activeEnvironmentID: staging,
+            currentValues: .empty,
+            overrides: ["region": "us"]
+        )
+        let defaultOnly = VariableScope(global: global, document: document, activeEnvironmentID: nil, currentValues: .empty)
 
         // Default and the active environment override Global by key, overrides beat everything, and a disabled Global
         // variable is not there at all.

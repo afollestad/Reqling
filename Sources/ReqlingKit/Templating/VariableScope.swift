@@ -37,16 +37,23 @@ public struct VariableScope: Sendable {
         layers = VariableLayers(local: entries.mapValues { TemplateVariable(value: $0.value, isSecret: $0.isSecret) })
     }
 
-    /// `activeEnvironmentID` of `nil` or of the Default environment means Global and Default alone. `global` has no
-    /// default value, so no caller can leave Global's variables out of what a run sees or what masking covers.
-    public init(global: RequestEnvironment, document: ProjectDocument, activeEnvironmentID: EnvironmentID?, overrides: [String: String] = [:]) {
+    /// `activeEnvironmentID` of `nil` or of the Default environment means Global and Default alone. `global` and
+    /// `currentValues` have no default value, so no caller can leave Global's variables or what scripts set on this Mac
+    /// out of what a run sees, what the editor shows, or what masking covers.
+    public init(
+        global: RequestEnvironment,
+        document: ProjectDocument,
+        activeEnvironmentID: EnvironmentID?,
+        currentValues: CurrentValueSnapshot,
+        overrides: [String: String] = [:]
+    ) {
         let active = activeEnvironmentID.flatMap { id in
             document.isDefaultEnvironment(id) ? nil : document.environment(id)
         }
         let layers = VariableLayers(
-            global: VariableLayer(global),
-            defaultEnvironment: VariableLayer(document.defaultEnvironment),
-            active: active.map { VariableLayer($0) },
+            global: VariableLayer(global, current: currentValues.global),
+            defaultEnvironment: VariableLayer(document.defaultEnvironment, current: currentValues.values(for: document.defaultEnvironment.id)),
+            active: active.map { VariableLayer($0, current: currentValues.values(for: $0.id)) },
             overrides: overrides
         )
         self.init(layers: layers, environments: Environments(global: global, defaultEnvironment: document.defaultEnvironment, active: active))

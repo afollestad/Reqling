@@ -73,6 +73,11 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("global-environment.json")
     }
 
+    /// The values scripts set on this Mac (`CurrentValueStore`); secret ones live in the Keychain.
+    var currentValuesURL: URL {
+        applicationSupportDirectory.appendingPathComponent("current-values.json")
+    }
+
     /// Every request's past runs (`RunHistoryStore`).
     var historyDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)

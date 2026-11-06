@@ -4,7 +4,7 @@ Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agen
 
 ## What agents can do
 
-- Create and edit projects, environments, variables, and saved requests.
+- Create and edit projects, environments, variables, and saved requests, and reset or save the current values scripts set.
 - Compile protos.
 - Read a GraphQL request's schema and check queries against it.
 - Send requests and read their responses. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.

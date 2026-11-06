@@ -6,8 +6,8 @@ import XCTest
 
 @MainActor
 final class SheetModelTests: XCTestCase {
-    private var fixture: AppFixture!
-    private var project: ProjectID!
+    var fixture: AppFixture!
+    var project: ProjectID!
 
     override func setUp() async throws {
         fixture = AppFixture()

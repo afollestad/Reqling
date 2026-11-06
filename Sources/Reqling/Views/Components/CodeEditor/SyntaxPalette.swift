@@ -98,7 +98,10 @@ struct TemplateTokenContext: Equatable {
             case .override: source = "Override"
             case .script: source = "Script"
             }
-            return Entry(displayValue: entry.isSecret ? TemplateResolver.mask : entry.value, sourceName: source)
+            return Entry(
+                displayValue: entry.isSecret ? TemplateResolver.mask : entry.value,
+                sourceName: entry.isCurrentValue ? "\(source), current value set by a script" : source
+            )
         }
     }
 

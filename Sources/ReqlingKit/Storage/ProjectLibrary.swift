@@ -15,6 +15,9 @@ public final class ProjectLibrary {
     public internal(set) var globalEnvironment = RequestEnvironment.global()
     /// Why Global loaded incomplete (its file set aside, or its secret values unreadable), if it did.
     public internal(set) var globalEnvironmentIssue: String?
+    /// What scripts set on this Mac over the saved values. Edits of saved values through `mutate` and
+    /// `mutateGlobalEnvironment` drop the matching ones (`ProjectLibrary+CurrentValues.swift`).
+    @ObservationIgnored public let currentValues: CurrentValueStore
 
     @ObservationIgnored let configuration: Configuration
     /// Whether Global's secret values still sit blank because loading could not read them; see
@@ -33,6 +36,8 @@ public final class ProjectLibrary {
         public var defaultProjectsDirectory: URL
         /// The Global environment's file, kept on this Mac rather than in any project.
         public var globalEnvironmentURL: URL
+        /// The values scripts set on this Mac (`CurrentValueStore`).
+        public var currentValuesURL: URL
         public var secretStore: any SecretStore
         public var trasher: any FileTrashing
         /// `nil` disables watching, as tests do.
@@ -42,6 +47,7 @@ public final class ProjectLibrary {
             registryURL: URL,
             defaultProjectsDirectory: URL,
             globalEnvironmentURL: URL,
+            currentValuesURL: URL,
             secretStore: any SecretStore,
             trasher: any FileTrashing,
             monitorFactory: ProjectChangeMonitorFactory?
@@ -49,6 +55,7 @@ public final class ProjectLibrary {
             self.registryURL = registryURL
             self.defaultProjectsDirectory = defaultProjectsDirectory
             self.globalEnvironmentURL = globalEnvironmentURL
+            self.currentValuesURL = currentValuesURL
             self.secretStore = secretStore
             self.trasher = trasher
             self.monitorFactory = monitorFactory
@@ -57,6 +64,7 @@ public final class ProjectLibrary {
 
     public init(configuration: Configuration) {
         self.configuration = configuration
+        currentValues = CurrentValueStore(url: configuration.currentValuesURL, secretStore: configuration.secretStore)
         loadRegistry()
         loadGlobalEnvironment()
     }
@@ -111,7 +119,7 @@ public final class ProjectLibrary {
         saveRegistry()
     }
 
-    /// Moves the project folder to the Trash, removes it from the library, and deletes its secrets.
+    /// Moves the project folder to the Trash, removes it from the library, and deletes its secrets and current values.
     public func deleteProject(_ id: ProjectID) throws {
         guard let project = project(id) else {
             throw ProjectStorageError.projectNotFound
@@ -121,6 +129,7 @@ public final class ProjectLibrary {
             try configuration.trasher.trash(project.url)
         }
         try? configuration.secretStore.setSecrets([:], for: id)
+        currentValues.forget(id)
         removeProject(id)
     }
 
@@ -167,6 +176,7 @@ public final class ProjectLibrary {
         projects[position].status = .loaded(new)
         // The folder no longer references these; a failure here only leaves unused values in the Keychain.
         try? updateSecrets(of: .project(id), storing: [:], deleting: secrets.deleted)
+        resetCurrentValues(old: old.allEnvironments, new: new.allEnvironments) { .environment(id, $0) }
         return result
     }
 
@@ -324,20 +334,8 @@ public final class ProjectLibrary {
         }
     }
 
-    /// One read-modify-write of an account's secrets that touches only the listed keys, so values nobody changed (or
-    /// that a failed Keychain read left blank in memory) are never overwritten. Writes nothing when nothing changes.
     func updateSecrets(of account: SecretAccount, storing values: [String: String], deleting keys: Set<String>) throws {
-        guard !values.isEmpty || !keys.isEmpty else {
-            return
-        }
-        let stored = try configuration.secretStore.secrets(for: account)
-        var updated = stored.merging(values) { _, new in new }
-        for key in keys {
-            updated[key] = nil
-        }
-        if updated != stored {
-            try configuration.secretStore.setSecrets(updated, for: account)
-        }
+        try configuration.secretStore.update(account, storing: values, deleting: keys)
     }
 
     private static func secretValues(in document: ProjectDocument) -> [String: String] {

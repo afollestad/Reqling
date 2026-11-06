@@ -70,6 +70,7 @@ struct LibraryFixture {
             registryURL: directory.file("Support/library.json"),
             defaultProjectsDirectory: directory.file("Projects"),
             globalEnvironmentURL: directory.file("Support/global-environment.json"),
+            currentValuesURL: directory.file("Support/current-values.json"),
             secretStore: secrets,
             trasher: trash,
             monitorFactory: nil

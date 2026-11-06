@@ -240,4 +240,11 @@ enum VariableTarget {
         case .global(let environment), .project(_, let environment): environment
         }
     }
+
+    var currentValueScope: CurrentValueScope {
+        switch self {
+        case .global: .global
+        case .project(let project, let environment): .environment(project, environment.id)
+        }
+    }
 }

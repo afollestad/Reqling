@@ -3,7 +3,8 @@ import MCP
 
 /// Environments and their `{{variables}}`. Variable tools default to the Default environment, whose values every
 /// other environment inherits and overrides by key, and reach Global, which every project inherits beneath Default,
-/// when `environment` names it. Secret values go to the Keychain and are never returned.
+/// when `environment` names it. Secret values go to the Keychain and are never returned. Current values, which scripts
+/// set on this Mac over the saved ones, are listed with the variables and can be reset or saved, never written directly.
 @MainActor
 struct MCPEnvironmentTools {
     let context: MCPToolContext
@@ -11,7 +12,7 @@ struct MCPEnvironmentTools {
     var tools: [MCPTool] {
         [
             listEnvironments, createEnvironment, updateEnvironment, deleteEnvironment, setActiveEnvironment,
-            listVariables, createVariables, updateVariables, deleteVariables
+            listVariables, createVariables, updateVariables, deleteVariables, resetCurrentValues, saveCurrentValues
         ]
     }
 
@@ -132,7 +133,8 @@ struct MCPEnvironmentTools {
         MCPTool(
             "list_variables",
             title: "List variables",
-            description: "An environment's variables. Secret variables show `secret: true` and never their value.",
+            description: "An environment's variables, and the current values scripts set on this Mac over them. Secret ones "
+                + "show `secret: true` and never their value.",
             properties: [
                 "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
@@ -145,21 +147,25 @@ struct MCPEnvironmentTools {
                 guard let projectReference else {
                     throw MCPToolError("`includeAllEnvironments` needs a `project`.")
                 }
-                let (_, document) = try context.document(projectReference)
+                let (project, document) = try context.document(projectReference)
                 let environments = [context.library.globalEnvironment] + document.allEnvironments
                 return .object(["environments": .array(environments.map { environment in
-                    [
+                    let target: VariableTarget = environment.id == RequestEnvironment.globalID
+                        ? .global(environment)
+                        : .project(project.id, environment)
+                    return [
                         "id": .string(environment.id.description),
                         "name": .string(environment.name),
-                        "variables": .array(environment.variables.map(MCPDescriptions.variable))
+                        "variables": .array(environment.variables.map(MCPDescriptions.variable)),
+                        "currentValues": currentValues(of: target)
                     ]
                 })])
             }
-            let environment = try context.variableTarget(project: projectReference, environment: try arguments.optionalString("environment"))
-                .environment
+            let target = try context.variableTarget(project: projectReference, environment: try arguments.optionalString("environment"))
             return .object([
-                "environment": MCPDescriptions.environmentReference(environment),
-                "variables": .array(environment.variables.map(MCPDescriptions.variable))
+                "environment": MCPDescriptions.environmentReference(target.environment),
+                "variables": .array(target.environment.variables.map(MCPDescriptions.variable)),
+                "currentValues": currentValues(of: target)
             ])
         }
     }
@@ -266,6 +272,82 @@ struct MCPEnvironmentTools {
             try changeVariables(of: target) { $0.removeAll { keys.contains($0.key) } }
             return .object(["environment": MCPDescriptions.environmentReference(environment), "deleted": .array(keys.sorted().map(Value.string))])
         }
+    }
+
+    // MARK: - Current values
+
+    private var resetCurrentValues: MCPTool {
+        MCPTool(
+            "reset_current_values",
+            title: "Reset current values",
+            description: "Drops current values scripts set on this Mac in an environment (Default unless named, or Global), so "
+                + "the saved values apply again. Omit `keys` to drop them all.",
+            properties: [
+                "project": MCPSchema.variablesProject,
+                "environment": MCPSchema.variablesEnvironment,
+                "keys": MCPSchema.array(["type": "string"], "The keys to reset; all when omitted.", minItems: 1)
+            ],
+            annotations: .edit
+        ) { arguments in
+            let target = try Self.target(arguments, context: context)
+            let scope = target.currentValueScope
+            let present = Set(context.library.currentValues.values(in: scope).keys)
+            let keys = try arguments.stringArray("keys").map(Set.init) ?? present
+            let missing = keys.subtracting(present).sorted()
+            guard missing.isEmpty else {
+                throw MCPToolError("\(target.environment.name) has no current value \(missing.map { "`\($0)`" }.joined(separator: ", ")).")
+            }
+            context.library.currentValues.reset(keys, in: scope)
+            return .object([
+                "environment": MCPDescriptions.environmentReference(target.environment),
+                "reset": .array(keys.sorted().map(Value.string))
+            ])
+        }
+    }
+
+    private var saveCurrentValues: MCPTool {
+        MCPTool(
+            "save_current_values",
+            title: "Save current values",
+            description: "Makes current values scripts set the saved values of an environment (Default unless named, or Global), "
+                + "secret where they were, then drops them. A value hidden by a script's unset can't be saved; reset it instead.",
+            properties: [
+                "project": MCPSchema.variablesProject,
+                "environment": MCPSchema.variablesEnvironment,
+                "keys": MCPSchema.array(["type": "string"], "The keys to save.", minItems: 1)
+            ],
+            required: ["keys"],
+            annotations: .edit
+        ) { arguments in
+            let target = try Self.target(arguments, context: context)
+            let scope = target.currentValueScope
+            let keys = try arguments.stringArray("keys") ?? []
+            let values = context.library.currentValues.values(in: scope)
+            let unsavable = keys.filter { key in
+                guard case .value? = values[key] else {
+                    return true
+                }
+                return false
+            }
+            guard unsavable.isEmpty else {
+                let names = unsavable.map { "`\($0)`" }.joined(separator: ", ")
+                throw MCPToolError("\(target.environment.name) has no current value to save for \(names).")
+            }
+            for key in keys {
+                try context.describingErrors { try context.library.saveCurrentValue(key, in: scope) }
+            }
+            let saved = try context.variableTarget(project: try arguments.optionalString("project"), environment: target.environment.id.description)
+            return .object([
+                "environment": MCPDescriptions.environmentReference(saved.environment),
+                "variables": .array(saved.environment.variables.filter { keys.contains($0.key) }.map(MCPDescriptions.variable))
+            ])
+        }
+    }
+
+    /// The target's current values, sorted by key; secret ones say so without their value.
+    private func currentValues(of target: VariableTarget) -> Value {
+        let values = context.library.currentValues.values(in: target.currentValueScope)
+        return .array(values.keys.sorted().compactMap { key in values[key].map { MCPDescriptions.currentValue($0, key: key) } })
     }
 
     // MARK: - Helpers

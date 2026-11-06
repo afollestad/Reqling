@@ -1,4 +1,5 @@
-import ReqlingKit
+@testable import ReqlingKit
+import ReqlingTemplating
 import SwiftUI
 import XCTest
 
@@ -19,6 +20,20 @@ extension SnapshotTests {
         }
         let editor = EnvironmentEditorModel(projectID: project.id, app: fixture.model)
         editor.selectedID = editor.globalEnvironment.id
+
+        assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
+    }
+
+    func testEnvironmentEditorCurrentValues() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let staging = try XCTUnwrap(fixture.library.document(project.id)?.environments.first)
+        fixture.library.currentValues.apply([
+            "baseUrl": .value(TemplateVariable(value: "http://localhost:8080")),
+            "token": .value(TemplateVariable(value: "eyJhbGciOi", isSecret: true)),
+            "region": .unset
+        ], in: .environment(project.id, staging.id))
+        let editor = EnvironmentEditorModel(projectID: project.id, app: fixture.model)
+        editor.selectedID = staging.id
 
         assertBothAppearances(EnvironmentEditorSheet(editor: editor), size: CGSize(width: 760, height: 480))
     }

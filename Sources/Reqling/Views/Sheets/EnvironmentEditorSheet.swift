@@ -146,7 +146,10 @@ private struct EnvironmentDetail: View {
                     .foregroundStyle(.orange)
             }
             ScrollView {
-                VariableTable(variables: $editor.selected.variables)
+                VStack(alignment: .leading, spacing: 18) {
+                    VariableTable(variables: $editor.selected.variables)
+                    CurrentValuesSection(editor: editor)
+                }
             }
         }
         .padding(AppMetrics.paneInset)

@@ -48,6 +48,7 @@ extension AppComponent {
                 registryURL: storageProfile.registryURL,
                 defaultProjectsDirectory: storageProfile.projectsDirectory,
                 globalEnvironmentURL: storageProfile.globalEnvironmentURL,
+                currentValuesURL: storageProfile.currentValuesURL,
                 secretStore: secretStore,
                 trasher: trasher,
                 monitorFactory: storageProfile.isEphemeral ? nil : FSEventsProjectMonitor.factory

@@ -67,7 +67,8 @@ final class GRPCCallRecordTests: XCTestCase {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "codec_test", withExtension: "binpb", subdirectory: "Fixtures"))
         let registry = try DescriptorRegistry(descriptorSet: Data(contentsOf: url))
         let method = try XCTUnwrap(registry.method("reqling.test.v1.EchoService/ServerStream"))
-        let resolver = TemplateResolver(scope: VariableScope(global: .global(), document: ProjectDocument(name: "T"), activeEnvironmentID: nil))
+        let scope = VariableScope(global: .global(), document: ProjectDocument(name: "T"), activeEnvironmentID: nil, currentValues: .empty)
+        let resolver = TemplateResolver(scope: scope)
         let endpoint = GRPCEndpoint(
             target: try GRPCTarget(parsing: "localhost:1"), shownTarget: "localhost:1", metadata: [], shownMetadata: [],
             requestedTimeout: nil, defaultTimeout: .seconds(30), verifiesServer: true
