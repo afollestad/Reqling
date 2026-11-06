@@ -28,6 +28,22 @@ extension BodyTreeCoordinator {
         }
     }
 
+    /// The newest of a timeline's `messages` whose fields fit `BodyTreeView.openBudget` rows, in timeline order. A
+    /// message too big for what is left stops the walk, so the open ones are always the newest run of them.
+    func newestWithinOpenBudget(_ messages: [BodyTreeItem]) -> [BodyTreeItem] {
+        var budget = BodyTreeView.openBudget
+        var opening: [BodyTreeItem] = []
+        for item in messages.reversed() where isExpandable(item) {
+            let rows = displayChildren(of: item).count
+            guard rows <= budget else {
+                break
+            }
+            budget -= rows
+            opening.append(item)
+        }
+        return opening.reversed()
+    }
+
     /// Double-clicking a container's row, its `{ 3 keys }` included, opens or closes it as its disclosure triangle does.
     @objc func toggleClickedRow(_ sender: Any?) {
         guard let outline else {

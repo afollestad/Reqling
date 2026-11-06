@@ -21,6 +21,10 @@ struct BodyTreeView: NSViewRepresentable {
     /// disclosure triangle, which expands a whole subtree, stops at it too.
     static let expandBudget = 5_000
 
+    /// A timeline's first show opens its newest messages only until their fields reach this many rows: opening thousands
+    /// of messages at once built tens of thousands of rows, which stalled switching a long stream to Tree.
+    static let openBudget = 2_000
+
     func makeCoordinator() -> BodyTreeCoordinator {
         BodyTreeCoordinator()
     }
@@ -130,11 +134,11 @@ final class BodyTreeCoordinator: NSObject, NSOutlineViewDataSource, NSOutlineVie
         openSingleRoot()
     }
 
-    /// Opens the top-level value of a single document, and every message or event of a timeline, whose fields are what
-    /// it is for; a sequence of documents starts closed.
+    /// Opens the top-level value of a single document, and a timeline's messages or events, whose fields are what it is
+    /// for (the newest, within `BodyTreeView.openBudget`); a sequence of documents starts closed.
     private func openSingleRoot() {
         if case .messages = structure {
-            openMessages(roots)
+            openMessages(newestWithinOpenBudget(roots))
         } else if rootCount == 1, let root = roots.first, isExpandable(root) {
             outline?.expandOne(root)
         }

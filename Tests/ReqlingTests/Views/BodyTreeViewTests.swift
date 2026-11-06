@@ -133,6 +133,31 @@ final class BodyTreeViewTests: XCTestCase {
         XCTAssertEqual(label(try XCTUnwrap(selected.parentNode)), "3: { 1 key }")
     }
 
+    /// A long timeline opens only its newest messages, within the open budget, so showing its tree stays quick; a
+    /// message that arrives later still opens as it lands.
+    func testALongTimelineOpensOnlyItsNewestMessages() throws {
+        let fields = 20
+        let json = "{" + (0..<fields).map { #""k\#($0)": \#($0)"# }.joined(separator: ",") + "}"
+        func message(_ sequence: Int) throws -> MessageTimeline.Message {
+            MessageTimeline.Message(
+                item: TimelineItem(sequence: sequence, offset: 0, byteCount: 1, text: json, header: .event(type: "message", id: nil)),
+                index: try JSONStructureIndex.build(Data(json.utf8))
+            )
+        }
+        let id = UUID()
+        let messages = try (0..<300).map(message)
+
+        coordinator.show(.messages(MessageTimeline(id: id, messages: messages)))
+
+        let opened = coordinator.roots.filter { outline.isItemExpanded($0) }.map(\.range.lowerBound)
+        let fitting = BodyTreeView.openBudget / fields
+        XCTAssertEqual(opened, Array((300 - fitting)..<300), "the newest that fit")
+        XCTAssertEqual(outline.numberOfRows, 300 + fitting * fields)
+
+        coordinator.show(.messages(MessageTimeline(id: id, messages: messages + [try message(300)])))
+        XCTAssertTrue(outline.isItemExpanded(try XCTUnwrap(coordinator.roots.last)))
+    }
+
     /// A streaming call updates its tree in place: new messages append, trimmed ones go, and what was expanded stays.
     func testATimelineUpdatesInPlaceKeepingExpansion() throws {
         func timeline(_ sequences: Range<Int>, id: UUID) throws -> BodyStructure {
