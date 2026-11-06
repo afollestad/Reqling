@@ -61,10 +61,14 @@ let package = Package(
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "MCP", package: "swift-sdk"),
-                "ReqlingGraphQLEngine"
+                "ReqlingGraphQLEngine",
+                "ReqlingTemplating"
             ],
             exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL")
         ),
+        // `{{variable}}` parsing, expansion, and precedence, Foundation only, so the script runner resolves templates
+        // with the same code a run does.
+        .target(name: "ReqlingTemplating", exclude: guidanceFiles(in: "")),
         // GraphQLSwift behind Foundation types, imported implementation-only so its declarations never reach ReqlingKit
         // (`GraphQLEngine`); the feature has the compiler check that nothing public exposes them.
         .target(
@@ -76,6 +80,7 @@ let package = Package(
             name: "Reqling",
             dependencies: [
                 "ReqlingKit",
+                "ReqlingTemplating",
                 .product(name: "NeedleFoundation", package: "needle")
             ],
             exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "ViewModels")
@@ -86,6 +91,7 @@ let package = Package(
             name: "ReqlingKitTests",
             dependencies: [
                 "ReqlingKit",
+                "ReqlingTemplating",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
@@ -112,6 +118,7 @@ let package = Package(
             dependencies: [
                 "Reqling",
                 "ReqlingKit",
+                "ReqlingTemplating",
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
             ],
             exclude: guidanceFiles(in: "Snapshots") + ["Snapshots/__Snapshots__"]

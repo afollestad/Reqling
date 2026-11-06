@@ -58,6 +58,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | --- | --- |
 | `Sources/ReqlingKit` | Everything that isn't UI: the project format, templating, HTTP, gRPC, WebSockets, GraphQL schemas, TLS, the request runner, and the MCP server. Tested without the app. |
 | `Sources/Reqling` | The app: lifecycle, dependency injection, view models, and views |
+| `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
 | `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |
 | `Sources/ReqlingPKCS12Probe` | A helper that opens each PKCS#12 file first, so a file that crashes Apple's importer can't take the app down |
 | `Tools/GraphQLFixtureServer` | A separate package that executes a real schema, for the tests and `graphql-server.sh` |

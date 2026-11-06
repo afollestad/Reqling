@@ -1,5 +1,6 @@
 import AppKit
 import ReqlingKit
+import ReqlingTemplating
 
 /// Completion from the editor's assistant, in a list of its own beside AppKit's: AppKit's shows only plain words,
 /// and suggestions need their kind, type, and description.

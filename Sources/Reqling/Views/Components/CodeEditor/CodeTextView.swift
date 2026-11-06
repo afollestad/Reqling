@@ -1,5 +1,6 @@
 import AppKit
 import ReqlingKit
+import ReqlingTemplating
 
 /// The text view behind `CodeEditor` and `TemplateField`, on TextKit 2.
 ///

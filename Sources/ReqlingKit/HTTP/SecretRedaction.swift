@@ -1,11 +1,12 @@
 import Foundation
+import ReqlingTemplating
 
 /// Masks a run's secret values in text that no masked resolution produced: URLSession and Security error messages,
 /// and the final URL after redirects. It covers each secret as stored and as resolved, in the encodings a URL gives it,
 /// and, for one that reads as a URL or a bare hostname, its host (a TLS error quotes just the host).
 ///
-/// Matching ignores case, since URLs come back with their hosts lower-cased. Values under three characters are left
-/// alone: masking every "42" in a message would garble it while hiding nothing.
+/// Matching ignores case, since URLs come back with their hosts lower-cased. Values shorter than
+/// `VariableLayers.minimumSecretLength` are left alone, as the scripts' leak guard leaves them.
 struct SecretRedaction: Sendable {
     /// Longest first, so a secret inside another is masked whole.
     let values: [String]
@@ -29,8 +30,8 @@ struct SecretRedaction: Sendable {
                 }
             }
         }
-        self.values = values.filter { $0.count >= 3 }.sorted { $0.count > $1.count }
-        self.plainValues = plainValues.filter { $0.count >= 3 }.sorted { $0.count > $1.count }
+        self.values = values.filter { $0.count >= VariableLayers.minimumSecretLength }.sorted { $0.count > $1.count }
+        self.plainValues = plainValues.filter { $0.count >= VariableLayers.minimumSecretLength }.sorted { $0.count > $1.count }
     }
 
     /// `url` with every path segment and query value that decodes to text containing a secret masked whole (the whole

@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingTemplating
 
 /// A GraphQL document read against a schema, for completion at the cursor and hover over a name. Offsets are UTF-16,
 /// as AppKit text views count.

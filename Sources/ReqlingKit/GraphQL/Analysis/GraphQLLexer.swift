@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingTemplating
 
 /// One token of a GraphQL document. Ranges are UTF-16, as AppKit text views count.
 struct GraphQLToken: Hashable, Sendable {

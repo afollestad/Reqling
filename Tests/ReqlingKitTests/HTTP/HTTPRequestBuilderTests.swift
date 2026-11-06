@@ -1,5 +1,6 @@
 import Foundation
 import ReqlingKit
+import ReqlingTemplating
 import Synchronization
 import XCTest
 

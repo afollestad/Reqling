@@ -1,7 +1,6 @@
 ## Templating
 
-These instructions cover `Sources/ReqlingKit/Templating/`: `{{variable}}` parsing, scopes, and resolution.
+These instructions cover `Sources/ReqlingKit/Templating/`: run scopes and resolution over the shared core in `Sources/ReqlingTemplating/AGENTS.md`.
 
-- **`TemplateParser` is the single source of token ranges** for both resolution and the editor's pill drawing, so what is highlighted is exactly what will be substituted. Never add a second tokenizer for display.
 - **Resolve with `masked: true` for anything displayed, stored, or handed to an agent** (previews, summaries, the run history), so secret values never leave the request that needs them. Copy as cURL is the deliberate exception: the user copies it to run it.
-- Scope precedence is one-run overrides, then the active environment, then Default, then Global (`VariableScope`); keep every caller on that initializer rather than assembling scopes by hand.
+- Build every run's scope through `VariableScope`'s environment initializer rather than assembling entries by hand; the order itself lives in `VariableLayers`.

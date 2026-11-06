@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ReqlingTemplating
 
 /// Options for one run, mostly used by agents through MCP.
 public struct RunOptions: Sendable {

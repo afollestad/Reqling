@@ -1,5 +1,6 @@
 import Foundation
 import ReqlingKit
+import ReqlingTemplating
 import Synchronization
 import XCTest
 
@@ -180,7 +181,7 @@ final class TemplateResolverTests: XCTestCase {
 
     /// The cap is on what substitution adds, so a large body with few variables still sends.
     func testTheTemplatesOwnTextDoesNotCountTowardTheCap() {
-        let body = String(repeating: "x", count: TemplateResolver.maximumOutputLength + 1)
+        let body = String(repeating: "x", count: TemplateExpansion.maximumOutputLength + 1)
 
         let resolution = TemplateResolver(scope: VariableScope(), dynamic: fixedDynamic).resolve(body + "{{$randomInt}}")
 

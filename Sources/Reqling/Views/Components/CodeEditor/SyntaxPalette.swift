@@ -1,5 +1,6 @@
 import AppKit
 import ReqlingKit
+import ReqlingTemplating
 import SwiftUI
 
 /// Syntax and variable-token colors. Every color is a dynamic `NSColor` with explicit light and dark values, so
@@ -95,6 +96,7 @@ struct TemplateTokenContext: Equatable {
             switch entry.source {
             case .environment(_, let name): source = name
             case .override: source = "Override"
+            case .script: source = "Script"
             }
             return Entry(displayValue: entry.isSecret ? TemplateResolver.mask : entry.value, sourceName: source)
         }

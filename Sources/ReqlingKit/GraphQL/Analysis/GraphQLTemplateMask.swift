@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingTemplating
 
 /// A document with every `{{template}}` replaced by text GraphQL can parse, of the same UTF-16 length, so a query can
 /// be validated before its variables resolve and every position still lines up with the editor's.
