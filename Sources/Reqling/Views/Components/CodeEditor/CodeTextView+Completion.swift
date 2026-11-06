@@ -5,12 +5,12 @@ import ReqlingTemplating
 /// Completion from the editor's assistant, in a list of its own beside AppKit's: AppKit's shows only plain words,
 /// and suggestions need their kind, type, and description.
 ///
-/// Typing opens it where the assistant has suggestions: a name character, `@`, `$`, `(`, or a space after `:` or
-/// `on`; ⌃Space, ⌥Esc, and F5 open it anywhere, with what fits there (⌃Space only where macOS's input source switcher
-/// leaves it alone). Pastes, undo, and outside changes never open it. While it is open the text view keeps focus: ↑
-/// and ↓ move the highlight, Return and Tab accept, Escape closes it without reaching a sheet's Cancel, and a ⌘
-/// shortcut closes it and runs. `{{` still opens AppKit's list of variables, which wins: the two are never open
-/// together.
+/// Typing opens it where the assistant has suggestions (`CodeEditorAssistant.opensCompletion`; GraphQL's are a name
+/// character, `@`, `$`, `(`, or a space after `:` or `on`); ⌃Space, ⌥Esc, and F5 open it anywhere, with what fits
+/// there (⌃Space only where macOS's input source switcher leaves it alone). Pastes, undo, and outside changes never
+/// open it. While it is open the text view keeps focus: ↑ and ↓ move the highlight, Return and Tab accept, Escape closes
+/// it without reaching a sheet's Cancel, and a ⌘ shortcut closes it and runs. Where the editor shows `{{variables}}`,
+/// `{{` still opens AppKit's list of them, which wins: the two are never open together.
 extension CodeTextView {
     var isShowingAssistantCompletions: Bool {
         assistance.completion != nil
@@ -26,15 +26,15 @@ extension CodeTextView {
             dismissCompletions()
             return
         }
-        if TemplateParser.openTokenRange(in: string as NSString, cursor: selectedRange().location) != nil {
+        if isInTemplateToken {
             dismissCompletions()
             return
         }
-        if let open = assistance.completion, typed.allSatisfy(Self.isNameCharacter) {
+        if let open = assistance.completion, typed.allSatisfy(open.nameCharacters.contains) {
             refreshCompletions(isForced: open.isForced)
         } else {
             dismissCompletions()
-            if Self.opensCompletion(typed, before: selectedRange().location, in: string as NSString) {
+            if assistance.assistant?.opensCompletion(typed, before: selectedRange().location, in: string as NSString) == true {
                 refreshCompletions(isForced: false)
             }
         }
@@ -54,7 +54,7 @@ extension CodeTextView {
             NSSound.beep()
             return
         }
-        guard assistance.assistant != nil, TemplateParser.openTokenRange(in: string as NSString, cursor: selectedRange().location) == nil else {
+        guard assistance.assistant != nil, !isInTemplateToken else {
             super.complete(sender)
             return
         }
@@ -122,7 +122,7 @@ extension CodeTextView {
         let start = completion.replacementRange.location
         let text = string as NSString
         guard selection.length == 0, selection.location >= start, selection.location <= text.length,
-              text.substring(with: NSRange(location: start, length: selection.location - start)).allSatisfy(Self.isNameCharacter) else {
+              text.substring(with: NSRange(location: start, length: selection.location - start)).allSatisfy(completion.nameCharacters.contains) else {
             dismissCompletions()
             return
         }
@@ -172,7 +172,12 @@ extension CodeTextView {
         model.onAccept = { [weak self] item in
             self?.accept(item)
         }
-        assistance.completion = CodeEditorAssistance.Completion(model: model, replacementRange: list.replacementRange, isForced: isForced)
+        assistance.completion = CodeEditorAssistance.Completion(
+            model: model,
+            replacementRange: list.replacementRange,
+            isForced: isForced,
+            nameCharacters: list.nameCharacters
+        )
         if let anchor = screenRect(for: NSRange(location: list.replacementRange.location, length: 0)) {
             assistance.presenter.showCompletions(model, below: anchor, from: self)
         }
@@ -216,7 +221,13 @@ extension CodeTextView {
         NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [.announcement: announcement])
     }
 
-    static func isNameCharacter(_ character: Character) -> Bool {
+    /// Inside an unfinished `{{` where the editor shows variables, whose completion is AppKit's; a script's `{{` is
+    /// literal text.
+    private var isInTemplateToken: Bool {
+        showsTemplateTokens && TemplateParser.openTokenRange(in: string as NSString, cursor: selectedRange().location) != nil
+    }
+
+    nonisolated static func isNameCharacter(_ character: Character) -> Bool {
         character == "_" || (character.isASCII && (character.isLetter || character.isNumber))
     }
 

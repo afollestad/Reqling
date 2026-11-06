@@ -10,7 +10,8 @@ public enum MCPToolCatalog {
     in Reqling's window as they happen and are saved to the project's files, so prefer these tools over editing \
     project files directly. Saved requests are templates: their {{variables}} resolve only when a request runs, \
     against the environment chosen for that run. The Global environment's variables apply to every project, beneath \
-    each project's Default. Secret values are write-only: no tool returns one, and responses and resolved requests \
+    each project's Default. Requests, folders, and projects can carry pre-request and post-response JavaScript; \
+    get_script_reference describes its API. Secret values are write-only: no tool returns one, and responses and resolved requests \
     show them masked. Deleting moves files to the Trash, where Finder can put them back; clearing run history can't \
     be undone.
     """

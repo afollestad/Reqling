@@ -3,16 +3,13 @@ import JavaScriptCore
 import ReqlingScriptProtocol
 
 /// Runs one level's script in its own `JSContext`: evaluates the runtime, then the script wrapped in an async function
-/// (`wrapperPrefix`), so top-level `await` and `return` work as in Postman, then drains its timers until the script
+/// (`ScriptWrapper`), so top-level `await` and `return` work as in Postman, then drains its timers until the script
 /// and every test it started have settled.
 ///
 /// Microtasks need no driving here: JavaScriptCore runs them whenever a call from Swift into JavaScript returns, which
 /// is after the script's evaluation and after every timer callback. A level is done once its script settled and no
 /// test is pending; timers still waiting then are dropped, as a script that wants them awaits them.
 final class ScriptLevelHost {
-    /// On the script's first line, so line numbers stay the script's own; only line 1's columns shift by its length.
-    static let wrapperPrefix = "__rq.runLevel(async function () {"
-
     let index: Int
     let level: ScriptLevelSource
     let context: JSContext
@@ -48,7 +45,7 @@ final class ScriptLevelHost {
                 return ScriptError(name: "Error", message: "Reqling's script runtime failed to load: \(failure.message)")
             }
         }
-        context.evaluateScript(Self.wrapperPrefix + level.source + "\n})", withSourceURL: sourceURL)
+        context.evaluateScript(ScriptWrapper.wrap(level.source), withSourceURL: sourceURL)
         let failure = drain()
         timers.removeAll()
         return failure
@@ -115,7 +112,7 @@ final class ScriptLevelHost {
             name: name,
             message: message,
             line: location?.line,
-            column: location.flatMap { location in location.column.map { location.line == 1 ? max(1, $0 - Self.wrapperPrefix.count) : $0 } },
+            column: location.flatMap { location in location.column.map { ScriptWrapper.column($0, line: location.line) } },
             stack: stack
         )
     }

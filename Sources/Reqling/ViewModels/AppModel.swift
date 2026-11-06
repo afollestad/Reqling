@@ -93,8 +93,10 @@ final class AppModel {
     @ObservationIgnored private var folderAuthSaveTask: Task<Void, Never>?
     /// The selected folder's or project's scripts while its detail pane shows them (`AppModel+Scripts`).
     var containerScripts: ContainerScriptsEditor?
-    /// `tokenContext(for:)`'s memo, per project.
-    @ObservationIgnored private var tokenContexts: [ProjectID: (key: TokenContextKey, value: TemplateTokenContext)] = [:]
+    /// `tokenContext(for:request:)`'s memo, per project and request (`AppModel+TokenContext`).
+    @ObservationIgnored var tokenContexts: [TokenContextID: (key: TokenContextKey, value: TemplateTokenContext)] = [:]
+    /// `scriptSetVariables(in:)`'s memo, per project.
+    @ObservationIgnored var scriptVariableCache: [ProjectID: (key: ScriptVariablesKey, value: [ScriptSetVariable])] = [:]
     @ObservationIgnored private(set) lazy var sidebar = SidebarViewModel(app: self)
 
     @ObservationIgnored let library: ProjectLibrary
@@ -283,28 +285,6 @@ final class AppModel {
         )
     }
 
-    /// What the editors know about the variables in `project`, rebuilt only when Global, its environments, the active
-    /// one, or what scripts set on this Mac change. Every `TemplateField` and `CodeEditor` compares this in
-    /// `updateNSView`, and a request screen re-renders once per frame of a resize, so building a fresh scope per read
-    /// multiplied across every field.
-    func tokenContext(for project: ProjectID) -> TemplateTokenContext {
-        // Read every observable input before consulting the cache, so observation keeps tracking them.
-        let document = library.document(project)
-        let key = TokenContextKey(
-            globalEnvironment: library.globalEnvironment,
-            defaultEnvironment: document?.defaultEnvironment,
-            environments: document?.environments ?? [],
-            activeEnvironmentID: activeEnvironmentID(for: project),
-            currentValuesRevision: library.currentValues.revision
-        )
-        if let cached = tokenContexts[project], cached.key == key {
-            return cached.value
-        }
-        let value = TemplateTokenContext(scope: scope(for: project))
-        tokenContexts[project] = (key, value)
-        return value
-    }
-
     // MARK: - Settings
 
     /// Shows Settings in place of the selection, which it clears so nothing in the sidebar reads as shown. Choosing a
@@ -473,14 +453,4 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .requests: "Defaults for every request; a request's own options override them."
         }
     }
-}
-
-/// Everything `AppModel.tokenContext(for:)` builds from: Global, the project's environments, Default included (the
-/// document stores it apart from the others), and which one is active.
-private struct TokenContextKey: Equatable {
-    let globalEnvironment: RequestEnvironment
-    let defaultEnvironment: RequestEnvironment?
-    let environments: [RequestEnvironment]
-    let activeEnvironmentID: EnvironmentID?
-    let currentValuesRevision: Int
 }

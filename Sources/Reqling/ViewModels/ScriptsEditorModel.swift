@@ -28,11 +28,22 @@ struct ScriptsChainLink: Hashable, Identifiable {
 final class ScriptsEditorModel {
     let projectID: ProjectID
     let owner: ScriptsOwnerID
-    var phase: ScriptPhase = .preRequest
+    var phase: ScriptPhase = .preRequest {
+        didSet {
+            if phase != oldValue {
+                validate(after: nil)
+            }
+        }
+    }
     private(set) var scripts: ScriptSet
     private(set) var runsInheritedScripts: Bool
+    /// The shown script's problems (`ScriptsEditorModel+Assistant`).
+    var diagnostics: CodeDiagnosticSet = .none
     @ObservationIgnored var onChange: (() -> Void)?
-    @ObservationIgnored private unowned let app: AppModel
+    @ObservationIgnored unowned let app: AppModel
+    @ObservationIgnored var responseShape: ScriptJSONShape?
+    @ObservationIgnored var validationTask: Task<Void, Never>?
+    @ObservationIgnored var validationGeneration = 0
 
     init(projectID: ProjectID, owner: ScriptsOwnerID, scripts: ScriptSet, runsInheritedScripts: Bool, app: AppModel) {
         self.projectID = projectID
@@ -40,6 +51,11 @@ final class ScriptsEditorModel {
         self.scripts = scripts
         self.runsInheritedScripts = runsInheritedScripts
         self.app = app
+        validate(after: nil)
+    }
+
+    isolated deinit {
+        validationTask?.cancel()
     }
 
     /// The shown phase's script.
@@ -51,6 +67,7 @@ final class ScriptsEditorModel {
             }
             scripts[phase] = newValue
             onChange?()
+            validate(after: Self.validationDelay)
         }
     }
 
@@ -71,6 +88,7 @@ final class ScriptsEditorModel {
     func show(_ scripts: ScriptSet, runsInheritedScripts: Bool) {
         if scripts != self.scripts {
             self.scripts = scripts
+            validate(after: nil)
         }
         if runsInheritedScripts != self.runsInheritedScripts {
             self.runsInheritedScripts = runsInheritedScripts

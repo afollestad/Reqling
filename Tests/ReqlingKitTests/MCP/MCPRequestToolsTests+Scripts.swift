@@ -63,3 +63,33 @@ extension MCPRequestToolsTests {
         XCTAssertEqual(fixture.storage.trashedNames(), ["ping.json", "ping.pre.js"])
     }
 }
+
+/// What agents learn about the scripts they write.
+@MainActor
+extension MCPRequestToolsTests {
+    func testWritingAScriptReportsItsProblemsAndTheReferenceDescribesTheAPI() async throws {
+        let project = try await fixture.makeProject()
+        let created = try await fixture.success("create_request", [
+            "project": .string(project.description),
+            "name": "Scripted",
+            "http": ["url": "https://api.test"],
+            "scripts": ["preRequest": "rq.response.code\nrq.request.metadata", "postResponse": "rq.test('ok', () => {"]
+        ])
+        let clean = try await fixture.success("create_folder", [
+            "project": .string(project.description),
+            "name": "Clean",
+            "scripts": ["preRequest": "rq.request.metadata.upsert('x', '1')"]
+        ])
+        let reference = try await fixture.success("get_script_reference")
+
+        let problems = try XCTUnwrap(created["scriptProblems"])
+        XCTAssertEqual(problems["preRequest"]?.arrayValue?.map { $0["message"] }, [
+            "rq.response works only in post-response scripts.",
+            "rq.request.metadata applies only to gRPC requests."
+        ])
+        XCTAssertEqual(problems["preRequest"]?.arrayValue?.last?["line"], 2)
+        XCTAssertEqual(problems["postResponse"]?.arrayValue?.first?["severity"], "error")
+        XCTAssertNil(clean["scriptProblems"], "A folder's script runs for every protocol")
+        XCTAssertTrue(reference["reference"]?.stringValue?.contains("### `Reqling`") ?? false)
+    }
+}

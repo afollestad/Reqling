@@ -9,11 +9,11 @@ import XCTest
 /// that run before them.
 @MainActor
 final class ScriptsEditingTests: XCTestCase {
-    private var fixture: AppFixture!
-    private var gate: SleepGate!
-    private var project: ProjectID!
-    private let folder = RequestFolder(name: "Users")
-    private let request = RequestItem(name: "Me", kind: .http(HTTPRequestSpec(url: "https://api.test/me")))
+    var fixture: AppFixture!
+    var gate: SleepGate!
+    var project: ProjectID!
+    let folder = RequestFolder(name: "Users")
+    let request = RequestItem(name: "Me", kind: .http(HTTPRequestSpec(url: "https://api.test/me")))
 
     override func setUp() async throws {
         let gate = SleepGate()
@@ -34,21 +34,21 @@ final class ScriptsEditingTests: XCTestCase {
         fixture = nil
     }
 
-    private var stored: RequestItem? {
+    var stored: RequestItem? {
         fixture.library.document(project)?.request(request.id)
     }
 
-    private func openRequest() throws -> ScriptsEditorModel {
+    func openRequest() throws -> ScriptsEditorModel {
         fixture.model.selection = .node(project, request.id)
         return try XCTUnwrap(fixture.model.editor?.asHTTP?.scriptsEditor)
     }
 
-    private func changeExternally(_ change: (inout ProjectDocument) throws -> Void) throws {
+    func changeExternally(_ change: (inout ProjectDocument) throws -> Void) throws {
         try fixture.library.mutate(project, change)
         fixture.model.libraryDidChange()
     }
 
-    private func releaseAutosave() async {
+    func releaseAutosave() async {
         await waitUntil("the autosave to start waiting") { gate.pendingCount > 0 }
         gate.releaseAll()
     }

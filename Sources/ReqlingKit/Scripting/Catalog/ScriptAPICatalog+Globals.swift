@@ -5,7 +5,7 @@ import ReqlingScriptProtocol
 extension ScriptAPICatalog {
     static let globalMembers: [ScriptMember] = reqlingGlobals + standardGlobals
 
-    private static let reqlingGlobals: [ScriptMember] = {
+    static let reqlingGlobals: [ScriptMember] = {
         let callback = ScriptParameter("callback", .function)
         let delay = ScriptParameter("delay", .number, isOptional: true)
         let id = ScriptParameter("id", .number)

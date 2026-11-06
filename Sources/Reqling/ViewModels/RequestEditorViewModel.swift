@@ -102,7 +102,7 @@ final class RequestEditorViewModel {
     }
 
     var tokenContext: TemplateTokenContext {
-        app.tokenContext(for: projectID)
+        app.tokenContext(for: projectID, request: requestID)
     }
 
     var autoHeaders: [AutoHeader] {

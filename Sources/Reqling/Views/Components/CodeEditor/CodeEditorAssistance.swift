@@ -39,6 +39,7 @@ final class CodeEditorAssistance {
         var replacementRange: NSRange
         /// Opened with ⌃Space, ⌥Esc, or F5: it stays open with nothing typed.
         let isForced: Bool
+        let nameCharacters: CodeCompletionList.NameCharacters
     }
 
     isolated deinit {

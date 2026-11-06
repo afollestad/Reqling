@@ -347,7 +347,7 @@ extension CodeTextViewTests {
         return model
     }
 
-    private func makeAssisted(
+    func makeAssisted(
         text: String,
         delegate: (any NSTextViewDelegate)? = nil
     ) -> (CodeTextView, RecordingPopups) {

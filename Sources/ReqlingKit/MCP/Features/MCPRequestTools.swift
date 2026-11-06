@@ -10,7 +10,7 @@ struct MCPRequestTools {
     var tools: [MCPTool] {
         [
             listRequests, getRequest, createRequest, updateRequest, duplicateRequest, moveRequest, deleteRequest,
-            createFolder, updateFolder, moveFolder, deleteFolder, importCurl, exportCurl
+            createFolder, updateFolder, moveFolder, deleteFolder, importCurl, exportCurl, MCPScripts.referenceTool
         ]
     }
 
@@ -110,7 +110,15 @@ struct MCPRequestTools {
             let parent = try arguments.optionalString("folder").map { try context.folder($0, in: document).id }
             let index = try arguments.optionalInteger("index", in: 0...Int.max)
             try context.mutate(project.id) { try $0.insert(.request(request), into: parent, at: index) }
-            return .object(["request": .object(try MCPDescriptions.request(request, in: try context.document(project.id.description).document))])
+            var result: [String: Value] = [
+                "request": .object(try MCPDescriptions.request(request, in: try context.document(project.id.description).document))
+            ]
+            result["scriptProblems"] = await MCPScripts.problems(
+                arguments,
+                in: request.scripts,
+                protocols: ScriptAnalysisContext.protocols(for: request.kind.name)
+            )
+            return .object(result)
         }
     }
 
@@ -146,9 +154,17 @@ struct MCPRequestTools {
             if let patch = try arguments.optionalObject("spec") {
                 updated.kind = try Self.patched(original.kind, with: .object(patch))
             }
-            let result = updated
-            try context.mutate(project.id) { try $0.updateRequest(original.id) { $0 = result } }
-            return .object(["request": .object(try MCPDescriptions.request(result, in: try context.document(project.id.description).document))])
+            let saved = updated
+            try context.mutate(project.id) { try $0.updateRequest(original.id) { $0 = saved } }
+            var result: [String: Value] = [
+                "request": .object(try MCPDescriptions.request(saved, in: try context.document(project.id.description).document))
+            ]
+            result["scriptProblems"] = await MCPScripts.problems(
+                arguments,
+                in: saved.scripts,
+                protocols: ScriptAnalysisContext.protocols(for: saved.kind.name)
+            )
+            return .object(result)
         }
     }
 

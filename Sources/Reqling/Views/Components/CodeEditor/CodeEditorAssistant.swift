@@ -10,13 +10,38 @@ protocol CodeEditorAssistant: AnyObject {
     func completions(in text: String, cursor: Int) -> CodeCompletionList?
     /// What the text at `offset` is, or nil where there is nothing to say.
     func hover(in text: String, at offset: Int) -> CodeHoverContent?
+    /// Whether typing `typed` just before `cursor` starts something worth suggesting for. GraphQL's rules unless the
+    /// assistant has its own.
+    func opensCompletion(_ typed: String, before cursor: Int, in text: NSString) -> Bool
+}
+
+extension CodeEditorAssistant {
+    func opensCompletion(_ typed: String, before cursor: Int, in text: NSString) -> Bool {
+        CodeTextView.opensCompletion(typed, before: cursor, in: text)
+    }
 }
 
 /// Suggestions for the name at the cursor, already ranked by what is typed there.
 struct CodeCompletionList: Equatable {
+    /// Which characters a name in a list is made of, so typing one narrows the list rather than closing it.
+    enum NameCharacters: Equatable {
+        /// Letters, digits, and `_`.
+        case code
+        /// A `{{variable}}` name inside a string: anything but a brace, a quote, or whitespace.
+        case variableName
+
+        func contains(_ character: Character) -> Bool {
+            switch self {
+            case .code: CodeTextView.isNameCharacter(character)
+            case .variableName: !character.isWhitespace && !"{}\"'`".contains(character)
+            }
+        }
+    }
+
     /// What accepting an item replaces: the whole name being typed, or an empty range at the cursor.
     let replacementRange: NSRange
     let items: [CodeCompletionItem]
+    var nameCharacters: NameCharacters = .code
 }
 
 struct CodeCompletionItem: Equatable, Identifiable {
@@ -52,6 +77,14 @@ enum CodeSymbolKind: Hashable, Sendable {
     case type
     case fragment
     case keyword
+    case namespace
+    case property
+    case method
+    /// A name a script declared itself.
+    case local
+    /// A Reqling variable's name, completed inside a script's string.
+    case scriptVariable
+    case jsonKey
 
     var badge: String {
         switch self {
@@ -64,6 +97,12 @@ enum CodeSymbolKind: Hashable, Sendable {
         case .type: "T"
         case .fragment: "…"
         case .keyword: "K"
+        case .namespace: "N"
+        case .property: "P"
+        case .method: "M"
+        case .local: "L"
+        case .scriptVariable: "V"
+        case .jsonKey: "J"
         }
     }
 
@@ -79,18 +118,24 @@ enum CodeSymbolKind: Hashable, Sendable {
         case .type: "type"
         case .fragment: "fragment"
         case .keyword: "keyword"
+        case .namespace: "object"
+        case .property: "property"
+        case .method: "method"
+        case .local: "local name"
+        case .scriptVariable: "variable"
+        case .jsonKey: "JSON key"
         }
     }
 
     /// System colors, so the badges read in both appearances.
     var tint: Color {
         switch self {
-        case .field, .inputField: Color(nsColor: .systemBlue)
-        case .argument: Color(nsColor: .systemTeal)
-        case .enumValue: Color(nsColor: .systemPurple)
-        case .variable: Color(nsColor: .systemOrange)
+        case .field, .inputField, .property: Color(nsColor: .systemBlue)
+        case .argument, .jsonKey: Color(nsColor: .systemTeal)
+        case .enumValue, .method: Color(nsColor: .systemPurple)
+        case .variable, .scriptVariable, .local: Color(nsColor: .systemOrange)
         case .directive: Color(nsColor: .systemPink)
-        case .type, .fragment: Color(nsColor: .systemGreen)
+        case .type, .fragment, .namespace: Color(nsColor: .systemGreen)
         case .keyword: Color(nsColor: .secondaryLabelColor)
         }
     }

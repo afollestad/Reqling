@@ -50,4 +50,36 @@ extension SnapshotTests {
 
         assertBothAppearances(FolderDetailView(folder: folder, projectID: project.id, model: fixture.model), size: CGSize(width: 820, height: 720))
     }
+
+    /// A script's suggestions: members by kind, a variable name in a string, and a key from the latest response.
+    func testScriptCompletionList() {
+        let model = CodeCompletionModel()
+        model.items = [
+            CodeCompletionItem(id: 0, label: "response", kind: .namespace, detail: "Response", summary: "What came back.",
+                               isDeprecated: false, insertText: "response"),
+            CodeCompletionItem(id: 1, label: "test", kind: .method, detail: "(name, callback) → void", summary: nil,
+                               isDeprecated: false, insertText: "test"),
+            CodeCompletionItem(id: 2, label: "code", kind: .property, detail: "number", summary: nil, isDeprecated: false, insertText: "code"),
+            CodeCompletionItem(id: 3, label: "token", kind: .scriptVariable, detail: nil, summary: nil, isDeprecated: false, insertText: "token"),
+            CodeCompletionItem(id: 4, label: "users", kind: .jsonKey, detail: "array", summary: nil, isDeprecated: false, insertText: "users"),
+            CodeCompletionItem(id: 5, label: "signature", kind: .local, detail: nil, summary: nil, isDeprecated: false, insertText: "signature")
+        ]
+
+        assertBothAppearances(CodeCompletionListView(model: model).padding(8), size: CGSize(width: 396, height: 180))
+    }
+
+    /// A Postman name describes itself and its Reqling equivalent.
+    func testPostmanHoverCard() {
+        let content = CodeHoverCardContent(
+            hover: CodeHoverContent(
+                range: NSRange(location: 3, length: 11),
+                signature: "Postman.environment: PostmanEnvironment",
+                summary: "The active environment's variables.\n\nFor scripts from Postman. Reqling's own is rq.environment.",
+                deprecationReason: nil
+            ),
+            diagnostics: []
+        )
+
+        assertBothAppearances(CodeHoverCard(content: content).padding(8), size: CGSize(width: 340, height: 140))
+    }
 }

@@ -23,3 +23,368 @@ In each phase, the project's script runs first, then each folder's from the oute
 - **Failures.** A failed test, or a post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
 - **Request tab.** Headers, metadata, and query parameters that a pre-request script added or replaced are marked `{}`.
 - **History.** Each run in the history shows its test counts, and the history keeps the newest 512 KB of a run's console.
+
+## Editor help
+
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. Press ⌃Space, ⌥Esc, or F5 to open it anywhere.
+- **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
+- **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of the other phase, or one of another protocol. The problems menu above the script lists them.
+- **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
+
+## API reference
+
+Every name a script can use, as Reqling's editor completes and describes it. A member marked *pre-request only* or *post-response only* works only in that phase, and one marked with a protocol works only for requests of that protocol.
+
+<!-- script-reference:start -->
+
+### Globals
+
+- `rq: Reqling`: Reqling's script API: variables, the request, the response, and tests.
+- `console: Console`: Logs to the response's Tests tab.
+- `crypto: WebCrypto`: Random values, as the Web Crypto API gives them.
+- `btoa(text: string): string`: Base64 of text whose characters are each a byte.
+- `atob(base64: string): string`: Decodes base64 to text with a character per byte.
+- `setTimeout(callback: function, delay?: number): number`: Runs the callback once, after the delay in milliseconds.
+- `setInterval(callback: function, delay?: number): number`: Runs the callback every delay milliseconds.
+- `clearTimeout(id: number): void`: Cancels a timeout.
+- `clearInterval(id: number): void`: Cancels an interval.
+- `require(name: string): any`: Loads `crypto-js` or `lodash`.
+- `CryptoJS: CryptoJS`: crypto-js 4.2.0, loaded on first use.
+- `_: Lodash`: lodash 4.17.21, loaded on first use.
+
+### `Reqling`
+
+Reqling's script API.
+
+- `info: Info`: Where this script runs: its phase, level, request, and environment.
+- `environment: Environment`: The active environment's variables. A value set here is kept on this Mac.
+- `defaultEnvironment: DefaultEnvironment`: The project's Default environment's variables.
+- `globals: Globals`: The Global environment's variables.
+- `variables: Variables`: Every variable as `{{name}}` resolves it; a value set here lasts for this run.
+- `request: Request`: The request as typed. Pre-request scripts can change its headers and query.
+- `response: Response`: What came back. *(post-response only)*
+- `test(name: string, callback: function): void`: Runs a named test; it fails when the callback throws or its promise rejects.
+- `expect(value: any, message?: string): Expectation`: Starts a Chai-style assertion about a value.
+- `crypto: Crypto`: Hashes and HMACs for signing requests.
+
+### `Console`
+
+Logs to the response's Tests tab; objects print as indented JSON.
+
+- `log(values: any): void`: Logs the values, separated by spaces.
+- `info(values: any): void`: Logs the values, separated by spaces.
+- `warn(values: any): void`: Logs the values, separated by spaces.
+- `error(values: any): void`: Logs the values, separated by spaces.
+- `debug(values: any): void`: Logs the values, separated by spaces.
+
+### `WebCrypto`
+
+Random values.
+
+- `getRandomValues(array: object): object`: Fills an integer typed array with random values.
+- `randomUUID(): string`: A random UUID.
+
+### `CryptoJS`
+
+crypto-js 4.2.0. Lists the most used of its members.
+
+- `MD5(message: any): object`: Hashes the message.
+- `SHA1(message: any): object`: Hashes the message.
+- `SHA256(message: any): object`: Hashes the message.
+- `SHA512(message: any): object`: Hashes the message.
+- `HmacSHA1(message: any): object`: Hashes the message.
+- `HmacSHA256(message: any): object`: Hashes the message.
+- `HmacSHA512(message: any): object`: Hashes the message.
+- `enc: object`: Encoders: `Hex`, `Base64`, `Utf8`, and others.
+- `lib: object`: Building blocks, such as `WordArray`.
+- `AES: object`: AES encryption.
+
+### `Lodash`
+
+lodash 4.17.21. Lists the most used of its members.
+
+- `get(values: any): any`: lodash's `get`.
+- `set(values: any): any`: lodash's `set`.
+- `pick(values: any): any`: lodash's `pick`.
+- `omit(values: any): any`: lodash's `omit`.
+- `map(values: any): any`: lodash's `map`.
+- `filter(values: any): any`: lodash's `filter`.
+- `find(values: any): any`: lodash's `find`.
+- `chunk(values: any): any`: lodash's `chunk`.
+- `uniq(values: any): any`: lodash's `uniq`.
+
+### `Info`
+
+Where this script runs.
+
+- `phase: string`: `preRequest` or `postResponse`.
+- `level: string`: Whose script this is: `project`, `folder`, or `request`.
+- `levelName: string`: The project's, folder's, or request's name.
+- `requestName: string`: The name of the request running.
+- `requestId: string`: The ID of the request running.
+- `protocol: string`: `http`, `grpc`, or `websocket`.
+- `environment: string`: The active environment's name.
+- `iteration: number`: Always 0; there for scripts written for runners.
+
+### `Environment`
+
+The active environment's variables: its saved values, with this Mac's current values over them.
+
+- `get(name: string): string | null`: The variable's value, or `undefined`.
+- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
+- `has(name: string): boolean`: Whether the variable has a value.
+- `isSecret(name: string): boolean`: Whether the variable's value is secret.
+- `toObject(): object`: Every variable with its value.
+- `name: string`: The environment's name.
+
+### `DefaultEnvironment`
+
+The project's Default environment's variables.
+
+- `get(name: string): string | null`: The variable's value, or `undefined`.
+- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
+- `has(name: string): boolean`: Whether the variable has a value.
+- `isSecret(name: string): boolean`: Whether the variable's value is secret.
+- `toObject(): object`: Every variable with its value.
+- `name: string`: The environment's name.
+
+### `Globals`
+
+The Global environment's variables, which every project shares.
+
+- `get(name: string): string | null`: The variable's value, or `undefined`.
+- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
+- `has(name: string): boolean`: Whether the variable has a value.
+- `isSecret(name: string): boolean`: Whether the variable's value is secret.
+- `toObject(): object`: Every variable with its value.
+- `name: string`: The environment's name.
+
+### `Variables`
+
+Every variable as `{{name}}` resolves it; values set here last only for this run.
+
+- `get(name: string): string | null`: The variable's value, or `undefined`.
+- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `unset(name: string): void`: Drops a value set earlier in this run.
+- `has(name: string): boolean`: Whether the variable has a value.
+- `isSecret(name: string): boolean`: Whether the variable's value is secret.
+- `toObject(): object`: Every variable with its value.
+- `replaceIn(text: string): string`: Resolves `{{name}}` references as the request will.
+
+### `Request`
+
+The request as typed, `{{variables}}` unresolved.
+
+- `protocol: string`: `http`, `grpc`, or `websocket`.
+- `url: string`: The URL without its query, or a gRPC call's target.
+- `method: string`: The HTTP method. *(HTTP only)*
+- `body: RequestBody | null`: The body as typed. *(HTTP only)*
+- `headers: Rows`: The headers, or a gRPC call's metadata.
+- `query: Rows`: The query parameters. *(HTTP and WebSocket only)*
+- `metadata: Rows`: The call's metadata. *(gRPC only)*
+- `service: string`: The call's service. *(gRPC only)*
+- `rpc: string`: The call's method. *(gRPC only)*
+- `messages: string[]`: The messages it sends, as typed. *(gRPC and WebSocket only)*
+
+### `Response`
+
+What came back: an HTTP response, an event stream, a gRPC call, or a WebSocket connection.
+
+- `code: number`: The HTTP status code. *(post-response, HTTP only)*
+- `code: number | null`: The gRPC status code; 0 is OK. *(post-response, gRPC only)*
+- `code: number | null`: The handshake's HTTP status code. *(post-response, WebSocket only)*
+- `status: string`: The HTTP reason phrase, such as `OK`. *(post-response, HTTP only)*
+- `status: GRPCStatus`: How the call ended. *(post-response, gRPC only)*
+- `headers: ReadonlyRows`: The response's headers, or the handshake's. *(post-response, HTTP and WebSocket only)*
+- `size: number`: The body's size in bytes, as received. *(post-response, HTTP only)*
+- `truncated: boolean`: Whether the body was cut to the 64 MB scripts receive. *(post-response, HTTP only)*
+- `responseTime: number`: How long it took, in milliseconds. *(post-response only)*
+- `text(): string`: The body as text. *(post-response, HTTP only)*
+- `json(): any`: The body, or the last message received, parsed as JSON. *(post-response, HTTP and gRPC only)*
+- `base64(): string`: The body's bytes, base64. *(post-response, HTTP only)*
+- `events: StreamEvent[]`: Every event received, in order. *(post-response, HTTP only)*
+- `omittedEventCount: number`: Events received but not kept. *(post-response, HTTP only)*
+- `end: string`: How the stream or connection ended: `closed`, `stopped`, `limit`, `timedOut`, `refused`, or `failed`. *(post-response, HTTP and WebSocket only)*
+- `metadata: ReadonlyRows`: The call's response metadata. *(post-response, gRPC only)*
+- `trailers: ReadonlyRows`: The call's trailers. *(post-response, gRPC only)*
+- `messages: GRPCMessage[]`: Every message received, in order. *(post-response, gRPC only)*
+- `sentCount: number`: How many messages the call sent. *(post-response, gRPC only)*
+- `receivedCount: number`: How many messages the call received. *(post-response, gRPC only)*
+- `messages: SocketMessage[]`: Every message sent and received, in order. *(post-response, WebSocket only)*
+- `subprotocol: string | null`: The subprotocol the server chose. *(post-response, WebSocket only)*
+- `close: Close | null`: How the connection closed, if it did. *(post-response, WebSocket only)*
+
+### `TestFunction`
+
+Runs a named test.
+
+- `skip(name: string, callback?: function): void`: Reports a test as skipped without running it.
+
+### `Expectation`
+
+A Chai-style assertion: chain words such as `to`, `be`, and `have`, `.not`, `.deep`, and assertions such as `equal`, `include`, and `property`. Lists the most used of its members.
+
+- `to: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `be: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `been: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `is: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `that: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `which: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `and: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `has: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `have: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `with: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `at: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `of: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `same: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `not: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `deep: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `own: Expectation`: Reads on; `not` negates and `deep` compares deeply.
+- `equal(expected: any): Expectation`: Strictly equal, or deeply after `.deep`.
+- `eql(expected: any): Expectation`: Deeply equal.
+- `include(expected: any): Expectation`: Contains the value, substring, or subset.
+- `property(name: string, value?: any): Expectation`: Has the property, with the value when given; chains on to it.
+- `a(type: string): Expectation`: Is of the type: `string`, `array`, `null`, …
+- `above(expected: any): Expectation`: Greater than.
+- `below(expected: any): Expectation`: Less than.
+- `least(expected: any): Expectation`: At least.
+- `most(expected: any): Expectation`: At most.
+- `within(low: number, high: number): Expectation`: In the range.
+- `match(pattern: any): Expectation`: Matches the regular expression.
+- `lengthOf(length: number): Expectation`: Has the length or size.
+- `oneOf(values: any[]): Expectation`: Is one of the values.
+- `keys(names: any): Expectation`: Has exactly the keys.
+- `members(values: any[]): Expectation`: Has the same members.
+- `throw(expected?: any): Expectation`: The function throws.
+- `ok: Expectation`: Asserts as it's read.
+- `true: Expectation`: Asserts as it's read.
+- `false: Expectation`: Asserts as it's read.
+- `null: Expectation`: Asserts as it's read.
+- `undefined: Expectation`: Asserts as it's read.
+- `exist: Expectation`: Asserts as it's read.
+- `empty: Expectation`: Asserts as it's read.
+- `NaN: Expectation`: Asserts as it's read.
+
+### `Crypto`
+
+Hashes and HMACs. Output is hex unless `{ encoding: "base64" }`; input is UTF-8 text unless `{ inputEncoding: "hex" | "base64" }`.
+
+- `md5(data: string, options?: object): string`: The MD5 hash.
+- `sha1(data: string, options?: object): string`: The SHA1 hash.
+- `sha256(data: string, options?: object): string`: The SHA256 hash.
+- `sha384(data: string, options?: object): string`: The SHA384 hash.
+- `sha512(data: string, options?: object): string`: The SHA512 hash.
+- `hmac(algorithm: string, key: string, data: string, options?: object): string`: An HMAC with `md5`, `sha1`, `sha256`, `sha384`, or `sha512`; `{ keyEncoding }` reads the key as hex or base64.
+- `randomUUID(): string`: A random UUID.
+
+### `RequestBody`
+
+An HTTP request's body as typed.
+
+- `mode: string`: `none`, `raw`, `formData`, `urlEncoded`, `binary`, or `graphQL`.
+- `raw: string | null`: The raw body's text.
+- `fields: Row[]`: Form fields; a file field's value is its path.
+- `graphQL: GraphQLBody | null`: A GraphQL body's query, variables, and operation name.
+
+### `Rows`
+
+Headers, query parameters, or metadata. Pre-request scripts can change them for this run.
+
+- `get(name: string): string | null`: The first value with the name, or `undefined`; header names ignore case.
+- `has(name: string): boolean`: Whether an entry has the name.
+- `all(): Row[]`: Every entry, in order.
+- `toObject(): object`: Every entry by name.
+- `upsert(name: string, value: any): void`: Sets the first entry with the name, dropping the others, or adds one. *(pre-request only)*
+- `add(name: string, value: any): void`: Adds an entry. *(pre-request only)*
+- `remove(name: string): void`: Drops every entry with the name. *(pre-request only)*
+
+### `GRPCStatus`
+
+How the call ended.
+
+- `code: number | null`: The status code; 0 is OK.
+- `name: string | null`: The status's canonical name, such as `OK` or `NOT_FOUND`.
+- `message: string | null`: The server's message.
+
+### `ReadonlyRows`
+
+Headers, metadata, or trailers.
+
+- `get(name: string): string | null`: The first value with the name, or `undefined`; header names ignore case.
+- `has(name: string): boolean`: Whether an entry has the name.
+- `all(): Row[]`: Every entry, in order.
+- `toObject(): object`: Every entry by name.
+
+### `StreamEvent`
+
+One event of an event stream.
+
+- `id: string | null`: Its `id:`.
+- `event: string | null`: Its `event:` type.
+- `data: string`: Its data.
+- `retry: number | null`: Its `retry:` delay, in milliseconds.
+- `json(): any`: Its data, parsed as JSON.
+
+### `GRPCMessage`
+
+One message the call received.
+
+- `text(): string`: The message as JSON text.
+- `json(): any`: The message, parsed.
+
+### `SocketMessage`
+
+One message the connection sent or received.
+
+- `direction: string`: `sent` or `received`.
+- `text: string | null`: A text message's text.
+- `isBinary: boolean`: Whether it was a binary message.
+- `base64: string | null`: A binary message's bytes, base64.
+- `json(): any`: A text message, parsed as JSON.
+
+### `Close`
+
+How the connection closed.
+
+- `code: number`: The close code.
+- `reason: string`: The close reason.
+
+### `Row`
+
+One header, query parameter, or metadata entry.
+
+- `name: string`: Its name.
+- `value: string`: Its value, `{{variables}}` unresolved.
+
+### `GraphQLBody`
+
+A GraphQL body.
+
+- `query: string`: The query.
+- `variables: string`: The variables, as JSON text.
+- `operationName: string | null`: The operation to run, when the query has several.
+
+### Postman's `pm`
+
+Scripts from Postman run as they are. Each name works like its Reqling equivalent:
+
+- `pm.test`: `rq.test`
+- `pm.expect`: `rq.expect`
+- `pm.info`: `rq.info`
+- `pm.environment`: `rq.environment`
+- `pm.globals`: `rq.globals`
+- `pm.collectionVariables`: `rq.defaultEnvironment`
+- `pm.variables`: `rq.variables`
+- `pm.request`: `rq.request`
+- `pm.response`: `rq.response`
+- `pm.sendRequest`: not supported, since scripts can't make network calls
+- `pm.cookies`: not supported, since scripts can't read the cookie jar
+- `pm.vault`: not supported, since Reqling keeps secrets as secret variables
+- `pm.iterationData`: not supported, since Reqling has no collection runner
+- `pm.execution`: not supported, since Reqling has no collection runner
+- `pm.visualizer`: not supported, since Reqling shows responses itself
+
+<!-- script-reference:end -->

@@ -72,9 +72,8 @@ struct GraphQLQueryPane: View {
             HStack(spacing: 6) {
                 Text("Query").font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                // The underlines are only drawn; this lists the same problems for keyboard and VoiceOver users.
                 if diagnostics.text == query, !diagnostics.items.isEmpty {
-                    GraphQLProblemsMenu(diagnostics: diagnostics.items, handle: handle)
+                    CodeProblemsMenu(diagnostics: diagnostics.items, handle: handle, subject: "the query")
                 }
             }
             .frame(height: Self.headerHeight)
@@ -136,30 +135,6 @@ private struct GraphQLHelpSample: View {
                         .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.4))
                 )
         }
-    }
-}
-
-/// "2 problems": each one, chosen, selects what it marks.
-private struct GraphQLProblemsMenu: View {
-    let diagnostics: [CodeDiagnostic]
-    let handle: CodeEditorHandle
-
-    var body: some View {
-        let errors = diagnostics.filter { $0.severity == .error }.count
-        let title = "\(diagnostics.count) problem\(diagnostics.count == 1 ? "" : "s")"
-        Menu {
-            ForEach(Array(diagnostics.enumerated()), id: \.offset) { _, diagnostic in
-                Button(diagnostic.message) {
-                    handle.reveal(diagnostic.range)
-                }
-            }
-        } label: {
-            Label(title, systemImage: errors > 0 ? "xmark.octagon" : "exclamationmark.triangle")
-        }
-        .controlSize(.small)
-        .fixedSize()
-        .help("Show a problem in the query")
-        .accessibilityLabel(title)
     }
 }
 

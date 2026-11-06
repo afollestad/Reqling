@@ -11,7 +11,7 @@ struct GRPCEditorTabContent: View {
         if editor.tab == .messages {
             GRPCMessagesEditor(editor: editor)
         } else if editor.tab == .scripts {
-            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly) { link in
+            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly, latestExchange: editor.history.shownExchange) { link in
                 model.openScripts(link, phase: editor.scriptsEditor.phase, in: editor.projectID)
             }
         } else {

@@ -27,7 +27,9 @@ extension MCPRequestTools {
             let parent = try arguments.optionalString("folder").map { try context.folder($0, in: document).id }
             let index = try arguments.optionalInteger("index", in: 0...Int.max)
             try context.mutate(project.id) { try $0.insert(.folder(folder), into: parent, at: index) }
-            return .object(["folder": ["id": .string(folder.id.description), "name": .string(folder.name)]])
+            var result: [String: Value] = ["folder": ["id": .string(folder.id.description), "name": .string(folder.name)]]
+            result["scriptProblems"] = await MCPScripts.problems(arguments, in: folder.scripts, protocols: nil)
+            return .object(result)
         }
     }
 
@@ -62,7 +64,9 @@ extension MCPRequestTools {
                     folder.runsInheritedScripts = inherits
                 }
             }
-            return .object(["folder": ["id": .string(folder.id.description), "name": .string(name ?? folder.name)]])
+            var result: [String: Value] = ["folder": ["id": .string(folder.id.description), "name": .string(name ?? folder.name)]]
+            result["scriptProblems"] = await MCPScripts.problems(arguments, in: scripts, protocols: nil)
+            return .object(result)
         }
     }
 

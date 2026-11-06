@@ -3,18 +3,26 @@ import ReqlingScriptProtocol
 import SwiftUI
 
 /// Edits a request's, folder's, or project's scripts, one phase at a time: whether the owner runs the scripts around
-/// it, which of those run first (each a link to its scripts), and the script itself. Read-only, the phases and links
-/// stay browsable; only the script and the toggle take no edits.
+/// it, which of those run first (each a link to its scripts), and the script itself, with completion, hover, and its
+/// problems (`ScriptsEditorModel+Assistant`). Read-only, the phases and links stay browsable; only the script and the
+/// toggle take no edits.
 struct ScriptsPane: View {
     @Bindable var scripts: ScriptsEditorModel
     let isReadOnly: Bool
+    /// The run whose response `rq.response.json()` completes from; `nil` for a folder's or the project's scripts.
+    var latestExchange: RequestExchange?
     let open: (ScriptsChainLink) -> Void
+    @State private var handle = CodeEditorHandle()
 
     var body: some View {
+        let diagnostics = scripts.diagnostics
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 SectionPicker("Phase", selection: $scripts.phase, options: ScriptPhase.allCases) { $0.title }
                 Spacer(minLength: 0)
+                if diagnostics.text == scripts.source, !diagnostics.items.isEmpty {
+                    CodeProblemsMenu(diagnostics: diagnostics.items, handle: handle, subject: "the script")
+                }
                 if scripts.canInherit {
                     ScriptsPaneInheritToggle(scripts: scripts)
                         .disabled(isReadOnly)
@@ -29,12 +37,18 @@ struct ScriptsPane: View {
                 language: .javascript,
                 placeholder: Self.placeholder(for: scripts.phase),
                 showsTemplateTokens: false,
-                accessibilityLabel: "\(scripts.phase.title) script"
+                accessibilityLabel: "\(scripts.phase.title) script",
+                handle: handle,
+                diagnostics: diagnostics,
+                assistant: scripts
             )
             .editorChrome()
             // A fresh editor per phase, so undo never crosses from one script into the other.
             .id(scripts.phase)
             .disabled(isReadOnly)
+        }
+        .task(id: latestExchange?.id) {
+            await scripts.loadResponseShape(from: latestExchange)
         }
     }
 

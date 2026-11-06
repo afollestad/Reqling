@@ -98,7 +98,11 @@ struct MCPProjectTools {
                     document.auth = auth == .inherit ? .none : auth
                 }
             }
-            return .object(["project": .object(MCPDescriptions.project(try context.project(project.id.description), workspace: context.workspace))])
+            var result: [String: Value] = [
+                "project": .object(MCPDescriptions.project(try context.project(project.id.description), workspace: context.workspace))
+            ]
+            result["scriptProblems"] = await MCPScripts.problems(arguments, in: scripts, protocols: nil)
+            return .object(result)
         }
     }
 

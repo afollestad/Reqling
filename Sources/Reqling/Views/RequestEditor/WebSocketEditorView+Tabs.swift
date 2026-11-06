@@ -48,7 +48,7 @@ struct WebSocketEditorTabContent: View {
             }
             .disabled(editor.isReadOnly)
         case .scripts:
-            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly) { link in
+            ScriptsPane(scripts: editor.scriptsEditor, isReadOnly: editor.isReadOnly, latestExchange: editor.history.shownExchange) { link in
                 model.openScripts(link, phase: editor.scriptsEditor.phase, in: editor.projectID)
             }
         case .options:

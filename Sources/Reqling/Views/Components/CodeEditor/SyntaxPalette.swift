@@ -80,6 +80,8 @@ struct TemplateTokenContext: Equatable {
         /// Already masked for secrets.
         let displayValue: String
         let sourceName: String
+        /// No environment holds it yet: a script sets it, and `sourceName` names that script.
+        var isSetByScript = false
     }
 
     var entries: [String: Entry]
@@ -121,6 +123,9 @@ struct TemplateTokenContext: Equatable {
         case .variable:
             guard let entry = entries[token.name] else {
                 return "“\(token.name)” is not defined in this environment"
+            }
+            if entry.isSetByScript {
+                return "Set by \(entry.sourceName)"
             }
             return "\(entry.displayValue)\nFrom \(entry.sourceName)"
         }

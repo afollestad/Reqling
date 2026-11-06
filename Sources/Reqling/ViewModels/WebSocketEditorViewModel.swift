@@ -106,7 +106,7 @@ final class WebSocketEditorViewModel {
     }
 
     var tokenContext: TemplateTokenContext {
-        app.tokenContext(for: projectID)
+        app.tokenContext(for: projectID, request: requestID)
     }
 
     var isReadOnly: Bool {
