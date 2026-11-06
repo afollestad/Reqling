@@ -34,24 +34,35 @@ struct DetailTitleBar: View {
     }
 }
 
-/// Switches the request between HTTP and gRPC; `AppModel.changeKind(of:in:to:)` asks first when that discards anything.
+/// Switches the request between its protocols; `AppModel.changeKind(of:in:to:)` asks first when that discards anything.
+///
+/// A menu picker takes its widest option's width, which left "HTTP" trailed by room for "WebSocket". So a hidden copy
+/// holding only the shown protocol sets the size, and the real picker fills it.
 private struct RequestProtocolPicker: View {
     let editor: any RequestEditing
     let model: AppModel
 
     var body: some View {
+        picker(of: [editor.kind])
+            .fixedSize()
+            .hidden()
+            .overlay {
+                picker(of: RequestKind.Name.allCases)
+            }
+            .disabled(editor.isReadOnly || editor.isSending)
+            .help(editor.isSending ? "Wait for the request to finish, or cancel it, to change its protocol" : "The protocol this request speaks")
+    }
+
+    private func picker(of kinds: [RequestKind.Name]) -> some View {
         Picker("Protocol", selection: Binding(
             get: { editor.kind },
             set: { model.changeKind(of: editor.requestID, in: editor.projectID, to: $0) }
         )) {
-            ForEach(RequestKind.Name.allCases, id: \.self) { kind in
+            ForEach(kinds, id: \.self) { kind in
                 Text(kind.title)
             }
         }
         .pickerStyle(.menu)
         .labelsHidden()
-        .fixedSize()
-        .disabled(editor.isReadOnly || editor.isSending)
-        .help(editor.isSending ? "Wait for the request to finish, or cancel it, to change its protocol" : "The protocol this request speaks")
     }
 }
