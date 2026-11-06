@@ -138,6 +138,16 @@ struct MessageTimelineView: View {
                     scrollToEnd()
                 }
             }
+            // A run can first draw before it reads as live, which set `follows` from that frame; once it does, it
+            // follows from its end. One that ends while followed shows how it ended.
+            .onChange(of: end.isOpen) { _, isOpen in
+                if isOpen {
+                    follows = true
+                }
+                if follows {
+                    scrollToEnd()
+                }
+            }
     }
 
     private static let endID = "end"
