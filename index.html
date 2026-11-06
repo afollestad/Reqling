@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Reqling</title>
     <meta name="description"
-        content="Reqling is a native macOS client for HTTP, GraphQL, and gRPC APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
+        content="Reqling is a native macOS client for HTTP, GraphQL, gRPC, and WebSocket APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
 
     <meta name="theme-color" content="#fbf7fa" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#130d16" media="(prefers-color-scheme: dark)">
@@ -15,7 +15,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://reqling.af.codes">
     <meta property="og:description"
-        content="A native macOS client for HTTP, GraphQL, and gRPC APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
+        content="A native macOS client for HTTP, GraphQL, gRPC, and WebSocket APIs: keep your requests as plain files in your repository, and send them yourself or through your AI agent.">
     <!-- Rendered from og-image/ on the dark theme; re-render it whenever the
          name, tagline, dark colors, flight paths, icon or the dark request
          screenshot change (AGENTS.md). -->
@@ -105,8 +105,8 @@
 
             <h1>Reqling</h1>
             <p class="tagline">
-                A small, native Mac client for HTTP, GraphQL, and gRPC APIs. Keep your requests in your repository, and send
-                them yourself or through your AI agent.
+                A small, native Mac client for HTTP, GraphQL, gRPC, and WebSocket APIs. Keep your requests in your
+                repository, and send them yourself or through your AI agent.
             </p>
 
             <div class="cta-row">
@@ -240,6 +240,43 @@
                     media="(prefers-color-scheme: dark)">
                 <img class="screenshot" src="images/grpc-light.webp"
                     alt="The Chat gRPC request, a bidirectional stream to acme.greeter.v1.Greeter over TLS with its schema from greeter.binpb, above a timeline of two messages sent and two greetings received, ending OK in 48 ms."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
+    <section class="section-feature section-centered" id="events">
+        <div class="container">
+            <p class="chip">Event streams</p>
+            <h2>Watch events as they arrive</h2>
+            <p class="feature-copy">
+                A <code>text/event-stream</code> response stays open and lists each event with its type, ID, and time,
+                its JSON opened to its fields. A GET stream reconnects with <code>Last-Event-ID</code>, as a browser's
+                would.
+            </p>
+            <picture>
+                <source srcset="images/events-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/events-light.webp"
+                    alt="The Order updates request in Acme API's Live folder, a GET to {{baseUrl}}/orders/stream?status=open with an Accept: text/event-stream header, above its stopped 200 OK stream: an order.created event and two order.updated events, with IDs 1041 to 1043, each opened to its fields."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
+    <section class="section-feature section-centered" id="websockets">
+        <div class="container">
+            <p class="chip">WebSockets</p>
+            <h2>Keep the conversation going</h2>
+            <p class="feature-copy">
+                Save the messages a connection opens with, sent in order, then send more while it's live. Text and
+                binary go both ways on one timeline, with pings, pongs, and close codes.
+            </p>
+            <picture>
+                <source srcset="images/websocket-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/websocket-light.webp"
+                    alt="The Support chat WebSocket request to wss://api.acme.dev/support, with an auth message sending {{token}} on connect and a saved “Where's order 1041?” to send by hand. Below, its connection over the chat.v2 subprotocol closed with 1000 Normal Closure after 18.31 s, its timeline showing the auth message with the token masked, a chat with Ada about order 1041, a ping from the server, and both close frames."
                     width="1920" height="1248" loading="lazy" decoding="async">
             </picture>
         </div>
