@@ -6,7 +6,7 @@ import ReqlingScriptProtocol
 public struct ScriptAPICatalog: Sendable {
     public static let standard = ScriptAPICatalog(
         globals: Self.globalMembers,
-        types: Self.reqlingTypes + Self.responseTypes + Self.postmanTypes + Self.libraryTypes
+        types: Self.reqlingTypes + Self.cookieTypes + Self.responseTypes + Self.postmanTypes + Self.libraryTypes
     )
 
     /// What a script names without a receiver.
@@ -276,4 +276,6 @@ extension Set where Element == ScriptResponseKind {
     /// HTTP's request members, which an event stream's request shares.
     static let http: ScriptProtocols = [.http, .eventStream]
     static let withQuery: ScriptProtocols = [.http, .eventStream, .webSocket]
+    /// Requests sent to a URL, whose cookies `rq.cookies` reads; a gRPC call has none.
+    static let withCookies: ScriptProtocols = [.http, .eventStream, .webSocket]
 }

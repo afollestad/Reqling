@@ -17,6 +17,7 @@ extension ScriptLevelHost {
         installRequest(on: native)
         installResponse(on: native)
         installCrypto(on: native)
+        installCookies(on: native)
         installRuntime(on: native)
         context.setObject(native, forKeyedSubscript: "__native" as NSString)
     }
@@ -246,7 +247,7 @@ extension ScriptLevelHost {
     }
 
     /// The string `body` returns, or `undefined` after throwing what it threw into the script.
-    private func attempt(_ body: () throws(ScriptFailure) -> String) -> JSValue {
+    func attempt(_ body: () throws(ScriptFailure) -> String) -> JSValue {
         do {
             return JSValue(object: try body(), in: context)
         } catch {
@@ -260,7 +261,7 @@ extension ScriptLevelHost {
         context.exception = JSValue(newErrorFromMessage: message, in: context)
     }
 
-    private func set(_ native: JSValue, _ name: String, _ block: Any) {
+    func set(_ native: JSValue, _ name: String, _ block: Any) {
         native.setObject(block, forKeyedSubscript: name as NSString)
     }
 }

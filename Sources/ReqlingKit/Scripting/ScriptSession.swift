@@ -6,9 +6,10 @@ import ReqlingTemplating
 /// state the phases share — the variables as scripts left them, the request changes a pre-request script made, and
 /// the report. The only interpreter of the helper's events.
 ///
-/// Values scripts set for an environment or Global are committed to `CurrentValueStore` after each phase, whatever
-/// its outcome, so what a script set before it threw, timed out, or was stopped still lands. A preview, which only
-/// shows what a request would send, commits nothing.
+/// Values scripts set for an environment or Global, and the cookies they set or remove, are committed after each phase
+/// (to `CurrentValueStore` and the project's jar), whatever its outcome, so what a script set before it threw, timed
+/// out, or was stopped still lands. Pre-request cookies so land before the request is prepared, and URLSession sends
+/// them. A preview, which only shows what a request would send, commits nothing.
 @MainActor
 final class ScriptSession {
     enum Mode {
@@ -48,6 +49,9 @@ final class ScriptSession {
     /// run, which masking covers even after a later `unset` hides it from the layers.
     private(set) var secretValues: Set<String> = []
     private var pendingWrites: [VariableWrite] = []
+    private var pendingCookieWrites: [ScriptCookieWrite] = []
+    /// The project's jar, through `RequestRunner.cookieJar(for:creating:)`; `creating` only to commit.
+    private let cookieJar: @MainActor (_ creating: Bool) -> ProjectCookieJar?
 
     init(
         project: ProjectID,
@@ -59,9 +63,11 @@ final class ScriptSession {
         secretSink: ScriptSecretSink?,
         iteration: Int = 0,
         iterationCount: Int = 1,
-        carriedSecrets: Set<String> = []
+        carriedSecrets: Set<String> = [],
+        cookieJar: @escaping @MainActor (_ creating: Bool) -> ProjectCookieJar?
     ) {
         self.project = project
+        self.cookieJar = cookieJar
         self.item = item
         self.mode = mode
         self.environments = environments
@@ -118,23 +124,7 @@ final class ScriptSession {
         guard let phaseLevels = levels[phase], !phaseLevels.isEmpty else {
             return .finished
         }
-        let input = ScriptRunnerInput(
-            phase: phase,
-            levels: phaseLevels,
-            variables: layers,
-            info: ScriptRunInfo(
-                requestName: item.name,
-                requestID: item.id.description,
-                protocolName: item.kind.name.rawValue,
-                environmentName: environments.active?.name ?? environments.defaultEnvironment.name,
-                defaultEnvironmentName: environments.defaultEnvironment.name,
-                iteration: iteration,
-                iterationCount: iterationCount
-            ),
-            request: ScriptInputBuilder.request(kind),
-            response: response?.snapshot,
-            runtimeDirectory: ""
-        )
+        let input = input(phase, levels: phaseLevels, response: response?.snapshot)
         let execution = runner.run(input, blobs: response?.blobs ?? [], timeLimit: timeLimit)
         var phaseReport = ScriptPhaseReport(phase: phase, levels: levelReports(phase))
         await withTaskCancellationHandler {
@@ -167,12 +157,21 @@ final class ScriptSession {
         return outcome
     }
 
-    /// Stores what the last phase set for an environment or Global as this Mac's current values. Writes for a project
-    /// or environment deleted meanwhile are dropped, so a run can't bring them back.
+    /// Stores what the last phase set for an environment or Global as this Mac's current values, and applies the
+    /// cookies it set or removed to the project's jar. Writes for a project or environment deleted meanwhile are
+    /// dropped, so a run can't bring them back.
     func commit(to library: ProjectLibrary) {
         let writes = pendingWrites
+        let cookieWrites = pendingCookieWrites
         pendingWrites = []
-        guard mode == .run, !writes.isEmpty, let document = library.document(project) else {
+        pendingCookieWrites = []
+        guard mode == .run else {
+            return
+        }
+        if !cookieWrites.isEmpty {
+            cookieJar(true)?.apply(cookieWrites)
+        }
+        guard !writes.isEmpty, let document = library.document(project) else {
             return
         }
         var changes: [CurrentValueScope: [String: CurrentVariable?]] = [:]
@@ -219,6 +218,29 @@ final class ScriptSession {
         return masked
     }
 
+    /// What the helper runs for `phase`, as the session stands now.
+    private func input(_ phase: ScriptPhase, levels: [ScriptLevelSource], response: ScriptResponseSnapshot?) -> ScriptRunnerInput {
+        ScriptRunnerInput(
+            phase: phase,
+            levels: levels,
+            variables: layers,
+            info: ScriptRunInfo(
+                requestName: item.name,
+                requestID: item.id.description,
+                protocolName: item.kind.name.rawValue,
+                environmentName: environments.active?.name ?? environments.defaultEnvironment.name,
+                defaultEnvironmentName: environments.defaultEnvironment.name,
+                iteration: iteration,
+                iterationCount: iterationCount
+            ),
+            request: ScriptInputBuilder.request(kind),
+            response: response,
+            // Taken now: after the request, the jar already holds its response's `Set-Cookie`s.
+            cookies: cookieJar(false)?.cookies(in: nil) ?? [],
+            runtimeDirectory: ""
+        )
+    }
+
     private func apply(_ event: ScriptRunnerEvent, in phase: ScriptPhase, to phaseReport: inout ScriptPhaseReport) {
         switch event {
         case .variable(let write):
@@ -237,6 +259,15 @@ final class ScriptSession {
             ))
         case .request(let change) where phase == .preRequest:
             changes.append(change)
+        case .cookie(let write) where phaseReport.cookieChanges.count < ScriptLimits.standard.cookieWrites:
+            pendingCookieWrites.append(write)
+            let identity = write.identity
+            phaseReport.cookieChanges.append(ScriptCookieChange(
+                name: identity.name,
+                domain: identity.domain,
+                path: identity.path,
+                isRemoved: write.isRemoval
+            ))
         case .console(let level, let severity, let text) where phaseReport.console.count <= ScriptLimits.standard.consoleEntries:
             phaseReport.console.append(ScriptConsoleEntry(level: level, severity: severity, text: text))
         case .test(let level, let name, let result, let message) where phaseReport.levels.indices.contains(level):

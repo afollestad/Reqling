@@ -172,7 +172,8 @@ public final class HTTPExecutor: Sendable {
     }
 
     /// The project's cookie jar, which WebSocket handshakes read and fill too (`WebSocketExecutor`), so a session
-    /// cookie from an HTTP login carries into a socket opened in the same project.
+    /// cookie from an HTTP login carries into a socket opened in the same project. Scripts and agents change it through
+    /// `RequestRunner.cookieJar(for:creating:)`.
     var cookies: HTTPCookieStorage? {
         pool.cookies
     }

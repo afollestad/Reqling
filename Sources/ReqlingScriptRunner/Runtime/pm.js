@@ -160,6 +160,63 @@
     });
   }
 
+  /// Postman's jar calls back with `(error, result)`; here, before the call returns. A callback that throws is never
+  /// called a second time with its own error, and a failure without a callback throws.
+  function settle(callback, body) {
+    let result;
+    try {
+      result = body();
+    } catch (error) {
+      if (typeof callback !== 'function') {
+        throw error;
+      }
+      callback(error);
+      return;
+    }
+    if (typeof callback === 'function') {
+      callback(null, result);
+    }
+  }
+
+  const postmanCookieKeys = ['name', 'value', 'domain', 'path', 'expires', 'maxAge', 'secure', 'httpOnly', 'sameSite'];
+
+  /// Postman's `{ name, value, ...options }` as `rq.cookies`' name, value, and options; `maxAge`, in seconds, wins over
+  /// `expires`, as it does in a `Set-Cookie`.
+  function cookieFromObject(cookie) {
+    const options = {};
+    for (const key of Object.keys(cookie)) {
+      if (!postmanCookieKeys.includes(key)) {
+        fail(`pm.cookies.jar().set takes ${postmanCookieKeys.join(', ')}, not "${key}".`);
+      }
+      if (!['name', 'value', 'maxAge'].includes(key)) {
+        options[key] = cookie[key];
+      }
+    }
+    if (cookie.maxAge !== undefined && cookie.maxAge !== null) {
+      options.expires = Date.now() + Number(cookie.maxAge) * 1000;
+    }
+    return [cookie.name, cookie.value, options];
+  }
+
+  function setCookie(url, name, value, options) {
+    const scope = rq.cookies.for(url);
+    scope.set(name, value, options);
+    return scope.all().find((cookie) => cookie.name === String(name));
+  }
+
+  const cookieJar = Object.freeze({
+    get: (url, name, callback) => settle(callback, () => rq.cookies.for(url).get(name)),
+    getAll: (url, callback) => settle(callback, () => rq.cookies.for(url).all()),
+    set(url, name, value, callback) {
+      if (name !== null && typeof name === 'object') {
+        return settle(value, () => setCookie(url, ...cookieFromObject(name)));
+      }
+      return settle(callback, () => setCookie(url, name, value));
+    },
+    unset: (url, name, callback) => settle(callback, () => rq.cookies.for(url).remove(name)),
+    clear: (url, callback) => settle(callback, () => rq.cookies.for(url).clear()),
+  });
+
   let request;
   let response;
   const test = (name, callback) => rq.test(name, callback);
@@ -180,7 +237,12 @@
     collectionVariables: variableScope(rq.defaultEnvironment),
     variables: variableScope(rq.variables, { replaceIn: (text) => rq.variables.replaceIn(text) }),
     sendRequest: unsupported('pm.sendRequest', 'scripts can\'t make network calls'),
-    cookies: Object.freeze({ get: unsupported('pm.cookies'), has: unsupported('pm.cookies'), toObject: unsupported('pm.cookies') }),
+    cookies: Object.freeze({
+      get: (name) => rq.cookies.get(name),
+      has: (name) => rq.cookies.has(name),
+      toObject: () => rq.cookies.toObject(),
+      jar: () => cookieJar,
+    }),
     vault: Object.freeze({ get: unsupported('pm.vault'), set: unsupported('pm.vault'), unset: unsupported('pm.vault') }),
     iterationData: Object.freeze({
       get: (key) => rq.iterationData.get(key),

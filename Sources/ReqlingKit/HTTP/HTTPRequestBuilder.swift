@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// App-wide request defaults from Settings → Requests, applied where a request's own options are unset.
 public struct HTTPRequestDefaults: Hashable, Sendable {
@@ -326,15 +327,10 @@ public enum HTTPRequestBuilder {
     }
 
     private static func buildURL(_ resolved: String, query: [(String, String)]) throws(HTTPBuildError) -> URL {
-        var text = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
+        guard !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw .invalidURL("")
         }
-        if !text.contains("://") {
-            text = "http://\(text)"
-        }
-        guard var components = URLComponents(string: text) ?? URLComponents(string: HTTPEncoding.lenientURL(text)),
-              components.host?.isEmpty == false else {
+        guard var components = RequestURLText.components(resolved) else {
             throw .invalidURL(resolved)
         }
         if !query.isEmpty {

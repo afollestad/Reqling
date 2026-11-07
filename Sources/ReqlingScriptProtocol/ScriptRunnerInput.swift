@@ -1,12 +1,12 @@
 import ReqlingTemplating
 
 /// Everything one launch of `ReqlingScriptRunner` runs: one phase of one request's scripts, outermost level first, with
-/// the variables, request, and (after the request) response they see. It travels as the first frame on the helper's
+/// the variables, cookies, request, and (after the request) response they see. It travels as the first frame on the helper's
 /// standard input (`ScriptFraming`); bodies follow as raw frames that `ScriptBlob` points at, so a large response is
 /// never base64'd into the JSON.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 2
+    public static let currentProtocolVersion = 3
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
@@ -16,6 +16,8 @@ public struct ScriptRunnerInput: Codable, Sendable {
     public var request: ScriptRequestSnapshot
     /// `nil` before the request.
     public var response: ScriptResponseSnapshot?
+    /// The project's whole cookie jar as the phase starts: after the request, with its response's `Set-Cookie`s stored.
+    public var cookies: [ScriptCookie]
     /// The folder holding `runtime.js` and the vendored libraries.
     public var runtimeDirectory: String
     public var limits: ScriptLimits
@@ -27,6 +29,7 @@ public struct ScriptRunnerInput: Codable, Sendable {
         info: ScriptRunInfo,
         request: ScriptRequestSnapshot,
         response: ScriptResponseSnapshot? = nil,
+        cookies: [ScriptCookie] = [],
         runtimeDirectory: String,
         limits: ScriptLimits = .standard
     ) {
@@ -37,6 +40,7 @@ public struct ScriptRunnerInput: Codable, Sendable {
         self.info = info
         self.request = request
         self.response = response
+        self.cookies = cookies
         self.runtimeDirectory = runtimeDirectory
         self.limits = limits
     }

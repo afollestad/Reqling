@@ -58,6 +58,7 @@ extension ScriptAPICatalog {
         .property("iterationData", .named("IterationData"), "This iteration's row of a folder or project run's data file."),
         .property("execution", .named("Execution"), "Skips this request, or picks what a folder or project run runs next."),
         .property("request", .named("Request"), "The request as typed. Pre-request scripts can change its headers and query."),
+        .property("cookies", .named("RequestCookies"), "The project's cookies for this request's URL, or for any other through `for(…)`."),
         .property("response", .named("Response"), "What came back.", phases: .post),
         .method("test", [ScriptParameter("name", .string), ScriptParameter("callback", .function)], returns: .void,
                 "Runs a named test; it fails when the callback throws or its promise rejects.", functionType: "TestFunction"),

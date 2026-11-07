@@ -1,8 +1,9 @@
 import Foundation
 @testable import ReqlingKit
+import ReqlingScriptProtocol
 import XCTest
 
-/// Runs recorded before scripts existed still decode, without a report or test counts.
+/// Runs recorded before scripts existed, or before they could change cookies, still decode.
 final class RunHistoryCompatibilityTests: XCTestCase {
     func testAnExchangeAndSummaryWithoutScriptFieldsDecode() throws {
         let exchange = RequestExchange(
@@ -21,6 +22,22 @@ final class RunHistoryCompatibilityTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RequestExchange.self, from: JSONSerialization.data(withJSONObject: exchangeJSON ?? [:]))
         XCTAssertNil(decoded.scriptReport)
         XCTAssertEqual(try JSONDecoder().decode(RunSummary.self, from: JSONSerialization.data(withJSONObject: summaryJSON ?? [:])).tests, nil)
+    }
+
+    func testAScriptReportFromBeforeCookieChangesDecodes() throws {
+        let report = ScriptPhaseReport(
+            phase: .postResponse,
+            variableChanges: [ScriptVariableChange(scope: .environment, key: "token", isUnset: false, isSecret: true)],
+            cookieChanges: [ScriptCookieChange(name: "session", domain: "example.com", path: "/", isRemoved: true)]
+        )
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
+        XCTAssertNotNil(json["cookieChanges"])
+        json["cookieChanges"] = nil
+
+        let old = try JSONDecoder().decode(ScriptPhaseReport.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(old.cookieChanges, [])
+        XCTAssertEqual(old.variableChanges, report.variableChanges)
+        XCTAssertEqual(try JSONDecoder().decode(ScriptPhaseReport.self, from: JSONEncoder().encode(report)), report)
     }
 
     func testTheHistoryKeepsOnlyTheNewestConsoleOfARun() throws {

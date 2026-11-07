@@ -20,7 +20,7 @@ In each phase, the project's script runs first, then each folder's from the oute
 
 - **Pre-request** scripts run before the request is resolved, so they can set the variables and headers it uses. If one throws or runs past its time limit, the request isn't sent.
 - **Post-response** scripts run once the response arrives, or once an event stream, gRPC call, or WebSocket connection ends, including when you stop it. A request that gets no response, such as one that can't connect, runs none.
-- **Previews.** Copy as cURL, GraphQL introspection, and gRPC reflection run pre-request scripts too, so they send what a run would. Nothing those scripts set is kept, and a cached schema runs none.
+- **Previews.** Copy as cURL, GraphQL introspection, and gRPC reflection run pre-request scripts too, so they send what a run would. Nothing those scripts set is kept, cookies included, and a cached schema runs none.
 
 ## Writing scripts
 
@@ -55,6 +55,32 @@ rq.test("returns the user", () => {
 - **Partial runs.** Values a script sets before it throws or is stopped are kept.
 - **Folder and project runs** carry `rq.variables` values from one request to the next within an iteration, and give scripts `rq.info.iteration` and a data file's row as `rq.iterationData` ([Running folders and projects](running-folders.md)).
 
+## Cookies
+
+Each project has its own cookie jar, which its HTTP requests, GraphQL introspection, and WebSocket handshakes share. It lives in memory until Reqling quits. Scripts read and change it through `rq.cookies`:
+
+```js
+// Post-response, on a login: test the session cookie the server set.
+rq.test("logged in", () => rq.expect(rq.cookies.get("session")).to.be.a("string"))
+
+// Pre-request: send a CSRF cookie with this request and every request after it.
+rq.cookies.set("csrf", rq.environment.get("csrfToken"), { secure: true })
+
+// Another URL, or every cookie of a domain.
+rq.cookies.for("https://auth.example.com/login").remove("sid")
+rq.cookies.for("example.com").clear()
+```
+
+- **Which cookies.** `rq.cookies` holds the cookies that go to the request's URL as it's sent, `{{variables}}` resolved. `rq.cookies.for(target)` takes another URL, or a bare domain such as `example.com` for every cookie of that host and its parent domains, whatever their path or `Secure` flag. `localhost:8080` and `example.com/api` are URLs.
+- **When changes land.** A pre-request script's changes go out with the request, and a post-response script finds the response's `Set-Cookie`s already stored. Every change stays for the requests after it, including those made before a script throws or is stopped.
+- **Setting.** `set(name, value)` makes a cookie for path `/` and the URL's host alone, lasting until Reqling quits. Options change that: `path`, `domain` (the host or a parent domain, so its subdomains get the cookie too), `expires` (a Date, a date string, or milliseconds; one already past removes the cookie, and one more than 400 days out is cut to 400 days, as browsers do), `secure`, `httpOnly`, and `sameSite`.
+- **Removing.** `remove(name)` and `clear()` act on what their scope covers. On a bare domain, that includes cookies set for its parent domains, which sibling hosts share.
+- **gRPC** calls go to no URL, so their scripts reach the jar only through `rq.cookies.for(…)`.
+- **A typed `Cookie` header** stands in for the jar on that request: the jar's cookies don't go with it, and its response's `Set-Cookie`s aren't stored, so read those from `rq.response.headers`. A script's changes still land in the jar for the requests after it.
+- **Previews** keep no cookie a script sets, so GraphQL introspection sends the jar as it was.
+- **Postman.** `pm.cookies` reads the request's cookies, and `pm.cookies.jar()` reaches any URL's; its callbacks run before the call returns.
+- **History** lists which cookies scripts set or removed, never their values. A cookie's value that a script prints isn't masked.
+
 ## Results
 
 - **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON.
@@ -73,7 +99,7 @@ rq.test("returns the user", () => {
 
 ## Scripts from Postman
 
-Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.cookies`, `pm.vault`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
+Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.vault`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
 
 ## Trust
 
@@ -89,7 +115,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 
 - **Built in:** `rq.crypto` for MD5, SHA, and HMAC digests, `btoa` and `atob`, `crypto.getRandomValues` and `crypto.randomUUID`, `console`, `setTimeout`, and `setInterval`.
 - **Libraries:** crypto-js as `CryptoJS` and lodash as `_`, also through `require("crypto-js")` and `require("lodash")`.
-- **Not available:** network calls, files, and the cookie jar.
+- **Not available:** network calls and files.
 - **Time limit.** Each phase may run for 10 seconds by default; change it in **Settings ▸ Requests**. Scripts run in a separate process, which Reqling stops at the limit.
 - **Responses** reach scripts whole, up to 64 MB.
 
@@ -126,6 +152,7 @@ Reqling's script API.
 - `iterationData: IterationData`: This iteration's row of a folder or project run's data file.
 - `execution: Execution`: Skips this request, or picks what a folder or project run runs next.
 - `request: Request`: The request as typed. Pre-request scripts can change its headers and query.
+- `cookies: RequestCookies`: The project's cookies for this request's URL, or for any other through `for(…)`.
 - `response: Response`: What came back. *(post-response only)*
 - `test(name: string, callback: function): void`: Runs a named test; it fails when the callback throws or its promise rejects.
 - `expect(value: any, message?: string): Expectation`: Starts a Chai-style assertion about a value.
@@ -269,6 +296,19 @@ The request as typed, `{{variables}}` unresolved.
 - `rpc: string`: The call's method. *(gRPC only)*
 - `messages: string[]`: The messages it sends, as typed. *(gRPC and WebSocket only)*
 
+### `RequestCookies`
+
+The project's cookies that go to this request's URL. Pre-request changes go out with the request, and every change stays in the project's jar until Reqling quits.
+
+- `get(name: string): string | null`: The value of the first cookie with the name, or `undefined`. *(HTTP and WebSocket only)*
+- `has(name: string): boolean`: Whether a cookie has the name. *(HTTP and WebSocket only)*
+- `all(): Cookie[]`: Every cookie, the most specific first. *(HTTP and WebSocket only)*
+- `toObject(): object`: Every cookie's value by name. *(HTTP and WebSocket only)*
+- `set(name: string, value: any, options?: object): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it. *(HTTP and WebSocket only)*
+- `remove(name: string): void`: Removes every cookie with the name. *(HTTP and WebSocket only)*
+- `clear(): void`: Removes every cookie. *(HTTP and WebSocket only)*
+- `for(target: string): Cookies`: The cookies for another URL, or every cookie for a bare domain such as `example.com`; `{{variables}}` resolve.
+
 ### `Response`
 
 What came back: an HTTP response, an event stream, a gRPC call, or a WebSocket connection.
@@ -381,6 +421,32 @@ Headers, query parameters, or metadata. Pre-request scripts can change them for 
 - `add(name: string, value: any): void`: Adds an entry. *(pre-request only)*
 - `remove(name: string): void`: Drops every entry with the name. *(pre-request only)*
 
+### `Cookie`
+
+One cookie.
+
+- `name: string`: Its name.
+- `value: string`: Its value.
+- `domain: string`: The host it's for, without a leading dot.
+- `path: string`: The path it's sent under.
+- `expires: string | null`: When it expires, in ISO 8601; `null` lasts until Reqling quits.
+- `secure: boolean`: Sent only over HTTPS, and to localhost.
+- `httpOnly: boolean`: Marked `HttpOnly`.
+- `sameSite: string | null`: `lax`, `strict`, `none`, or `null`.
+- `hostOnly: boolean`: Sent only to `domain` itself, not to its subdomains.
+
+### `Cookies`
+
+The project's cookies for a URL, or every cookie for a domain.
+
+- `get(name: string): string | null`: The value of the first cookie with the name, or `undefined`.
+- `has(name: string): boolean`: Whether a cookie has the name.
+- `all(): Cookie[]`: Every cookie, the most specific first.
+- `toObject(): object`: Every cookie's value by name.
+- `set(name: string, value: any, options?: object): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it.
+- `remove(name: string): void`: Removes every cookie with the name.
+- `clear(): void`: Removes every cookie.
+
 ### `GRPCStatus`
 
 How the call ended.
@@ -461,7 +527,7 @@ Scripts from Postman run as they are. Each name works like its Reqling equivalen
 - `pm.request`: `rq.request`
 - `pm.response`: `rq.response`
 - `pm.sendRequest`: not supported, since scripts can't make network calls
-- `pm.cookies`: not supported, since scripts can't read the cookie jar
+- `pm.cookies`: `rq.cookies`
 - `pm.vault`: not supported, since Reqling keeps secrets as secret variables
 - `pm.iterationData`: `rq.iterationData`
 - `pm.execution`: `rq.execution`

@@ -3,14 +3,16 @@ import JavaScriptCore
 import ReqlingScriptProtocol
 
 /// Runs a phase's levels, outermost first, each in a fresh `JSContext` on one virtual machine, so one level's globals
-/// never leak into the next while the variables, the request, and the report limits carry across. A pre-request
-/// phase stops at its first failed level, since the request won't be sent; a post-response phase runs every level.
+/// never leak into the next while the variables, the request, the cookies, and the report limits carry across. A
+/// pre-request phase stops at its first failed level, since the request won't be sent; a post-response phase runs every
+/// level.
 final class ScriptPhaseRunner {
     let input: ScriptRunnerInput
     let runtime: ScriptRuntimeFiles
     let events: EventWriter
     let variables: ScriptVariables
     let request: ScriptRequestModel
+    let cookies: ScriptCookies
     let reporter: ScriptReporter
     let response: ScriptResponseAccess?
     /// What `rq.execution` asked last, across every level, so a script calling it in a loop writes one event per
@@ -24,6 +26,7 @@ final class ScriptPhaseRunner {
         self.events = events
         variables = ScriptVariables(layers: input.variables, limits: input.limits, events: events)
         request = ScriptRequestModel(snapshot: input.request, phase: input.phase, limits: input.limits, events: events)
+        cookies = ScriptCookies(snapshot: input.cookies, request: request, variables: variables, limits: input.limits, events: events)
         reporter = ScriptReporter(limits: input.limits, events: events)
         response = input.response.map { ScriptResponseAccess(response: $0, blobs: blobs) }
     }

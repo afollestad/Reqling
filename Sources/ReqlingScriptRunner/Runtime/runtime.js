@@ -338,6 +338,111 @@
     }
   }
 
+  // MARK: Cookies
+
+  const cookieOptionNames = ['path', 'domain', 'expires', 'secure', 'httpOnly', 'sameSite'];
+
+  /// Milliseconds since 1970 from a Date, a date string, or a number; `null` for a session cookie.
+  function cookieExpiry(value) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    let time;
+    if (value instanceof Date) {
+      time = value.getTime();
+    } else if (typeof value === 'number') {
+      time = value;
+    } else {
+      time = Date.parse(String(value));
+    }
+    if (!Number.isFinite(time)) {
+      fail(`A cookie's expires is a Date, a date string, or milliseconds since 1970, not ${describe(value)}.`);
+    }
+    return time;
+  }
+
+  /// The options as the natives take them, refusing a key no cookie has rather than ignoring it.
+  function cookieOptions(options) {
+    if (options === undefined || options === null) {
+      options = {};
+    } else if (typeof options !== 'object') {
+      fail('A cookie\'s options are an object, such as { path: "/", secure: true }.');
+    }
+    for (const key of Object.keys(options)) {
+      if (!cookieOptionNames.includes(key)) {
+        fail(`A cookie has no option "${key}"; it takes ${cookieOptionNames.join(', ')}.`);
+      }
+    }
+    const text = (value) => (value === undefined || value === null ? null : String(value));
+    return {
+      path: text(options.path),
+      domain: text(options.domain),
+      expires: cookieExpiry(options.expires),
+      secure: Boolean(options.secure),
+      httpOnly: Boolean(options.httpOnly),
+      sameSite: text(options.sameSite),
+    };
+  }
+
+  /// A cookie with its keys in a fixed order, so it prints the same way every time.
+  function cookieObject(cookie) {
+    return Object.freeze({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expires: cookie.expires,
+      secure: cookie.secure,
+      httpOnly: cookie.httpOnly,
+      sameSite: cookie.sameSite,
+      hostOnly: cookie.hostOnly,
+    });
+  }
+
+  /// The cookie methods over one scope: `null` for the request's URL, or the text `rq.cookies.for` settled on.
+  function cookieMethods(scope) {
+    const read = () => native.cookieRead(scope).map(cookieObject);
+    const find = (name) => read().find((cookie) => cookie.name === String(name));
+    return {
+      get(name) {
+        const cookie = find(name);
+        return cookie === undefined ? undefined : cookie.value;
+      },
+      has: (name) => find(name) !== undefined,
+      all: read,
+      toObject() {
+        const object = {};
+        for (const cookie of read()) {
+          // Defined rather than assigned, so a cookie named `__proto__` is just a key.
+          if (!Object.prototype.hasOwnProperty.call(object, cookie.name)) {
+            Object.defineProperty(object, cookie.name, { value: cookie.value, enumerable: true, writable: true, configurable: true });
+          }
+        }
+        return object;
+      },
+      set(name, value, options) {
+        native.cookieSet(scope, String(name), variableText(value), cookieOptions(options));
+      },
+      remove(name) {
+        native.cookieRemove(scope, String(name));
+      },
+      clear() {
+        native.cookieClear(scope);
+      },
+    };
+  }
+
+  function buildCookies() {
+    const cookies = cookieMethods(null);
+    cookies.for = function (target) {
+      if (target === undefined || target === null) {
+        fail('rq.cookies.for needs a URL or a domain, such as "https://api.example.com" or "example.com".');
+      }
+      return Object.freeze(cookieMethods(native.cookieTarget(String(target))));
+    };
+    return Object.freeze(cookies);
+  }
+
   // MARK: Tests
 
   const pendingTests = new Set();
@@ -421,6 +526,7 @@
     defaultEnvironment: Object.freeze(variableScope('defaultEnvironment', info.defaultEnvironment)),
     globals: Object.freeze(variableScope('global', 'Global')),
     variables: Object.freeze(variables),
+    cookies: buildCookies(),
     test,
     crypto: cryptoHelpers,
   };

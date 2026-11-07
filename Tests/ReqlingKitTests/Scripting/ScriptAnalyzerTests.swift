@@ -37,6 +37,17 @@ final class ScriptAnalyzerTests: XCTestCase {
         XCTAssertEqual(labels("rq.request.he"), ["headers"])
     }
 
+    func testCookiesCompleteAfterForAndTheRequestsWarnInAGRPCScript() throws {
+        let grpc = try XCTUnwrap(labels("rq.cookies.", protocols: [.grpc]))
+
+        XCTAssertEqual(labels(#"rq.cookies.for("example.com").cl"#), ["clear"])
+        XCTAssertTrue(grpc.contains("for"))
+        XCTAssertFalse(grpc.contains("get"), "A gRPC call has no URL of its own")
+        XCTAssertEqual(warnings("rq.cookies.get('a')", protocols: [.grpc]), ["rq.cookies.get applies only to HTTP and WebSocket requests."])
+        XCTAssertEqual(warnings("rq.cookies.for('example.com').get('a')", protocols: [.grpc]), [])
+        XCTAssertEqual(warnings("pm.cookies.jar().getAll('https://example.com', () => {})"), [])
+    }
+
     func testAliasesDestructuringAndCallsResolve() {
         XCTAssertEqual(labels("const r = rq.request\nr.he"), ["headers"])
         XCTAssertEqual(labels("const { headers: h } = rq.request\nh.ups", phase: .preRequest), ["upsert"], "Rows change only before sending")

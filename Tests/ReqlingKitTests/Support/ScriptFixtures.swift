@@ -59,6 +59,7 @@ struct ScriptFixtures {
         variables: VariableLayers = VariableLayers(),
         request: ScriptRequestSnapshot = ScriptFixtures.request(),
         response: ScriptResponseSnapshot? = nil,
+        cookies: [ScriptCookie] = [],
         limits: ScriptLimits = .standard,
         iteration: (index: Int, count: Int) = (0, 1)
     ) -> ScriptRunnerInput {
@@ -82,6 +83,7 @@ struct ScriptFixtures {
             ),
             request: request,
             response: response,
+            cookies: cookies,
             runtimeDirectory: "",
             limits: limits
         )
@@ -140,6 +142,15 @@ struct ScriptRun {
         events.compactMap { event in
             if case .request(let change) = event {
                 return change
+            }
+            return nil
+        }
+    }
+
+    var cookieWrites: [ScriptCookieWrite] {
+        events.compactMap { event in
+            if case .cookie(let write) = event {
+                return write
             }
             return nil
         }

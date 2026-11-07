@@ -45,7 +45,8 @@ extension RequestRunner {
             secretSink: options.scriptSecrets,
             iteration: step?.iteration ?? 0,
             iterationCount: step?.iterationCount ?? 1,
-            carriedSecrets: step?.carriedSecrets ?? []
+            carriedSecrets: step?.carriedSecrets ?? [],
+            cookieJar: { [weak self] creating in self?.cookieJar(for: project, creating: creating) }
         )
     }
 

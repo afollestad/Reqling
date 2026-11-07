@@ -8,6 +8,8 @@ public enum ScriptRunnerEvent: Hashable, Sendable, Codable {
     case variable(VariableWrite)
     /// A pre-request script's change to a header or query parameter for this run.
     case request(ScriptRequestChange)
+    /// A cookie a script set or removed, in either phase, already checked (`ScriptCookieSetting`).
+    case cookie(ScriptCookieWrite)
     case console(level: Int, severity: ScriptConsoleSeverity, text: String)
     case test(level: Int, name: String, result: ScriptTestResult, message: String?)
     /// The level threw, or a timer or promise it started did, or its promise never settled.

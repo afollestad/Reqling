@@ -2,8 +2,8 @@ import ReqlingScriptProtocol
 import ReqlingTemplating
 
 /// What a run's scripts did: each phase's tests, console, and errors, already masked, for the response pane, the run
-/// history, and MCP. Variable changes are listed without their values, so neither a secret nor a stashed body reaches
-/// the history.
+/// history, and MCP. Variable and cookie changes are listed without their values, so neither a secret, a session
+/// cookie, nor a stashed body reaches the history.
 public struct ScriptReport: Hashable, Sendable, Codable {
     public var phases: [ScriptPhaseReport]
 
@@ -71,6 +71,7 @@ public struct ScriptPhaseReport: Hashable, Sendable, Codable {
     /// Why the phase's scripts didn't run, when they didn't.
     public var skipReason: ScriptSkipReason?
     public var variableChanges: [ScriptVariableChange]
+    public var cookieChanges: [ScriptCookieChange]
     /// The history kept only the newest console entries.
     public var isConsoleTruncated: Bool
 
@@ -81,6 +82,7 @@ public struct ScriptPhaseReport: Hashable, Sendable, Codable {
         error: ScriptError? = nil,
         skipReason: ScriptSkipReason? = nil,
         variableChanges: [ScriptVariableChange] = [],
+        cookieChanges: [ScriptCookieChange] = [],
         isConsoleTruncated: Bool = false
     ) {
         self.phase = phase
@@ -89,7 +91,22 @@ public struct ScriptPhaseReport: Hashable, Sendable, Codable {
         self.error = error
         self.skipReason = skipReason
         self.variableChanges = variableChanges
+        self.cookieChanges = cookieChanges
         self.isConsoleTruncated = isConsoleTruncated
+    }
+
+    /// As the synthesized decoder would, except that `cookieChanges` may be missing: runs recorded before scripts could
+    /// change cookies have none, and a run that fails to decode drops out of the history.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        phase = try container.decode(ScriptPhase.self, forKey: .phase)
+        levels = try container.decode([ScriptLevelReport].self, forKey: .levels)
+        console = try container.decode([ScriptConsoleEntry].self, forKey: .console)
+        error = try container.decodeIfPresent(ScriptError.self, forKey: .error)
+        skipReason = try container.decodeIfPresent(ScriptSkipReason.self, forKey: .skipReason)
+        variableChanges = try container.decode([ScriptVariableChange].self, forKey: .variableChanges)
+        cookieChanges = try container.decodeIfPresent([ScriptCookieChange].self, forKey: .cookieChanges) ?? []
+        isConsoleTruncated = try container.decode(Bool.self, forKey: .isConsoleTruncated)
     }
 
     public var hasFailures: Bool {
@@ -191,6 +208,21 @@ public struct ScriptVariableChange: Hashable, Sendable, Codable {
         self.key = key
         self.isUnset = isUnset
         self.isSecret = isSecret
+    }
+}
+
+/// A cookie a script set or removed, without its value, so a session token never reaches the history.
+public struct ScriptCookieChange: Hashable, Sendable, Codable {
+    public var name: String
+    public var domain: String
+    public var path: String
+    public var isRemoved: Bool
+
+    public init(name: String, domain: String, path: String, isRemoved: Bool) {
+        self.name = name
+        self.domain = domain
+        self.path = path
+        self.isRemoved = isRemoved
     }
 }
 

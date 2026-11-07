@@ -42,6 +42,16 @@ extension ScriptAPICatalog {
             .property("body", .optional(.named("PostmanBody")), "The body.", protocols: .http).postman("rq.request.body")
         ]),
         ScriptType("PostmanList", "Headers or query parameters, as `{ key, value }`.", members: postmanListMembers),
+        ScriptType("PostmanCookies", "The cookies for the request's URL.", members: [
+            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The cookie's value.", protocols: .withCookies)
+                .postman("rq.cookies.get"),
+            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether there's a cookie with the name.",
+                    protocols: .withCookies).postman("rq.cookies.has"),
+            .method("toObject", returns: .object, "Every cookie's value by name.", protocols: .withCookies).postman("rq.cookies.toObject"),
+            .method("jar", returns: .named("PostmanCookieJar"), "The project's whole jar, by URL.").postman("rq.cookies.for")
+        ]),
+        ScriptType("PostmanCookieJar", "The project's cookie jar, by URL. Each callback gets `(error, result)` before the call returns.",
+                   members: postmanJarMembers),
         ScriptType("PostmanURL", "The URL.", members: [
             .property("query", .named("PostmanList"), "The query parameters.", protocols: .withQuery).postman("rq.request.query"),
             .method("toString", returns: .string, "The URL with its query.").postman("rq.request.url")
@@ -89,7 +99,7 @@ extension ScriptAPICatalog {
         .property("request", .named("PostmanRequest"), "The request as typed.").postman("rq.request"),
         .property("response", .named("PostmanResponse"), "The HTTP response.", phases: .post, protocols: [.http]).postman("rq.response"),
         .unsupported("sendRequest", "scripts can't make network calls", isMethod: true),
-        .unsupported("cookies", "scripts can't read the cookie jar"),
+        .property("cookies", .named("PostmanCookies"), "The cookies for the request's URL.").postman("rq.cookies"),
         .unsupported("vault", "Reqling keeps secrets as secret variables"),
         .property("iterationData", .named("PostmanIterationData"), "This iteration's data row.").postman("rq.iterationData"),
         .property("execution", .named("PostmanExecution"), "Skips this request, or picks what runs next.").postman("rq.execution"),
@@ -126,6 +136,20 @@ extension ScriptAPICatalog {
             .method("upsert", [item, ScriptParameter("value", .any, isOptional: true)], returns: .void, "Sets or adds one.", phases: .pre)
                 .postman("rq.request.headers.upsert"),
             .method("remove", [item], returns: .void, "Drops one.", phases: .pre).postman("rq.request.headers.remove")
+        ]
+    }()
+
+    private static let postmanJarMembers: [ScriptMember] = {
+        let url = ScriptParameter("url", .string)
+        let name = ScriptParameter("name", .string)
+        let callback = ScriptParameter("callback", .function, isOptional: true)
+        return [
+            .method("get", [url, name, callback], returns: .void, "The cookie's value.").postman("rq.cookies.for(url).get"),
+            .method("getAll", [url, callback], returns: .void, "Every cookie for the URL.").postman("rq.cookies.for(url).all"),
+            .method("set", [url, ScriptParameter("name", .any), ScriptParameter("value", .any, isOptional: true), callback], returns: .void,
+                    "Sets a cookie, by name and value or as `{ name, value, ...options }`.").postman("rq.cookies.for(url).set"),
+            .method("unset", [url, name, callback], returns: .void, "Removes the cookie.").postman("rq.cookies.for(url).remove"),
+            .method("clear", [url, callback], returns: .void, "Removes every cookie for the URL.").postman("rq.cookies.for(url).clear")
         ]
     }()
 

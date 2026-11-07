@@ -433,6 +433,15 @@ public final class RequestRunner {
         return executor
     }
 
+    /// `nil` once the library has dropped the project, so changes landing after `forget` never bring its executor
+    /// back. `creating: false` never makes one: a project that has sent nothing has no cookies to read.
+    func cookieJar(for project: ProjectID, creating: Bool) -> ProjectCookieJar? {
+        guard library.project(project) != nil, let executor = creating ? executor(for: project) : executors[project] else {
+            return nil
+        }
+        return executor.cookies.map(ProjectCookieJar.init)
+    }
+
     /// Publishes an exchange and adds it to the history, unless its project is gone: a deleted project must leave
     /// nothing on disk. A folder or project run's `step` learns its run reached the history.
     func record(_ exchange: RequestExchange, step: BatchStepContext? = nil) -> RequestExchange {

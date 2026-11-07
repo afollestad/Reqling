@@ -11,6 +11,10 @@ public struct ScriptLimits: Hashable, Sendable, Codable {
     /// One variable's value, in UTF-16 units; a longer one throws.
     public var valueLength = 4 * 1_024 * 1_024
     public var requestChanges = 1_000
+    /// Cookies set or removed; `clear()` counts each cookie it removes, and refuses before removing any past this.
+    public var cookieWrites = 1_000
+    /// A cookie's name and value together, in UTF-8 bytes, as browsers bound them.
+    public var cookieLength = 4_096
 
     public static let standard = ScriptLimits()
 

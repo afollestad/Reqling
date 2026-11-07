@@ -52,19 +52,6 @@ enum HTTPEncoding {
         return result
     }
 
-    /// Escapes characters `URLComponents` rejects (spaces, braces, non-ASCII) while leaving URL syntax alone.
-    static func lenientURL(_ text: String) -> String {
-        var result = ""
-        for byte in text.utf8 {
-            if byte == UInt8(ascii: "%") || urlAllowed.contains(byte) {
-                result.unicodeScalars.append(Unicode.Scalar(byte))
-            } else {
-                result += String(format: "%%%02X", byte)
-            }
-        }
-        return result
-    }
-
     /// The MIME type for a file name's extension, or `application/octet-stream`.
     static func mimeType(forFileName name: String) -> String {
         let fileExtension = (name as NSString).pathExtension
@@ -77,7 +64,6 @@ enum HTTPEncoding {
         .union((UInt8(ascii: "a")...UInt8(ascii: "z")))
         .union((UInt8(ascii: "A")...UInt8(ascii: "Z")))
         .union((UInt8(ascii: "0")...UInt8(ascii: "9")))
-    private static let urlAllowed: Set<UInt8> = queryAllowed.union(Array("&=+#[]".utf8))
 
     private static func isHex(_ byte: UInt8) -> Bool {
         (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)

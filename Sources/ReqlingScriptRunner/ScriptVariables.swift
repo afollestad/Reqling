@@ -83,6 +83,11 @@ final class ScriptVariables {
 
     /// Resolves `{{name}}` references as the request will, with what scripts have set so far.
     func replaceIn(_ text: String) -> String {
-        TemplateExpansion.resolve(text, dynamic: .live) { layers.lookup($0)?.variable }.value
+        resolve(text).value
+    }
+
+    /// `replaceIn`'s resolution, with the names it couldn't resolve.
+    func resolve(_ text: String) -> TemplateResolution {
+        TemplateExpansion.resolve(text, dynamic: .live) { layers.lookup($0)?.variable }
     }
 }
