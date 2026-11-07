@@ -97,6 +97,21 @@ final class ScriptAnalyzerTests: XCTestCase {
         XCTAssertEqual(warnings("rq.expect(1).to.be.true\n_.whatever(1)\nlocal.thing"), [], "Open types and locals are never warned about")
     }
 
+    func testAParameterHidesAGlobalOnlyWithinItsFunction() {
+        let script = """
+        rq.test("x", (rq) => rq.nope)
+        [1].map(_ => _.id)
+        function f(console, { request: rq }) { console.nope; rq.nope }
+        try {} catch (rq) { rq.nope }
+        const checks = { verify(rq) { rq.nope } }
+        rq.request.foo
+        """
+
+        XCTAssertEqual(warnings(script), ["rq.request has no “foo”."], "Outside its function, a parameter's name means the global again")
+        XCTAssertEqual(labels("[1].map(_ => _.id)\n_.ge"), ["get"], "Lodash again after the arrow")
+        XCTAssertEqual(labels("[1].map((item) => it"), ["item"])
+    }
+
     func testVariablesSetByLiteralNameAreDeclared() {
         let source = """
         rq.environment.set("token", 1)

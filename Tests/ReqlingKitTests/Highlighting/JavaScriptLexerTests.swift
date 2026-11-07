@@ -38,7 +38,7 @@ final class JavaScriptLexerTests: XCTestCase {
 
     func testCommentsBlockAndLine() {
         assertTokens("x // c\n/* b */ y /* open", [
-            ("x", .identifier), ("// c", .comment(terminated: true)), ("/* b */", .comment(terminated: true)),
+            ("x", .identifier), ("// c", .comment(terminated: false)), ("/* b */", .comment(terminated: true)),
             ("y", .identifier), ("/* open", .comment(terminated: false))
         ])
     }
@@ -85,6 +85,8 @@ final class JavaScriptLexerTests: XCTestCase {
         XCTAssertFalse(closed.holds(4))
         XCTAssertTrue(closed.holds(2))
         XCTAssertFalse(closed.holds(0))
+        XCTAssertTrue(JavaScriptLexer.tokens(in: "// c\nx")[0].holds(4), "A line comment runs on to its line's end")
+        XCTAssertFalse(JavaScriptLexer.tokens(in: "/* c */")[0].holds(7))
     }
 
     func testHighlightingRoles() {

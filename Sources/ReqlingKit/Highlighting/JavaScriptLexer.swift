@@ -13,6 +13,8 @@ struct JavaScriptToken: Hashable, Sendable {
         /// through its closing backtick.
         case templateText(terminated: Bool)
         case regex(terminated: Bool)
+        /// Never terminated when it starts `//`: it runs on to its line's end, so typing there extends it, as at the
+        /// end of a `/*` comment left open.
         case comment(terminated: Bool)
         case unknown
     }
@@ -32,7 +34,7 @@ struct JavaScriptToken: Hashable, Sendable {
     }
 
     /// Whether `offset` falls within the token for completion, hover, and indentation. A string, template, regex, or
-    /// comment that runs on (unterminated, or a comment to the end of its line) also holds its end, where typing would
+    /// comment that runs on (unterminated, which a `//` comment always is) also holds its end, where typing would
     /// extend it.
     func holds(_ offset: Int) -> Bool {
         if offset > range.location, offset < end {
@@ -182,7 +184,7 @@ private struct Scanner {
             while index < units.count, !Code.isLineBreak(units[index]) {
                 index += 1
             }
-            emit(.comment(terminated: true), from: start)
+            emit(.comment(terminated: false), from: start)
             return true
         }
         guard peek(1) == Code.star else {
