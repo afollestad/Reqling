@@ -12,7 +12,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Auto-indent.** JSON and JavaScript editors and the GraphQL query editor indent as you press Return:
   - A new line keeps the indentation above, one level deeper after `{` or `[`.
   - A bracket left open gets its closer on the next line, with the cursor between.
-  - A `}` or `]` typed at the start of a line moves back to its opener's indentation.
+  - A `}` or `]` typed at the start of a line moves back to its opener's indentation, even when it steps over one a JavaScript editor already closed.
 - **Unticked rows.** Untick a parameter, header, form field, or variable to keep it but leave it out. Shift-click a checkbox to set every row between it and the last one you clicked, or use **Select All** and **Select None** above the rows.
 - **Automatic headers** are listed alongside yours, including the ones macOS adds (`Host`, `Accept-Encoding`, `Accept-Language`).
   - Add a header with the same name to replace one.

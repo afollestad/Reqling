@@ -40,7 +40,8 @@ extension CodeTextView {
         }
     }
 
-    /// Backspace narrows the list as typing does, and takes an empty `()` in a script with it (`CodeTextView+Pairs`).
+    /// Backspace narrows the list as typing does, and takes an empty pair of brackets or quotes in a JavaScript editor
+    /// with it (`CodeTextView+Pairs`).
     override func deleteBackward(_ sender: Any?) {
         assistance.typing = assistance.completion == nil ? nil : ""
         defer { assistance.typing = nil }

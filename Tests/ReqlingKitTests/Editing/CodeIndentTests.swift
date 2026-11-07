@@ -72,6 +72,9 @@ final class CodeIndentTests: XCTestCase {
         XCTAssertEqual(pressReturn("const x = [|", in: .javascript), "const x = [\n  |\n]")
         XCTAssertEqual(pressReturn("{{|", in: .javascript), "{{\n  |\n}", "`{{` is code in a script")
         XCTAssertEqual(typeCloser("}", "function f() {\n  x()\n  |", in: .javascript), "function f() {\n  x()\n}|")
+        XCTAssertEqual(stepOver("if (a) {\n  x()\n  |}", in: .javascript), "if (a) {\n  x()\n}|", "stepping over the closer moves it back")
+        XCTAssertEqual(stepOver("if (a) {\n  x()\n|}", in: .javascript), nil, "already where it belongs")
+        XCTAssertEqual(stepOver("if (a) { x() |}", in: .javascript), nil, "not at the start of its line")
     }
 
     func testJavaScriptStringsTemplatesRegexesAndCommentsHoldNoBrackets() {
@@ -100,6 +103,17 @@ final class CodeIndentTests: XCTestCase {
     }
 
     /// Applies the edit, or a plain line break where there is none.
+    /// What stepping over the closer at `|` leaves, or nil where it only moves the cursor.
+    private func stepOver(_ marked: String, in language: SyntaxLanguage) -> String? {
+        let cursor = (marked as NSString).range(of: "|").location
+        let text = (marked as NSString).replacingCharacters(in: NSRange(location: cursor, length: 1), with: "") as NSString
+        guard let edit = CodeIndent.steppingOver(closerAt: cursor, in: text as String, language: language) else {
+            return nil
+        }
+        let result = text.replacingCharacters(in: edit.range, with: edit.replacement) as NSString
+        return result.replacingCharacters(in: NSRange(location: edit.range.location + edit.caret, length: 0), with: "|")
+    }
+
     private func pressReturn(_ marked: String, in language: SyntaxLanguage = .json) -> String {
         let cursor = (marked as NSString).range(of: "|").location
         let text = (marked as NSString).replacingCharacters(in: NSRange(location: cursor, length: 1), with: "") as NSString

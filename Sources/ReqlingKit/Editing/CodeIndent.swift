@@ -2,8 +2,8 @@ import Foundation
 
 /// How a JSON, JavaScript, or GraphQL editor indents, worked out from the text alone. On Return the new line keeps the
 /// current one's indentation, one level deeper after `{` or `[`, and a bracket left open gets its closer on the line
-/// after, so the cursor lands between the two; a `}` or `]` typed at the start of its line moves back to its opener's
-/// indentation. Brackets inside strings, comments, regexes, template text, and (outside scripts, where `{{` is plain
+/// after, so the cursor lands between the two; a `}` or `]` typed, or stepped over, at the start of its line moves back
+/// to its opener's indentation. Brackets inside strings, comments, regexes, template text, and (outside scripts, where `{{` is plain
 /// code) `{{variables}}` are not brackets.
 public enum CodeIndent {
     /// What one indentation level adds, as Tab inserts in the editors.
@@ -52,8 +52,31 @@ public enum CodeIndent {
     /// indentation of the line that opened the bracket it closes. Nil where it is typed as is: anywhere else, inside a
     /// string or comment, when no bracket of its kind is open, and when the line already has that indentation.
     public static func typing(_ typed: String, in text: String, at cursor: Int, language: SyntaxLanguage) -> Edit? {
+        guard typed.utf16.count == 1, let closer = typed.utf16.first,
+              let (range, indent) = reindent(closer, in: text, at: cursor, language: language) else {
+            return nil
+        }
+        let replacement = indent + typed
+        return Edit(range: range, replacement: replacement, caret: replacement.utf16.count)
+    }
+
+    /// The edit for stepping over the `}` or `]` at `cursor`, as a pair's closer typed before it does: where only
+    /// blanks precede it on its line, the line takes the indentation of the line that opened the bracket, as typing
+    /// the closer there would, and the cursor lands after it. Nil where that indentation is already there, and
+    /// wherever `typing` would type the closer as is.
+    public static func steppingOver(closerAt cursor: Int, in text: String, language: SyntaxLanguage) -> Edit? {
         let units = text as NSString
-        guard typed.utf16.count == 1, let closer = typed.utf16.first, closers.values.contains(closer) else {
+        guard cursor < units.length, let (range, indent) = reindent(units.character(at: cursor), in: text, at: cursor, language: language) else {
+            return nil
+        }
+        return Edit(range: range, replacement: indent, caret: indent.utf16.count + 1)
+    }
+
+    /// The blanks before `cursor` on its line, and the indentation of the line that opened the bracket `closer`
+    /// closes, when a closer there moves back to it; nil when it stays where it is.
+    private static func reindent(_ closer: unichar, in text: String, at cursor: Int, language: SyntaxLanguage) -> (NSRange, String)? {
+        let units = text as NSString
+        guard closers.values.contains(closer) else {
             return nil
         }
         let lineStart = units.lineRange(for: NSRange(location: cursor, length: 0)).location
@@ -66,11 +89,7 @@ public enum CodeIndent {
         let openerLine = units.lineRange(for: NSRange(location: opener.index, length: 0))
         let indent = leadingWhitespace(in: units, from: openerLine.location, upTo: opener.index)
         let range = NSRange(location: lineStart, length: cursor - lineStart)
-        guard units.substring(with: range) != indent else {
-            return nil
-        }
-        let replacement = indent + typed
-        return Edit(range: range, replacement: replacement, caret: replacement.utf16.count)
+        return units.substring(with: range) == indent ? nil : (range, indent)
     }
 
     private static let openBrace = unichar(UInt8(ascii: "{"))
