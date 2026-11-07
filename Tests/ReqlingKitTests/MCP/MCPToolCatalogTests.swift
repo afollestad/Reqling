@@ -38,10 +38,13 @@ final class MCPToolCatalogTests: XCTestCase {
         for name in [
             "create_project", "list_projects", "delete_project", "create_variables", "list_variables", "update_variables",
             "delete_variables", "create_request", "list_requests", "update_request", "delete_request", "execute_request", "run_folder",
-            "list_runs", "get_run", "clear_history", "compile_protos", "update_tls_config", "reveal_item", "update_settings"
+            "list_runs", "get_run", "clear_history", "list_cookies", "set_cookie", "delete_cookies", "compile_protos", "update_tls_config",
+            "reveal_item", "update_settings"
         ] {
             XCTAssertTrue(names.contains(name), name)
         }
+        let destructive = fixture.dispatcher.definitions.filter { $0.annotations.destructiveHint == true }.map(\.name).sorted()
+        XCTAssertEqual(destructive, ["clear_history", "delete_cookies"], "Only what can't be put back from the Trash is destructive")
         XCTAssertFalse(names.contains { $0.contains("token") || $0.contains("mcp") }, "Agents never manage the server itself")
     }
 

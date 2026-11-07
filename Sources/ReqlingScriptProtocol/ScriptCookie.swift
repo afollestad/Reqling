@@ -99,7 +99,7 @@ public struct ScriptCookieIdentity: Hashable, Sendable, Codable {
         isHostOnly ? domain : ".\(domain)"
     }
 
-    func matches(_ cookie: HTTPCookie) -> Bool {
+    public func matches(_ cookie: HTTPCookie) -> Bool {
         cookie.name == name && cookie.path == path && cookie.domain.caseInsensitiveCompare(storedDomain) == .orderedSame
     }
 }

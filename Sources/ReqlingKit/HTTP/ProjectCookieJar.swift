@@ -16,4 +16,24 @@ struct ProjectCookieJar {
             storage.apply(write)
         }
     }
+
+    /// Sets the cookie `setting` describes for `scope`, and returns it as the jar keeps it, which caps an expiry at 400
+    /// days; `nil` when an `expires` already past removed it instead.
+    func set(_ setting: ScriptCookieSetting, for scope: ScriptCookieScope) throws(ScriptCookieError) -> ScriptCookie? {
+        let write = try setting.write(for: scope)
+        storage.apply(write)
+        guard case .set(let cookie) = write else {
+            return nil
+        }
+        return (storage.cookies ?? []).first(where: cookie.identity.matches).map(ScriptCookie.init) ?? cookie
+    }
+
+    /// Removes the cookies `scope` covers, every cookie for `nil`, or only those of them named `name`; returns them.
+    func delete(in scope: ScriptCookieScope?, named name: String?) -> [ScriptCookie] {
+        let removed = storage.cookies(in: scope).filter { name == nil || $0.name == name }
+        for cookie in removed {
+            storage.deleteCookie(cookie)
+        }
+        return removed.map(ScriptCookie.init)
+    }
 }

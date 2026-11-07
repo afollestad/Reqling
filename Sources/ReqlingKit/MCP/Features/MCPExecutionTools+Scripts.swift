@@ -1,9 +1,9 @@
 import MCP
 import ReqlingScriptProtocol
 
-/// What a run's scripts did, as the execution and history tools return it: test results, the console, errors, and
-/// why scripts didn't run, each naming its phase and script. The report is already masked; `mask` covers what the run
-/// couldn't know, as everywhere else in the output.
+/// What a run's scripts did, as the execution and history tools return it: test results, the console, errors, the
+/// variables and cookies they changed (never with values), and why scripts didn't run, each naming its phase and
+/// script. The report is already masked; `mask` covers what the run couldn't know, as everywhere else in the output.
 extension MCPExecutionTools {
     /// Console text kept in tool output: the newest entries within this many bytes.
     static let consoleLimit = 64 * 1_024
@@ -42,12 +42,47 @@ extension MCPExecutionTools {
         if !errors.isEmpty {
             description["scriptErrors"] = .array(errors)
         }
+        description.merge(changes(report, mask: mask)) { $1 }
         var notes: [String] = []
         for reason in report.phases.compactMap(\.skipReason) where !notes.contains(note(reason)) {
             notes.append(note(reason))
         }
         if !notes.isEmpty {
             description["scriptNotes"] = .array(notes.map(Value.string))
+        }
+        return description
+    }
+
+    /// The variables and cookies the scripts set or removed, named but never with their values.
+    private static func changes(_ report: ScriptReport, mask: (String) -> String) -> [String: Value] {
+        let variables = report.phases.flatMap { phase in
+            phase.variableChanges.map { change -> Value in
+                [
+                    "phase": .string(phase.phase.rawValue),
+                    "scope": .string(change.scope.rawValue),
+                    "name": .string(mask(change.key)),
+                    "unset": .bool(change.isUnset),
+                    "secret": .bool(change.isSecret)
+                ]
+            }
+        }
+        let cookies = report.phases.flatMap { phase in
+            phase.cookieChanges.map { change -> Value in
+                [
+                    "phase": .string(phase.phase.rawValue),
+                    "name": .string(mask(change.name)),
+                    "domain": .string(mask(change.domain)),
+                    "path": .string(mask(change.path)),
+                    "removed": .bool(change.isRemoved)
+                ]
+            }
+        }
+        var description: [String: Value] = [:]
+        if !variables.isEmpty {
+            description["variableChanges"] = .array(variables)
+        }
+        if !cookies.isEmpty {
+            description["cookieChanges"] = .array(cookies)
         }
         return description
     }
