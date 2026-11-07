@@ -126,6 +126,8 @@ public final class RequestRunner {
     @ObservationIgnored var scriptTasks: [RunKey: Task<ScriptSession.PhaseOutcome, Never>] = [:]
     /// The exchange each run's post-response phase is running on, for `recordLiveRuns`.
     @ObservationIgnored var pendingPostExchanges: [RunKey: RequestExchange] = [:]
+    /// What recorded runs' scripts made secret, kept in memory only (`RequestRunner+Scripts`).
+    @ObservationIgnored var scriptSecrets = ScriptSecretMemory()
     /// One trust question per project at a time, which every run waiting on it shares.
     @ObservationIgnored var trustPrompts: [ProjectID: Task<Bool?, Never>] = [:]
 
@@ -253,6 +255,9 @@ public final class RequestRunner {
             exchange = await finishScripts(exchange, key: key, session: session)
             guard tasks[key] == task else {
                 return exchange
+            }
+            if options.unsaved == nil {
+                scriptSecrets.remember(session.secretValues, for: exchange.id)
             }
         }
         tasks[key] = nil

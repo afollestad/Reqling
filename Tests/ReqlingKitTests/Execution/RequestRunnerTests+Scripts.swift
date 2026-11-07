@@ -223,6 +223,27 @@ extension RequestRunnerTests {
         XCTAssertNil(runner.scriptPhases[key])
     }
 
+    /// An agent reading a stream still open can have what its pre-request scripts made secret masked.
+    func testAStreamsScriptSecretsAreHeldWhileItIsOpen() async throws {
+        let feed = StreamFeed()
+        let server = try await TestHTTPServer.start { _ in .stream(headers: [("Content-Type", "text/event-stream")], feed: feed) }
+        servers.append(server)
+        let project = try scriptedProject(base: server.baseURL)
+        try setScripts(project, request: project.profile.id, ScriptSet(preRequest: "rq.variables.set('sig', 's1gn-4ture', { secret: true })"))
+        let runner = makeRunner()
+        let key = RunKey(project.profile.id, in: project.id)
+
+        let run = Task { await runner.run(project.profile.id, in: project.id) }
+        await feed.opened()
+        try await feed.send("data: 1\n\n")
+        await waitUntil("the event shows") { runner.latest[key]?.response?.eventStream?.events.count == 1 }
+        let open = try XCTUnwrap(runner.latest[key])
+
+        XCTAssertEqual(runner.scriptSecrets.secrets(of: open.id), ["s1gn-4ture"])
+        runner.cancel(project.profile.id, in: project.id)
+        _ = await run.value
+    }
+
     func testARunOpenAtQuitIsRecordedWithItsPostResponseScriptsNoted() async throws {
         let feed = StreamFeed()
         let server = try await TestHTTPServer.start { _ in .stream(headers: [("Content-Type", "text/event-stream")], feed: feed) }

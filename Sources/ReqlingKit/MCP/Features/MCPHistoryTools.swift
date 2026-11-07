@@ -58,7 +58,7 @@ struct MCPHistoryTools {
             guard let exchange = await context.runner.history.exchange(run, for: request.id, in: project.id) else {
                 throw MCPToolError("“\(request.name)” has no run \(reference) on this Mac.")
             }
-            var description = MCPExecutionTools.describe(exchange, mask: mask)
+            var description = MCPExecutionTools.describeRecorded(exchange, mask: mask, runner: context.runner)
             description["run"] = .string(run.description)
             if let spec = exchange.spec {
                 description["spec"] = try MCPJSON.encode(spec)

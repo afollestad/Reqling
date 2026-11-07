@@ -37,6 +37,13 @@ public struct ScriptReport: Hashable, Sendable, Codable {
     public var isEmpty: Bool {
         phases.isEmpty
     }
+
+    /// A script made a value secret for the run alone (`rq.variables`), which nothing keeps once the run ends.
+    public var madeRunLocalSecrets: Bool {
+        phases.contains { phase in
+            phase.variableChanges.contains { $0.scope == .local && $0.isSecret && !$0.isUnset }
+        }
+    }
 }
 
 public struct ScriptTestCounts: Hashable, Sendable, Codable {

@@ -100,4 +100,40 @@ extension MCPExecutionTools {
             reason.message
         }
     }
+
+    /// What of a withheld run's result stays: its status and sizes, and nothing a server or script could have echoed.
+    private static let withheldKeeps: [String: Set<String>] = [
+        "response": ["status", "durationMs", "byteCount", "protocol", "tlsVersion"],
+        "call": ["rpc", "kind", "sentCount", "receivedCount", "durationMs", "status"],
+        "connection": ["subprotocol", "sentCount", "receivedCount", "durationMs", "end"]
+    ]
+
+    /// A recorded run as `get_last_response` and `get_run` return it, masked with `mask` (the project's secrets) and
+    /// the values the run's scripts made secret, which Reqling keeps until it quits. A run whose scripts made run-local
+    /// secrets Reqling no longer holds can't be masked, so its response is withheld instead.
+    @MainActor
+    static func describeRecorded(_ exchange: RequestExchange, mask: @escaping (String) -> String, runner: RequestRunner) -> [String: Value] {
+        if let secrets = runner.scriptSecrets.secrets(of: exchange.id) {
+            let redaction = SecretRedaction(secrets: secrets)
+            return describe(exchange, mask: { mask(redaction.apply($0)) })
+        }
+        var description = describe(exchange, mask: mask)
+        guard exchange.scriptReport?.madeRunLocalSecrets == true else {
+            return description
+        }
+        for (key, kept) in withheldKeeps {
+            guard case .object(var payload)? = description[key] else {
+                continue
+            }
+            payload = payload.filter { kept.contains($0.key) }
+            if case .object(var status)? = payload["status"] {
+                status["message"] = nil
+                payload["status"] = .object(status)
+            }
+            description[key] = .object(payload)
+        }
+        description["withheld"] = .string("This run's scripts made values secret for that run only, which Reqling no longer "
+            + "holds, so its response can't be masked and is left out. Send the request again to read one.")
+        return description
+    }
 }

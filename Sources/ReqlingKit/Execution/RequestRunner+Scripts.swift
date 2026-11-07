@@ -119,6 +119,10 @@ extension RequestRunner {
         if let key, scriptPhases[key] == .preRequest {
             scriptPhases[key] = nil
         }
+        // Now, not when the run ends, so an agent reading a stream still open can have it masked.
+        if let key, let run = liveStamps[key]?.id {
+            scriptSecrets.remember(session.secretValues, for: run)
+        }
         session.commit(to: library)
         switch outcome {
         case .finished:
@@ -186,5 +190,32 @@ extension RunFailure {
         var noted = self
         noted.message += " The request's pre-request scripts didn't run, since this project's scripts aren't trusted on this Mac."
         return noted
+    }
+}
+
+/// The values each recorded run's scripts made secret, so masking a past run for an agent covers them too. Kept in
+/// memory only, never written anywhere: a run-local secret exists nowhere else once its run ends, and an agent reading
+/// a run after Reqling relaunched gets its response withheld instead (`ScriptReport.madeRunLocalSecrets`).
+struct ScriptSecretMemory {
+    /// The newest runs whose secrets are kept; older ones fall back to withholding.
+    static let capacity = 500
+
+    private var secrets: [RunID: Set<String>] = [:]
+    private var order: [RunID] = []
+
+    mutating func remember(_ values: Set<String>, for run: RunID) {
+        guard !values.isEmpty else {
+            return
+        }
+        if secrets.updateValue(values, forKey: run) == nil {
+            order.append(run)
+        }
+        if order.count > Self.capacity {
+            secrets[order.removeFirst()] = nil
+        }
+    }
+
+    func secrets(of run: RunID) -> Set<String>? {
+        secrets[run]
     }
 }

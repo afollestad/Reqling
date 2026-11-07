@@ -157,7 +157,7 @@ struct MCPExecutionTools {
             guard let exchange = context.runner.exchange(for: request.id, in: project.id) else {
                 return .object(["ran": false])
             }
-            var description = Self.describe(exchange, mask: context.runner.maskingSecrets(in: project.id))
+            var description = Self.describeRecorded(exchange, mask: context.runner.maskingSecrets(in: project.id), runner: context.runner)
             description["ran"] = true
             description["run"] = .string(exchange.id.description)
             description["inFlight"] = .bool(context.runner.isInFlight(request.id, in: project.id))
