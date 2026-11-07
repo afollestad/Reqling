@@ -47,6 +47,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `./scripts/lint.sh [--fix]` | Runs SwiftLint; `--fix` autocorrects |
 | `./scripts/screenshots.sh [-b]` | Captures the website's screenshots of a demo project, in light and dark |
 | `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against; `--token` requires a bearer token, `--no-introspection` refuses introspection |
+| `./scripts/set-certificate-secrets.sh [--dry-run]` | Exports your Developer ID certificate into the release workflow's signing secrets ([RELEASING.md](RELEASING.md)) |
 | `./scripts/generate-protos.sh` | Regenerates protobuf code and descriptor sets after a `.proto` change |
 
 - **Launch through `run.sh`**, not `swift run` or Xcode. Reqling is a SwiftPM package, and only the `.app` bundle `build.sh` assembles has the Info.plist, the assets compiled with `actool`, the `ReqlingPKCS12Probe` and `ReqlingScriptRunner` helpers with the script runtime, and the signature.
@@ -81,7 +82,9 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 ./scripts/build.sh --release
 ```
 
-This builds `.build/app/release/Reqling.app` for Apple silicon, with its dSYM beside it. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution; otherwise it's signed ad hoc.
+This builds `.build/app/release/Reqling.app` for Apple silicon, with a `dSYMs` folder beside it holding one dSYM per executable. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution; otherwise it's signed ad hoc.
+
+CI builds, signs, notarizes, and publishes releases from `main`; [RELEASING.md](RELEASING.md) covers versioning, the publish gate, and the signing secrets.
 
 ## License
 

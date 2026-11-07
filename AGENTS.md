@@ -38,7 +38,8 @@ Read the nearest `AGENTS.md` before editing; every scoped folder pairs it with a
 - DI generation needs `needle 0.25.1`, matching the pinned NeedleFoundation; see `Sources/Reqling/DI/AGENTS.md`.
 - Build: `./scripts/build.sh [--release]`. Run: `./scripts/run.sh [-b]`. Test: `./scripts/test.sh [filter ...]`. Snapshots: `./scripts/snapshots.sh <verify|record> [filter ...]`. Website screenshots: `./scripts/screenshots.sh [-b] [scene ...]`. GraphQL server to try against: `./scripts/graphql-server.sh [--token T] [--no-introspection]`.
 - Run ordered workflows serially, never in parallel: build-then-run, build-then-test, record-then-verify.
-- There is no CI yet. Keep every test CI-safe anyway (`Tests/AGENTS.md`).
+- `.github/workflows/ci.yml` runs setup, lint, build, and test, with the type-check budgets below, on every PR and push to `main`; keep tests CI-safe (`Tests/AGENTS.md`).
+- `.github/workflows/release.yml` builds signed canaries, notarized dry runs, and gated releases; read `RELEASING.md` and `scripts/ci/AGENTS.md` before changing versions, signing, or release packaging.
 - `TYPECHECK_BUDGET_MS=3000 TYPECHECK_TEST_BUDGET_MS=7000` fails a build or test run when any function body or expression in this repo's sources exceeds that type-check time. `scripts/lib/typecheck-budget.sh` owns the mechanism and the exemption procedure.
     - A run only reports files it recompiled, so an incremental pass can miss an untouched offender; change the budget value or clean for the full picture.
     - Exempt a proven-noise path rather than raising the budget, and prove it is noise first, as that script describes.

@@ -90,20 +90,27 @@ final class ScriptRunnerTests: XCTestCase {
         XCTAssertTrue(events.contains { if case .variable(let write) = $0 { return write.key == "before" } else { return false } })
     }
 
+    /// Timers run on the helper's real clock, which a busy machine can stall for milliseconds, and an interval
+    /// reschedules from when it actually fired. So nothing here races one timer against another: the timeouts are
+    /// set back to back far apart, the interval resolves its own wait, and the later timeout proves it was cleared.
     func testAwaitTimersAndIntervalsRunInOrder() async {
         let run = await fixtures.run(ScriptFixtures.input(.preRequest, ["""
         const order = []
-        setTimeout(() => order.push("timeout 2"), 2)
-        setTimeout(() => order.push("timeout 0"), 0)
+        const timeouts = new Promise((resolve) => {
+            setTimeout(() => { order.push("timeout 30"); resolve() }, 30)
+            setTimeout(() => order.push("timeout 0"), 0)
+        })
         let ticks = 0
-        const interval = setInterval(() => { ticks += 1; if (ticks === 3) clearInterval(interval) }, 1)
-        await new Promise((resolve) => setTimeout(resolve, 10))
+        await new Promise((resolve) => {
+            const interval = setInterval(() => { ticks += 1; if (ticks === 3) { clearInterval(interval); resolve() } }, 1)
+        })
+        await timeouts
         order.push("ticks " + ticks)
         console.log(order.join(", "))
         setTimeout(() => console.log("dropped"), 1000)
         """]))
 
-        XCTAssertEqual(run.console, ["timeout 0, timeout 2, ticks 3"])
+        XCTAssertEqual(run.console, ["timeout 0, timeout 30, ticks 3"])
         XCTAssertEqual(run.failures.count, 0)
     }
 

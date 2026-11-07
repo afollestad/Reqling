@@ -39,8 +39,8 @@ typecheck_budget_report_offenders "$logs_dir/build.log"
 bin_path=$("${swift_build[@]}" --show-bin-path)
 
 app=$(app_path "$configuration")
-dsym="$app.dSYM"
-rm -rf "$app" "$dsym"
+dsyms=$(dsyms_path "$configuration")
+rm -rf "$app" "$dsyms"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_path/$app_name" "$app/Contents/MacOS/"
 # The app finds each helper beside its own executable, by these names: it opens every PKCS#12 file in the first, and
@@ -93,8 +93,13 @@ if [ "$configuration" = debug ]; then
     -c "Set :CFBundleName Reqling Dev" \
     "$app/Contents/Info.plist"
 else
-  # Ship a stripped binary; the dSYM beside the bundle symbolicates its crash reports.
-  ditto "$bin_path/$app_name.dSYM" "$dsym"
+  # Ship stripped binaries; the dSYMs beside the bundle symbolicate their crash reports.
+  mkdir -p "$dsyms"
+  ditto "$bin_path/$app_name.dSYM" "$dsyms/$app_name.app.dSYM"
+  for helper in "${helpers[@]}"; do
+    helper_name=$(basename "$helper")
+    ditto "$bin_path/$helper_name.dSYM" "$dsyms/$helper_name.dSYM"
+  done
   strip -rSTx "$app/Contents/MacOS/$app_name" "${helpers[@]}"
 fi
 

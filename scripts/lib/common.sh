@@ -8,9 +8,15 @@ cd "$repo_root"
 app_name=Reqling
 logs_dir="$repo_root/.build/logs"
 
-# The assembled bundle for a build configuration (`debug` or `release`). Release builds put its dSYM at "<bundle>.dSYM".
+# The assembled bundle for a build configuration (`debug` or `release`).
 app_path() {
   echo "$repo_root/.build/app/$1/$app_name.app"
+}
+
+# The folder beside the bundle that release builds fill with one dSYM per executable: `<app>.app.dSYM` for the app and
+# `<helper>.dSYM` for each helper, as `scripts/ci/create-dsym-zip.sh` expects.
+dsyms_path() {
+  echo "$repo_root/.build/app/$1/dSYMs"
 }
 
 # Entry points turn this off for `--no-xcsift`; NO_XCSIFT=1 does the same from the environment.

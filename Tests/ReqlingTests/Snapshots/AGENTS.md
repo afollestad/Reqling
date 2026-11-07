@@ -2,7 +2,7 @@
 
 These instructions cover `Tests/ReqlingTests/Snapshots/` — `SnapshotTests` and its `+Topic` companions, the `assertMacSnapshot()` helper, and the baselines under `__Snapshots__/`. `Tests/AGENTS.md` owns test execution and the `+Topic` file convention this suite also follows.
 
-**Keep a rule here only when the code that would violate it is not the code that documents it.** The helpers carry their own mechanism: `defaultPixelPrecision` holds the relaxed-precision defaults and why `1.0` is unreachable, `assertMacSnapshot` its window-backed render and off-screen determinism, `macSnapshotImage` renderer selection, and `snapshotCornerBackgroundPixel` the three-corner rule.
+**Keep a rule here only when the code that would violate it is not the code that documents it.** The helpers carry their own mechanism: `defaultPixelPrecision` holds the relaxed-precision defaults and why `1.0` is unreachable, `assertMacSnapshot` its window-backed render and off-screen determinism, `macSnapshotImage` renderer selection, `snapshotCornerBackgroundPixel` the three-corner rule, and `hideBehindWindowMaterials` why sidebars render on the plain window background.
 
 ### Running
 

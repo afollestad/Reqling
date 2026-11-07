@@ -11,7 +11,7 @@ These instructions apply to everything under `Tests/`. `Tests/ReqlingTests/Snaps
 
 ## CI-Safe Tests
 
-There is no CI yet, but every test must be able to run unattended on a clean macOS runner.
+`.github/workflows/ci.yml` runs every test unattended on a clean hosted macOS runner, so each must pass there.
 
 - **No external network.** HTTP goes through `URLProtocol` stubs; local servers (HTTP, gRPC, MCP, fixtures) bind loopback port 0, never a fixed port. Checks against public servers belong in manual verification, never in a suite.
     - Serve GraphQL from `GraphQLFixtureServer`, which executes a real schema through GraphQLSwift; hand-written introspection JSON drifts from what servers send.

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # Keep the runner label and Xcode selection aligned with release.yml, so releases build on the validated toolchain.
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      # Build and test share these, so they share products; only test.sh's offender scan applies the test budget.
+      # Investigate a new offender rather than raising a budget; scripts/lib/typecheck-budget.sh owns the exemptions.
+      TYPECHECK_BUDGET_MS: "3000"
+      TYPECHECK_TEST_BUDGET_MS: "7000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Test subprocesses can fall back to the system selection instead of DEVELOPER_DIR.
+      - name: Select Xcode
+        run: sudo xcode-select --switch "$DEVELOPER_DIR"
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          xcodebuild -version
+          xcrun swift --version
+          ls -d /Applications/Xcode_*.app
+
+      - name: Cache Swift packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.swiftpm/cache
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-ci-swiftpm-${{ hashFiles('Package.resolved', 'Tools/GraphQLFixtureServer/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-ci-swiftpm-
+
+      - name: Setup
+        run: ./scripts/setup.sh
+
+      - name: Test release scripts
+        run: python3 -m unittest discover -s scripts/ci -p '*_tests.py'
+
+      - name: Lint
+        run: ./scripts/lint.sh
+
+      - name: Build
+        run: ./scripts/build.sh
+
+      - name: Test
+        run: ./scripts/test.sh
+
+      # Validation must leave the checkout as committed: build.sh and test.sh regenerate the DI providers, so a diff
+      # there means stale output, and the release workflow's notes step refuses a dirty checkout, so a file the
+      # toolchain rewrites (Package.resolved, say) would otherwise fail only the first publish.
+      - name: Check checkout is clean
+        run: |
+          git status --porcelain --untracked-files=all
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-logs
+          path: |
+            .build/logs
+            .build/snapshot-failures
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 7

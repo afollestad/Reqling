@@ -261,6 +261,37 @@ private func configureSnapshotWindow(
     window.contentViewController = controller
 }
 
+/// Lays out and displays the window into the state a snapshot captures.
+///
+/// First responder is cleared so no control in the hierarchy begins the render with a focus ring.
+/// NSHostingController can settle on an initial first responder during `layoutIfNeeded()`; flushing it
+/// before `displayIfNeeded()` produces a deterministic, focus-free baseline.
+@MainActor
+private func settleSnapshotWindow(_ window: NSWindow, controller: NSHostingController<AnyView>) {
+    window.makeFirstResponder(nil)
+    window.layoutIfNeeded()
+    window.displayIfNeeded()
+    hideBehindWindowMaterials(in: controller.view)
+    controller.view.layoutSubtreeIfNeeded()
+    controller.view.displayIfNeeded()
+}
+
+/// Hides every behind-window `NSVisualEffectView`, such as the one `.listStyle(.sidebar)` installs, so the
+/// window background shows through instead. Those materials are composited from the Mac's own display state, and in
+/// Dark Mode the recording Mac rendered the sidebar as RGB 53 where a hosted CI runner rendered 26, so a baseline
+/// would bake in whichever machine recorded it. Within-window materials such as `.bar` render the same everywhere
+/// and stay. SwiftUI resets `material` and `blendingMode` on layout but leaves `isHidden`, so hiding is what holds.
+///
+/// Only an empty backdrop is hidden. One that hosts content stays, so a snapshot of it keeps failing across machines
+/// rather than recording a baseline with that content silently missing.
+@MainActor
+private func hideBehindWindowMaterials(in view: NSView) {
+    if let effectView = view as? NSVisualEffectView, effectView.blendingMode == .behindWindow, effectView.subviews.isEmpty {
+        effectView.isHidden = true
+    }
+    view.subviews.forEach(hideBehindWindowMaterials)
+}
+
 @MainActor
 func closeSnapshotWindow(
     _ window: NSWindow,
@@ -363,15 +394,7 @@ func assertMacSnapshot<V: View>(
         )
         configureSnapshotWindow(window, controller: controller, appearanceName: appearanceName)
         defer { closeSnapshotWindow(window, controller: controller) }
-        // Explicitly clear first responder so no control in the hierarchy begins the
-        // render with a focus ring. NSHostingController can settle on an initial first
-        // responder during `layoutIfNeeded()`; flushing it before `displayIfNeeded()`
-        // produces a deterministic, focus-free baseline.
-        window.makeFirstResponder(nil)
-        window.layoutIfNeeded()
-        window.displayIfNeeded()
-        controller.view.layoutSubtreeIfNeeded()
-        controller.view.displayIfNeeded()
+        settleSnapshotWindow(window, controller: controller)
 
         XCTAssertEqual(
             controller.view.bounds.size,
