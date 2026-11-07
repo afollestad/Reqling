@@ -70,6 +70,8 @@ final class RequestEditorViewModelTests: XCTestCase {
 
         await waitUntilObserved("the stream opens") { self.editor.isStreaming }
         XCTAssertTrue(editor.isSending)
+        // The stream opens with its headers and gets its event after, so stopping at once can beat the event.
+        await waitUntilObserved("the event arrives") { self.editor.response.eventStream?.events.isEmpty == false }
         editor.cancel()
         await waitUntilObserved("the stream stops") { !self.editor.isSending }
 
