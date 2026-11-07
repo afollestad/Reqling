@@ -128,6 +128,22 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertEqual(component.workspaceState.projectState(acme).scriptTrust, .trusted)
     }
 
+    /// The Users folder with its run's badges and bar: three iterations, Create user failing one.
+    func testBatchSceneShowsTheUsersFoldersFinishedRun() throws {
+        try ScreenshotDemoProject.seed(.batch, into: component)
+
+        let model = component.appModel
+        let users = try XCTUnwrap(model.selection?.nodeID)
+        let createUser = try XCTUnwrap(component.projectLibrary.document(try XCTUnwrap(model.selection?.projectID))?
+            .requests(inFolder: users).first { $0.name == "Create user" })
+        XCTAssertEqual(model.selectedNode()?.name, "Users")
+        XCTAssertEqual(component.batchRunner.run?.state, .ended(.finished))
+        XCTAssertEqual(component.batchRunner.run?.counts, BatchStepCounts(passed: 11, failed: 1))
+        XCTAssertEqual(component.batchRunner.status(for: createUser.id)?.failedIterations, [1])
+        XCTAssertEqual(component.batchRunner.status(for: users)?.phase, .failed)
+        XCTAssertFalse(component.batchRunner.isRunning)
+    }
+
     /// Storefront holds the GraphQL scene's request; every other scene keeps it collapsed, and only the live scenes
     /// add Acme API's Live folder, so neither changes another capture.
     func testOtherScenesKeepStorefrontCollapsedTheInspectorClosedAndNoLiveFolder() throws {
@@ -140,6 +156,7 @@ final class ScreenshotModeTests: XCTestCase {
         XCTAssertFalse(component.appModel.isInspectorShown)
         XCTAssertEqual(library.document(acme)?.items.map(\.name), ["Users", "Orders", "Greeter", "Health check", "Purge cache"])
         XCTAssertFalse(library.document(acme)?.hasScripts ?? true, "Only the scripts scene's sidebar shows script badges")
+        XCTAssertFalse(component.batchRunner.hasReport, "Only the batch scene's sidebar shows a run")
     }
 
     func testTheStorageIsWipedOnEveryLaunch() throws {

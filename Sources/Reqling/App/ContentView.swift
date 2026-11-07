@@ -41,6 +41,7 @@ struct ContentView: View {
             .sheet(item: $model.sheet) { sheet in
                 AppSheetView(sheet: sheet, model: model)
                     .modifier(AlertPresenter(model: model, isInSheet: true))
+                    .modifier(ScriptTrustAlert(model: model, isInSheet: true))
             }
             .modifier(AlertPresenter(model: model, isInSheet: false))
             .alert(
@@ -66,7 +67,7 @@ struct ContentView: View {
             }
             .modifier(TrashConfirmationDialog(model: model))
             .modifier(HistoryClearConfirmation(model: model))
-            .modifier(ScriptTrustAlert(model: model))
+            .modifier(ScriptTrustAlert(model: model, isInSheet: false))
     }
 
     static func colorScheme(for theme: AppTheme) -> ColorScheme? {
@@ -98,9 +99,11 @@ private struct TrashConfirmationDialog: ViewModifier {
 }
 
 /// Asks whether a project's scripts may run on this Mac; see `AppModel.decideScriptTrust`. Don't Run is remembered, as
-/// Trust is; closing the alert some other way decides nothing.
+/// Trust is; closing the alert some other way decides nothing. Presented over an open sheet, as `AlertPresenter` is, so
+/// a folder or project run started from its sheet asks there.
 private struct ScriptTrustAlert: ViewModifier {
     let model: AppModel
+    let isInSheet: Bool
 
     func body(content: Content) -> some View {
         content.alert(
@@ -117,7 +120,7 @@ private struct ScriptTrustAlert: ViewModifier {
 
     /// Closing the alert without a button, which a button's own answer already did, leaves the question undecided.
     private var isPresented: Binding<Bool> {
-        Binding(get: { model.scriptTrustPending != nil }, set: { isShown in
+        Binding(get: { model.scriptTrustPending != nil && (model.sheet != nil) == isInSheet }, set: { isShown in
             if !isShown, model.scriptTrustPending != nil {
                 model.answerScriptTrust(nil)
             }
@@ -173,6 +176,8 @@ private struct AppSheetView: View {
                 settings: ProjectSettingsModel(projectID: project, app: model),
                 tokenContext: model.tokenContext(for: project)
             )
+        case .batchRun(let scope):
+            BatchRunSheet(setup: BatchRunSetupModel(scope: scope, app: model))
         }
     }
 }

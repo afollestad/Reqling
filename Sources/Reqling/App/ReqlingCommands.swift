@@ -52,6 +52,14 @@ struct ReqlingCommands: Commands {
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.editor?.isSending != true)
             Divider()
+            let batchTarget = model.batchTarget(for: model.selection)
+            Button(model.batchRunTitle(for: batchTarget)) { model.openBatchRun(batchTarget) }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(!model.canRunBatch(batchTarget))
+            Button("Stop Run") { model.stopBatchRun() }
+                .keyboardShortcut(".", modifiers: [.command, .shift])
+                .disabled(!model.batches.isRunning)
+            Divider()
             // HTTP only: a gRPC call or WebSocket has no cURL form.
             Button("Copy as cURL") { model.editor?.asHTTP?.copyAsCurl() }
                 .keyboardShortcut("c", modifiers: [.command, .option])

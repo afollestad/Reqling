@@ -26,6 +26,8 @@ struct ProjectDetailView: View {
                             .buttonStyle(.borderedProminent)
                         Button("Environments…") { model.sheet = .environments(project.id) }
                         Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
+                        Button("Run Project…") { model.openBatchRun(BatchRunScope(projectID: project.id, folderID: nil)) }
+                            .disabled(!model.canRunBatch(BatchRunScope(projectID: project.id, folderID: nil)))
                         Button("Reveal in Finder") { model.revealProject(project.id) }
                     }
                     if let scripts = model.containerScripts, scripts.projectID == project.id, scripts.folderID == nil {
@@ -158,6 +160,8 @@ struct FolderDetailView: View {
                 HStack {
                     Button("New Request") { model.newRequest(in: projectID) }
                     Button("New Folder") { model.newFolder(in: projectID) }
+                    Button("Run Folder…") { model.openBatchRun(BatchRunScope(projectID: projectID, folderID: folder.id)) }
+                        .disabled(!model.canRunBatch(BatchRunScope(projectID: projectID, folderID: folder.id)))
                 }
             }
             .padding(AppMetrics.screenInset)

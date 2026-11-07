@@ -50,12 +50,7 @@ enum ScreenshotDemoProject {
                 try ScreenshotScripts.apply(to: &document, users: requests.users, createUser: requests.createUser)
             }
         }
-        if scene == .scripts {
-            // Created outside Reqling's own flow, so it would otherwise ask before running them.
-            component.workspaceState.updateProject(acme) { $0.scriptTrust = .trusted }
-        }
-        // The live scenes open only Live, so the sidebar fits without scrolling.
-        component.workspaceState.updateProject(acme) { $0.expandedFolderIDs = live.map { [$0.folder.id] } ?? requests.expandedFolderIDs }
+        prepareWorkspace(of: acme, for: scene, requests: requests, live: live, in: component)
 
         let scriptsRun = scene == .scripts ? ScreenshotScripts.cachedRun(of: requests.createUser, startedAt: startedAt) : nil
         let acmeRuns = requests.cachedRuns + [live?.cachedRun(for: scene, startedAt: startedAt), scriptsRun].compactMap(\.self)
@@ -68,12 +63,31 @@ enum ScreenshotDemoProject {
         case .events: WorkspaceSelection(projectID: acme, nodeID: live?.orderUpdates)
         case .websocket: WorkspaceSelection(projectID: acme, nodeID: live?.supportChat)
         case .scripts: WorkspaceSelection(projectID: acme, nodeID: requests.createUser)
+        case .batch: WorkspaceSelection(projectID: acme, nodeID: requests.users)
         }
         show(shown, for: scene, in: component)
         guard scene == .websocket, let editor = component.appModel.editor?.asWebSocket else {
             return nil
         }
         return try ScreenshotLiveChat(editor: editor, project: acme, library: library)
+    }
+
+    /// What the scene shows expanded, and its scripts trusted where it runs them.
+    private static func prepareWorkspace(
+        of acme: ProjectID,
+        for scene: ScreenshotMode.Scene,
+        requests: DemoRequests,
+        live: ScreenshotLiveRequests?,
+        in component: AppComponent
+    ) {
+        component.workspaceState.updateProject(acme) { state in
+            if scene == .scripts {
+                // Created outside Reqling's own flow, so it would otherwise ask before running them.
+                state.scriptTrust = .trusted
+            }
+            // The live scenes open only Live, and the batch scene only Users, so the sidebar fits without scrolling.
+            state.expandedFolderIDs = scene == .batch ? [requests.users] : live?.expanded ?? requests.expandedFolderIDs
+        }
     }
 
     private static func save(_ runs: [(ProjectID, CachedRun)], in component: AppComponent) {
@@ -100,6 +114,9 @@ enum ScreenshotDemoProject {
             }
         }
         showTabs(for: scene, in: component.appModel)
+        if scene == .batch, let folder = shown.nodeID {
+            ScreenshotBatchRun.show(folder, in: shown.projectID, component: component)
+        }
     }
 
     /// Created first, so it sits above Acme API in the sidebar.
@@ -144,6 +161,8 @@ enum ScreenshotDemoProject {
             model.editor?.asHTTP?.tab = .scripts
             model.editor?.asHTTP?.scriptsEditor.phase = .postResponse
             model.editor?.asHTTP?.response.tab = .tests
+        case .batch:
+            break
         }
     }
 }

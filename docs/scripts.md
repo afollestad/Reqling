@@ -53,6 +53,7 @@ rq.test("returns the user", () => {
 - **`rq.variables`** reads every variable as `{{name}}` resolves it. A value set through it lasts only for the run, and beats every environment's.
 - **Secrets.** Scripts can read secret values. A value set with `{ secret: true }`, under a secret variable's name, or containing another secret is masked wherever it shows, and an environment's or Global's is kept in the Keychain.
 - **Partial runs.** Values a script sets before it throws or is stopped are kept.
+- **Folder and project runs** carry `rq.variables` values from one request to the next within an iteration, and give scripts `rq.info.iteration` and a data file's row as `rq.iterationData` ([Running folders and projects](running-folders.md)).
 
 ## Results
 
@@ -81,6 +82,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 - **The first time** a request with scripts is sent in a project you didn't create here, Reqling lists its script files and asks. **Trust Scripts** and **Don't Run** are both remembered on this Mac.
 - **Projects you create** in Reqling, or that an agent creates through MCP, are trusted from the start.
 - **Without trust,** requests go out without their scripts, and the response says so, with a **Trust Scripts** button for the next run. Agents' runs and background schema lookups never ask; they skip the scripts.
+- **Running a folder or project** asks once for the whole run, listing every script it would run ([Running folders and projects](running-folders.md)).
 - **Change it** in the project's pane, under its scripts.
 
 ## Libraries and limits

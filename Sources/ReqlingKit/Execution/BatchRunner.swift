@@ -21,6 +21,9 @@ public final class BatchRunner {
     public private(set) var run: BatchRun?
     /// From the moment a run is asked for, its trust question included, until it ends: what keeps another from starting.
     public private(set) var isRunning = false
+    /// Whether there's a run to report, going or ended; it changes only when one starts, is shown, or is dismissed, so
+    /// what reads it doesn't redraw on every step as a read of `run` would.
+    public private(set) var hasReport = false
     /// Bumped each time the rows' statuses are replaced (a run starts, is shown, or is dismissed), so a badge reading
     /// `status(for:)` follows the new set.
     public private(set) var generation = 0
@@ -82,6 +85,7 @@ public final class BatchRunner {
         }
         stopReason = nil
         run = initial
+        hasReport = true
         if let limit = initial.plan.timeLimit {
             let sleep = sleep
             timer = Task { [weak self] in
@@ -138,6 +142,7 @@ public final class BatchRunner {
             return
         }
         run = nil
+        hasReport = false
         replaceStatuses(cells: [:], folderMembers: [:], requestFolders: [:])
     }
 
@@ -148,6 +153,7 @@ public final class BatchRunner {
             return
         }
         self.run = run
+        hasReport = true
         prepareStatuses(for: run.plan.requests, scope: run.plan.scope, in: document)
         failures = Set(run.tallies.filter { $0.value.counts.failed > 0 }.keys)
         failureRevision += 1

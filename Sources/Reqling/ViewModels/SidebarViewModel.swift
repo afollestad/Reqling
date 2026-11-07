@@ -20,6 +20,8 @@ struct SidebarSection: Identifiable {
 final class SidebarViewModel {
     var query = ""
     var filter = RequestFilter.none
+    /// Shows only the requests that failed in the current or last folder or project run; off once its report goes.
+    var showsLastRunFailures = false
     /// Bumped by the Filter Sidebar command; the search field takes focus when it changes.
     private(set) var focusRequest = 0
 
@@ -32,14 +34,21 @@ final class SidebarViewModel {
         let projects: [LibraryProject]
         /// `RunHistory.revision` while an outcome filter is on; any other time, outcomes cannot change the sections.
         let historyRevision: Int
+        /// The last run's failed requests while that filter is on.
+        let lastRunFailures: Set<RequestNodeID>?
     }
 
     init(app: AppModel) {
         self.app = app
     }
 
+    /// Whether a folder or project run has a report up, which the "Failed in Last Run" filter needs.
+    var hasLastRun: Bool {
+        app.batches.hasReport
+    }
+
     var isFiltering: Bool {
-        !query.trimmingCharacters(in: .whitespaces).isEmpty || filter.isActive
+        !query.trimmingCharacters(in: .whitespaces).isEmpty || filter.isActive || showsLastRunFailures
     }
 
     var sections: [SidebarSection] {
@@ -48,7 +57,8 @@ final class SidebarViewModel {
             query: query,
             filter: filter,
             projects: app.library.projects,
-            historyRevision: filter.outcomes.isEmpty ? 0 : app.runner.history.revision
+            historyRevision: filter.outcomes.isEmpty ? 0 : app.runner.history.revision,
+            lastRunFailures: showsLastRunFailures ? app.batches.failedRequests : nil
         )
         if let cache, cache.key == key {
             return cache.sections
@@ -70,6 +80,7 @@ final class SidebarViewModel {
     func clearFilters() {
         query = ""
         filter = .none
+        showsLastRunFailures = false
     }
 
     func requestFocus() {
@@ -82,10 +93,29 @@ final class SidebarViewModel {
                 // An unavailable project has nothing to match; it shows only when nothing is filtered.
                 return isFiltering ? nil : SidebarSection(project: project, items: [], requestCount: 0)
             }
-            guard let items = document.filtered(matching: key.query, filter: key.filter, outcome: { runner.outcome(for: $0, in: project.id) }) else {
+            guard var items = document.filtered(matching: key.query, filter: key.filter, outcome: { runner.outcome(for: $0, in: project.id) }) else {
                 return nil
             }
+            if let failures = key.lastRunFailures {
+                items = keeping(failures, in: items)
+                guard !items.isEmpty else {
+                    return nil
+                }
+            }
             return SidebarSection(project: project, items: items, requestCount: countRequests(in: items))
+        }
+    }
+
+    /// `nodes` with only the requests in `ids`, and the folders that still hold one.
+    private static func keeping(_ ids: Set<RequestNodeID>, in nodes: [RequestNode]) -> [RequestNode] {
+        nodes.compactMap { node in
+            switch node {
+            case .request(let request):
+                return ids.contains(request.id) ? node : nil
+            case .folder(var folder):
+                folder.children = keeping(ids, in: folder.children)
+                return folder.children.isEmpty ? nil : .folder(folder)
+            }
         }
     }
 

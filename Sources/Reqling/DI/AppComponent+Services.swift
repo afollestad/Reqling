@@ -100,12 +100,20 @@ extension AppComponent {
         }
     }
 
+    /// The one folder or project run at a time, which the window and the MCP server share.
+    var batchRunner: BatchRunner {
+        shared {
+            BatchRunner(runner: requestRunner)
+        }
+    }
+
     var appModel: AppModel {
         shared {
             AppModel(
                 library: projectLibrary,
                 workspace: workspaceState,
                 runner: requestRunner,
+                batches: batchRunner,
                 settings: settingsStore,
                 appInfo: appInfo,
                 keychain: keychainIdentities,

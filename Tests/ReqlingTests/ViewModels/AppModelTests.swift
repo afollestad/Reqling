@@ -36,6 +36,7 @@ final class AppModelTests: XCTestCase {
             library: fixture.library,
             workspace: fixture.component.workspaceState,
             runner: fixture.component.requestRunner,
+            batches: fixture.component.batchRunner,
             settings: fixture.component.settingsStore,
             appInfo: AppFixture.appInfo,
             keychain: fixture.component.keychainIdentities,

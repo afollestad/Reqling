@@ -33,6 +33,11 @@ struct ScreenshotLiveRequests {
         self.supportChat = supportChat.id
     }
 
+    /// What the live scenes expand: Live alone, so the sidebar fits without scrolling.
+    var expanded: Set<RequestNodeID> {
+        [folder.id]
+    }
+
     /// The run the scene opens, cached as if it had just finished; the WebSocket's is live instead.
     func cachedRun(for scene: ScreenshotMode.Scene, startedAt: Date) -> CachedRun? {
         switch scene {
@@ -40,7 +45,7 @@ struct ScreenshotLiveRequests {
             let url = "https://api.acme.dev/orders/stream?status=open"
             let sent = ResolvedHTTPRequest(method: "GET", url: url, headers: [], bodyPreview: nil, bodyByteCount: 0)
             return CachedRun(request: orderUpdates, sent: sent, outcome: .response(Self.orderStream(url: url, startedAt: startedAt)))
-        case .request, .grpc, .graphql, .websocket, .scripts:
+        case .request, .grpc, .graphql, .websocket, .scripts, .batch:
             return nil
         }
     }

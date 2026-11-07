@@ -92,6 +92,9 @@ private struct SidebarProjectMenu: View {
             Button("New Request") { model.selection = .project(project.id); model.newRequest(in: project.id) }
             Button("New Folder") { model.selection = .project(project.id); model.newFolder(in: project.id) }
             Divider()
+            Button("Run Project…") { model.openBatchRun(BatchRunScope(projectID: project.id, folderID: nil)) }
+                .disabled(!model.canRunBatch(BatchRunScope(projectID: project.id, folderID: nil)))
+            Divider()
             Button("Environments…") { model.sheet = .environments(project.id) }
             Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
             Button("Rename") { model.beginRename(.project(project.id)) }
@@ -142,8 +145,9 @@ private struct SidebarRequestLabel: View {
         HStack(spacing: 8) {
             RequestKindPill(kind: request.kind)
             SidebarRowName(item: .node(projectID, request.id), name: request.name, model: model)
+            Spacer(minLength: 4)
+            SidebarBatchRunBadge(itemID: request.id, isFolder: false, batches: model.batches)
             if !request.scripts.isEmpty {
-                Spacer(minLength: 4)
                 SidebarScriptsBadge()
             }
         }
@@ -183,6 +187,7 @@ private struct SidebarFolderLabel: View {
                 .accessibilityHidden(true)
             SidebarRowName(item: .node(projectID, folder.id), name: folder.name, model: model)
             Spacer(minLength: 4)
+            SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
             if !folder.scripts.isEmpty {
                 SidebarScriptsBadge()
             }
@@ -223,6 +228,10 @@ private struct SidebarItemMenu: View {
     var body: some View {
         Button("New Request") { model.selection = .node(projectID, nodeID); model.newRequest(in: projectID) }
         Button("New Folder") { model.selection = .node(projectID, nodeID); model.newFolder(in: projectID) }
+        if request == nil {
+            Button("Run Folder…") { model.openBatchRun(BatchRunScope(projectID: projectID, folderID: nodeID)) }
+                .disabled(!model.canRunBatch(BatchRunScope(projectID: projectID, folderID: nodeID)))
+        }
         Divider()
         Button("Rename") { model.beginRename(.node(projectID, nodeID)) }
             .disabled(!model.canRename(.node(projectID, nodeID)))
@@ -256,7 +265,8 @@ private struct SidebarCount: View {
 }
 
 /// A compact method name, "gRPC", or "WS", on a tinted pill, sized so request names line up.
-private struct RequestKindPill: View {
+/// A request's protocol, or its HTTP method, as the sidebar and the run sheet show it.
+struct RequestKindPill: View {
     let kind: RequestKind
 
     var body: some View {

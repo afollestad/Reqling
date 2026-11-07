@@ -36,7 +36,10 @@ struct SidebarSearchBar: View {
                 RoundedRectangle(cornerRadius: AppMetrics.inputCornerRadius, style: .continuous)
                     .strokeBorder(isFocused ? Color(nsColor: accent) : Color.clear, lineWidth: 2)
             )
-            SidebarFilterMenu(filter: $sidebar.filter)
+            SidebarFilterMenu(
+                filter: $sidebar.filter,
+                lastRunFailures: sidebar.hasLastRun ? $sidebar.showsLastRunFailures : nil
+            )
         }
         .padding(.horizontal, 10)
         .padding(.top, 6)
@@ -47,9 +50,12 @@ struct SidebarSearchBar: View {
     }
 }
 
-/// Narrows the sidebar by protocol, by HTTP method, and by how each request's last run went.
+/// Narrows the sidebar by protocol, by HTTP method, by how each request's last run went, and, while a folder or
+/// project run's report is up, to what failed in it.
 private struct SidebarFilterMenu: View {
     @Binding var filter: RequestFilter
+    /// `nil` while there's no folder or project run to report.
+    let lastRunFailures: Binding<Bool>?
 
     var body: some View {
         Menu {
@@ -67,19 +73,29 @@ private struct SidebarFilterMenu: View {
                 ForEach(RunOutcomeKind.allCases, id: \.self) { outcome in
                     Toggle(Self.title(for: outcome), isOn: member(outcome, in: \.outcomes))
                 }
+                if let lastRunFailures {
+                    Toggle("Failed in Last Run", isOn: lastRunFailures)
+                }
             }
             Divider()
-            Button("Clear Filters") { filter = .none }
-                .disabled(!filter.isActive)
+            Button("Clear Filters") {
+                filter = .none
+                lastRunFailures?.wrappedValue = false
+            }
+            .disabled(!isActive)
         } label: {
-            Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            Image(systemName: isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .help(filter.isActive ? "Filters are on" : "Filter by protocol, method, or last result")
+        .help(isActive ? "Filters are on" : "Filter by protocol, method, or last result")
         .accessibilityLabel("Filters")
-        .accessibilityValue(filter.isActive ? "On" : "Off")
-        .iconButtonChrome(isSelected: filter.isActive)
+        .accessibilityValue(isActive ? "On" : "Off")
+        .iconButtonChrome(isSelected: isActive)
+    }
+
+    private var isActive: Bool {
+        filter.isActive || lastRunFailures?.wrappedValue == true
     }
 
     private func member<Value: Hashable>(_ value: Value, in keyPath: WritableKeyPath<RequestFilter, Set<Value>>) -> Binding<Bool> {

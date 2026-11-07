@@ -21,6 +21,9 @@ struct ScreenshotMode {
         case websocket
         /// A POST's post-response script (`ScreenshotScripts`), and its run's tests, one failing, and console.
         case scripts
+        /// The Users folder after a run from a data file (`ScreenshotBatchRun`): each request's badge, one failing, and
+        /// the run's bar at the sidebar's foot.
+        case batch
     }
 
     let scene: Scene

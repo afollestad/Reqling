@@ -33,6 +33,7 @@ final class AppFixture {
             library: component.projectLibrary,
             workspace: component.workspaceState,
             runner: component.requestRunner,
+            batches: component.batchRunner,
             settings: component.settingsStore,
             appInfo: Self.appInfo,
             keychain: component.keychainIdentities,

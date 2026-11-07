@@ -43,7 +43,10 @@ struct SidebarView: View {
             SidebarSearchBar(sidebar: sidebar)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SidebarFooter(model: model)
+            VStack(spacing: 0) {
+                SidebarBatchRunBar(model: model)
+                SidebarFooter(model: model)
+            }
         }
         .toolbar {
             ToolbarItem(id: MainToolbarItemID.addProject, placement: .automatic) {

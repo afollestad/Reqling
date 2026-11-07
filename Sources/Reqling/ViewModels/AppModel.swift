@@ -25,6 +25,7 @@ enum AppSheet: Identifiable, Hashable {
     case newProject
     case environments(ProjectID)
     case projectSettings(ProjectID)
+    case batchRun(BatchRunScope)
 
     var id: Self {
         self
@@ -102,6 +103,10 @@ final class AppModel {
     @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored let workspace: WorkspaceStateStore
     @ObservationIgnored let runner: RequestRunner
+    /// Runs a folder's or project's requests (`AppModel+BatchRuns`).
+    @ObservationIgnored let batches: BatchRunner
+    /// What the run sheet remembers per folder or project until Reqling quits, saved when a run starts.
+    @ObservationIgnored var batchRunSettings: [BatchRunScope: BatchRunSettings] = [:]
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let appInfo: AppInfo
     @ObservationIgnored let keychain: any KeychainIdentityStore
@@ -123,6 +128,7 @@ final class AppModel {
         library: ProjectLibrary,
         workspace: WorkspaceStateStore,
         runner: RequestRunner,
+        batches: BatchRunner,
         settings: SettingsStore,
         appInfo: AppInfo,
         keychain: any KeychainIdentityStore,
@@ -137,6 +143,7 @@ final class AppModel {
         self.library = library
         self.workspace = workspace
         self.runner = runner
+        self.batches = batches
         self.settings = settings
         self.appInfo = appInfo
         self.keychain = keychain

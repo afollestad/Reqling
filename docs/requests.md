@@ -1,6 +1,6 @@
 # Requests
 
-HTTP requests, their responses, event streams, and run history. [GraphQL](graphql.md), [gRPC](grpc.md), and [WebSockets](websockets.md) have their own pages.
+HTTP requests, their responses, event streams, and run history. [GraphQL](graphql.md), [gRPC](grpc.md), and [WebSockets](websockets.md) have their own pages, and [Running folders and projects](running-folders.md) covers running many requests in order.
 
 ## Building a request
 
