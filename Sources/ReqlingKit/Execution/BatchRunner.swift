@@ -12,13 +12,12 @@ import ReqlingTemplating
 /// starts. Trust is settled once, before the first step; steps never ask (`RunOptions.mayPromptForTrust` stays off),
 /// and read the project's trust as it stands when each starts, so revoking it mid-run takes effect.
 ///
-/// Badges observe one `BatchStatusCell` each, read through `status(for:)`, so a step redraws only the rows it changes
-/// rather than the whole sidebar.
+/// Badges each observe one `BatchStatusCell` through `status(for:)`, so a step redraws only the rows it changes.
 @MainActor
 @Observable
 public final class BatchRunner {
     /// The run going now, or the last one until it's dismissed or another starts: what the sidebar's bar shows.
-    public private(set) var run: BatchRun?
+    public internal(set) var run: BatchRun?
     /// From the moment a run is asked for, its trust question included, until it ends: what keeps another from starting.
     public private(set) var isRunning = false
     /// Whether there's a run to report, going or ended; it changes only when one starts, is shown, or is dismissed, so
@@ -26,19 +25,19 @@ public final class BatchRunner {
     public private(set) var hasReport = false
     /// Bumped each time the rows' statuses are replaced (a run starts, is shown, or is dismissed), so a badge reading
     /// `status(for:)` follows the new set.
-    public private(set) var generation = 0
+    public internal(set) var generation = 0
     /// Bumped each time a request first fails in the current run, for the sidebar's "Failed in Last Run" filter.
-    public private(set) var failureRevision = 0
+    public internal(set) var failureRevision = 0
 
     @ObservationIgnored let runner: RequestRunner
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
-    @ObservationIgnored private var cells: [RequestNodeID: BatchStatusCell] = [:]
+    @ObservationIgnored var cells: [RequestNodeID: BatchStatusCell] = [:]
     /// Each folder in the run, with the requests inside it that the run runs.
-    @ObservationIgnored private var folderMembers: [RequestNodeID: [RequestNodeID]] = [:]
+    @ObservationIgnored var folderMembers: [RequestNodeID: [RequestNodeID]] = [:]
     /// Each request's folders within the run's scope.
-    @ObservationIgnored private var requestFolders: [RequestNodeID: [RequestNodeID]] = [:]
-    @ObservationIgnored private var requestNames: [RequestNodeID: String] = [:]
-    @ObservationIgnored private var failures: Set<RequestNodeID> = []
+    @ObservationIgnored var requestFolders: [RequestNodeID: [RequestNodeID]] = [:]
+    @ObservationIgnored var requestNames: [RequestNodeID: String] = [:]
+    @ObservationIgnored var failures: Set<RequestNodeID> = []
     @ObservationIgnored private var loop: Task<BatchRun, Never>?
     @ObservationIgnored private var timer: Task<Void, Never>?
     /// Why the run is stopping, once `stop()` or the time limit asked it to.
@@ -270,6 +269,10 @@ public final class BatchRunner {
                 }
             }
         }
+        // A stop that lands on the last step ends the run before any later step could notice it.
+        if end == .finished, let reason = stopReason ?? (Task.isCancelled ? .stopped : nil) {
+            end = reason
+        }
         return finish(end, initial: initial)
     }
 
@@ -392,102 +395,4 @@ public final class BatchRunner {
         return run ?? initial
     }
 
-    // MARK: - Report
-
-    private func record(_ exchange: RequestExchange, request: RequestNodeID, iteration: Int) {
-        let result: BatchStepResult = switch exchange.outcomeKind {
-        case .succeeded: .passed
-        case .failed: .failed
-        case .notSent: .skipped
-        }
-        let message = result == .failed ? exchange.failure?.message ?? exchange.scriptReport?.phases.lazy.compactMap(\.failureSummary).first : nil
-        add(BatchRunStep(
-            iteration: iteration,
-            requestID: request,
-            requestName: requestNames[request] ?? "",
-            summary: RunSummary(exchange),
-            result: result,
-            message: message
-        ))
-    }
-
-    private func record(interrupted request: RequestNodeID, iteration: Int, message: String, summary: RunSummary? = nil) {
-        add(BatchRunStep(
-            iteration: iteration,
-            requestID: request,
-            requestName: requestNames[request] ?? "",
-            summary: summary,
-            result: .interrupted,
-            message: message
-        ))
-    }
-
-    private func add(_ step: BatchRunStep) {
-        run?.add(step)
-        refreshStatus(of: step.requestID)
-        if step.result == .failed, failures.insert(step.requestID).inserted {
-            failureRevision += 1
-        }
-    }
-
-    private func note(_ text: String) {
-        if run?.notes.contains(text) == false {
-            run?.notes.append(text)
-        }
-    }
-
-    // MARK: - Row statuses
-
-    private func prepareStatuses(for requests: [RequestNodeID], scope: BatchRunScope, in document: ProjectDocument) {
-        var cells: [RequestNodeID: BatchStatusCell] = [:]
-        var folderMembers: [RequestNodeID: [RequestNodeID]] = [:]
-        var requestFolders: [RequestNodeID: [RequestNodeID]] = [:]
-        for request in requests {
-            cells[request] = BatchStatusCell()
-            var folders = document.ancestors(of: request).map(\.id)
-            if let scopeFolder = scope.folderID {
-                folders = folders.firstIndex(of: scopeFolder).map { Array(folders[$0...]) } ?? []
-            }
-            requestFolders[request] = folders
-            for folder in folders {
-                folderMembers[folder, default: []].append(request)
-                cells[folder] = cells[folder] ?? BatchStatusCell()
-            }
-        }
-        replaceStatuses(cells: cells, folderMembers: folderMembers, requestFolders: requestFolders)
-    }
-
-    private func replaceStatuses(
-        cells: [RequestNodeID: BatchStatusCell],
-        folderMembers: [RequestNodeID: [RequestNodeID]],
-        requestFolders: [RequestNodeID: [RequestNodeID]]
-    ) {
-        self.cells = cells
-        self.folderMembers = folderMembers
-        self.requestFolders = requestFolders
-        if cells.isEmpty {
-            failures = []
-            failureRevision += 1
-        }
-        // After the swap, so a badge that re-reads finds the new cells.
-        generation += 1
-    }
-
-    private func refreshStatus(of request: RequestNodeID) {
-        guard let run else {
-            return
-        }
-        let tally = run.tallies[request] ?? BatchRequestTally()
-        update(request, to: BatchItemStatus(tally, isRunning: run.currentRequest == request))
-        for folder in requestFolders[request] ?? [] {
-            let members = (folderMembers[folder] ?? []).compactMap { cells[$0]?.status }
-            update(folder, to: BatchItemStatus(rollingUp: members))
-        }
-    }
-
-    private func update(_ item: RequestNodeID, to status: BatchItemStatus) {
-        if let cell = cells[item], cell.status != status {
-            cell.status = status
-        }
-    }
 }

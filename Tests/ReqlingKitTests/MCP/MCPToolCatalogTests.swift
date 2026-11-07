@@ -37,7 +37,7 @@ final class MCPToolCatalogTests: XCTestCase {
         let names = Set(fixture.dispatcher.definitions.map(\.name))
         for name in [
             "create_project", "list_projects", "delete_project", "create_variables", "list_variables", "update_variables",
-            "delete_variables", "create_request", "list_requests", "update_request", "delete_request", "execute_request",
+            "delete_variables", "create_request", "list_requests", "update_request", "delete_request", "execute_request", "run_folder",
             "list_runs", "get_run", "clear_history", "compile_protos", "update_tls_config", "reveal_item", "update_settings"
         ] {
             XCTAssertTrue(names.contains(name), name)

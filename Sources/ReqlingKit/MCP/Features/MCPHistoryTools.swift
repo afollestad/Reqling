@@ -88,7 +88,8 @@ struct MCPHistoryTools {
         }
     }
 
-    private static func describe(_ run: RunSummary) -> Value {
+    /// A run as `list_runs` lists it, which `run_folder` reuses for each step it reports.
+    static func describe(_ run: RunSummary) -> Value {
         var description: [String: Value] = [
             "run": .string(run.id.description),
             "startedAt": .string(ISO8601DateFormatter().string(from: run.startedAt)),

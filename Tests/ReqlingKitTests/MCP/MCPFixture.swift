@@ -11,6 +11,7 @@ final class MCPFixture {
     let workspace: WorkspaceStateStore
     let settings: SettingsStore
     let runner: RequestRunner
+    let batches: BatchRunner
     let protoWorkspaces: ProtoWorkspaceStore
     let context: MCPToolContext
     let dispatcher: MCPToolDispatcher
@@ -46,10 +47,12 @@ final class MCPFixture {
             scripts: ScriptFixtures.realRunner,
             sleep: runnerSleep
         )
+        batches = BatchRunner(runner: runner, sleep: runnerSleep)
         context = MCPToolContext(
             library: storage.library,
             workspace: workspace,
             runner: runner,
+            batches: batches,
             settings: settings,
             protoWorkspaces: protoWorkspaces,
             appInfo: AppInfo(name: "Reqling", bundleIdentifier: "com.afollestad.reqling.tests", version: "1.0.0", build: "1")

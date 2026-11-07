@@ -19,6 +19,7 @@ extension AppComponent {
                 library: projectLibrary,
                 workspace: workspaceState,
                 runner: requestRunner,
+                batches: batchRunner,
                 settings: settingsStore,
                 protoWorkspaces: protoWorkspaces,
                 appInfo: appInfo

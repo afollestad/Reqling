@@ -31,6 +31,8 @@ public final class MCPToolContext {
     let library: ProjectLibrary
     let workspace: WorkspaceStateStore
     let runner: RequestRunner
+    /// The one folder or project run at a time, which the window shares.
+    let batches: BatchRunner
     let settings: SettingsStore
     let lifecycle: ProjectLifecycle
     let protoWorkspaces: ProtoWorkspaceStore
@@ -45,6 +47,7 @@ public final class MCPToolContext {
         library: ProjectLibrary,
         workspace: WorkspaceStateStore,
         runner: RequestRunner,
+        batches: BatchRunner,
         settings: SettingsStore,
         protoWorkspaces: ProtoWorkspaceStore,
         appInfo: AppInfo
@@ -52,6 +55,7 @@ public final class MCPToolContext {
         self.library = library
         self.workspace = workspace
         self.runner = runner
+        self.batches = batches
         self.settings = settings
         self.protoWorkspaces = protoWorkspaces
         self.appInfo = appInfo

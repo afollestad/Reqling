@@ -270,6 +270,20 @@ extension RequestRunnerTests {
         XCTAssertNil(server.requests.last?.header("X-Seen"))
     }
 
+    func testAStopOnTheLastStepStillEndsTheRunAsStopped() async throws {
+        let server = try await batchServer()
+        let project = try batchProject(base: server.baseURL, paths: ["hang"])
+        let runner = makeRunner()
+        let batches = BatchRunner(runner: runner)
+
+        let handle = try await batches.begin(try plan(project), mayPromptForTrust: false)
+        await waitUntil("the step is in flight") { runner.isInFlight(project["hang"], in: project.id) }
+        batches.stop()
+        let run = await handle.finished()
+
+        XCTAssertEqual(run.state, .ended(.stopped))
+    }
+
     func testStopEndsTheRunAndInterruptsTheStepInFlight() async throws {
         let server = try await batchServer()
         let project = try batchProject(base: server.baseURL, paths: ["hang", "me"])

@@ -22,6 +22,7 @@ public enum MCPToolCatalog {
             + MCPEnvironmentTools(context: context).tools
             + MCPRequestTools(context: context).tools
             + MCPExecutionTools(context: context).tools
+            + MCPBatchTools(context: context).tools
             + MCPHistoryTools(context: context).tools
             + MCPGRPCTools(context: context).tools
             + MCPGraphQLTools(context: context).tools
