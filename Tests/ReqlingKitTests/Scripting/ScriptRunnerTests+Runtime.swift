@@ -136,13 +136,20 @@ extension ScriptRunnerTests {
         console.log(rq.info.iteration, rq.info.iterationCount, pm.info.iteration, pm.info.iterationCount)
         console.log(rq.iterationData.get("age"), typeof rq.iterationData.get("age"), rq.iterationData.has("nope"))
         console.log(JSON.stringify(Object.entries(pm.iterationData.toObject()).sort()), rq.variables.get("age"), rq.variables.get("email"))
+        console.log(pm.iterationData.get("email"), pm.iterationData.has("age"), pm.iterationData.has("nope"))
         """], variables: variables, iteration: (2, 5)))
+        let alone = await fixtures.run(ScriptFixtures.input(.preRequest, ["""
+        console.log(rq.info.iteration, rq.info.iterationCount, JSON.stringify(rq.iterationData.toObject()), rq.iterationData.get("id"))
+        console.log(rq.iterationData.has("id"), pm.iterationData.get("id"), pm.info.iterationCount)
+        """]))
 
         XCTAssertEqual(run.console, [
             "2 5 2 5",
             "36 string false",
-            #"[["age","36"],["email","ada@acme.dev"]] 36 override@acme.dev"#
+            #"[["age","36"],["email","ada@acme.dev"]] 36 override@acme.dev"#,
+            "ada@acme.dev true false"
         ], "Data reads as text, and one-run overrides beat it as `{{name}}` resolves")
+        XCTAssertEqual(alone.console, ["0 1 {} undefined", "false undefined 1"], "A request run on its own is iteration 0 of 1, with no data")
     }
 
     func testFlowRequestsAreReportedOncePerChangeAndSkipOnlyBeforeTheRequest() async {

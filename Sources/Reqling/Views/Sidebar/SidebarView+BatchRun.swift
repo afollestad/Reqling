@@ -11,21 +11,25 @@ struct SidebarBatchRunBadge: View {
     var body: some View {
         if let status = batches.status(for: itemID),
            let badge = BatchBadgePresentation(status, isRunGoing: batches.isRunning, isFolder: isFolder) {
-            HStack(spacing: 3) {
-                switch badge.symbol {
-                case .progress:
-                    ProgressView()
-                        .controlSize(.mini)
-                case .image(let name):
-                    Image(systemName: name)
-                        .font(.caption)
-                        .foregroundStyle(Self.color(badge.tint))
-                }
+            // The count before the icon, so the icon takes the row's accessory cell and lines up with the column.
+            HStack(spacing: 2) {
                 if let count = badge.count {
                     Text(count)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
+                Group {
+                    switch badge.symbol {
+                    case .progress:
+                        ProgressView()
+                            .controlSize(.mini)
+                    case .image(let name):
+                        Image(systemName: name)
+                            .font(.caption)
+                            .foregroundStyle(Self.color(badge.tint))
+                    }
+                }
+                .frame(width: AppMetrics.sidebarAccessoryWidth)
             }
             .fixedSize()
             .help(badge.description)

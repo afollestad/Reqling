@@ -146,9 +146,11 @@ private struct SidebarRequestLabel: View {
             RequestKindPill(kind: request.kind)
             SidebarRowName(item: .node(projectID, request.id), name: request.name, model: model)
             Spacer(minLength: 4)
-            SidebarBatchRunBadge(itemID: request.id, isFolder: false, batches: model.batches)
-            if !request.scripts.isEmpty {
-                SidebarScriptsBadge()
+            SidebarAccessories {
+                SidebarBatchRunBadge(itemID: request.id, isFolder: false, batches: model.batches)
+                if !request.scripts.isEmpty {
+                    SidebarScriptsBadge()
+                }
             }
         }
         .tag(SidebarItem.node(projectID, request.id))
@@ -187,11 +189,13 @@ private struct SidebarFolderLabel: View {
                 .accessibilityHidden(true)
             SidebarRowName(item: .node(projectID, folder.id), name: folder.name, model: model)
             Spacer(minLength: 4)
-            SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
-            if !folder.scripts.isEmpty {
-                SidebarScriptsBadge()
+            SidebarAccessories {
+                SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
+                if !folder.scripts.isEmpty {
+                    SidebarScriptsBadge()
+                }
+                SidebarCount(count: folder.children.count)
             }
-            SidebarCount(count: folder.children.count)
         }
             .tag(SidebarItem.node(projectID, folder.id))
             .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, request: nil, model: model) }
@@ -213,6 +217,7 @@ private struct SidebarScriptsBadge: View {
         Image(systemName: "curlybraces")
             .font(.caption)
             .foregroundStyle(.tertiary)
+            .frame(width: AppMetrics.sidebarAccessoryWidth)
             .help("Has scripts")
             .accessibilityLabel("Has scripts")
     }
@@ -250,6 +255,18 @@ private struct SidebarItemMenu: View {
     }
 }
 
+/// A row's trailing accessories, each in its own `AppMetrics.sidebarAccessoryWidth` cell and packed together, so the
+/// last cell of every row lines up in one column at the trailing edge.
+private struct SidebarAccessories<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+        }
+    }
+}
+
 /// A secondary count at the trailing edge of a project or folder row. Never compressed: the name truncates first, and a
 /// rename field, which outranks it for width, would otherwise squeeze it to nothing.
 private struct SidebarCount: View {
@@ -260,6 +277,8 @@ private struct SidebarCount: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
             .fixedSize()
+            // A minimum, so a count too wide for the cell grows it rather than truncating.
+            .frame(minWidth: AppMetrics.sidebarAccessoryWidth)
             .accessibilityLabel("\(count) item\(count == 1 ? "" : "s")")
     }
 }

@@ -106,6 +106,19 @@ extension RequestRunnerTests {
         XCTAssertEqual(seen, ["first-0/2", "first-1/2"])
     }
 
+    func testRunLocalValuesPassThroughARequestWithoutScripts() async throws {
+        let server = try await batchServer()
+        let project = try batchProject(base: server.baseURL, paths: ["first", "plain", "last"])
+        try setScripts(ScriptSet(postResponse: "rq.variables.set('seen', 'from-first')"), on: project["first"], in: project)
+        try setScripts(ScriptSet(preRequest: "rq.request.headers.upsert('X-Seen', rq.variables.get('seen'))"), on: project["last"], in: project)
+        let batches = BatchRunner(runner: makeRunner())
+
+        _ = try await batches.begin(try plan(project), mayPromptForTrust: false).finished()
+
+        XCTAssertEqual(server.requests.map(\.uri), ["/first", "/plain", "/last"])
+        XCTAssertEqual(server.requests.last?.header("X-Seen"), "from-first", "The scriptless step hands on what it was given")
+    }
+
     func testEachIterationReadsItsDataRowInScriptsAndTemplates() async throws {
         let server = try await batchServer()
         let project = try batchProject(base: server.baseURL, paths: ["users/{{id}}"])

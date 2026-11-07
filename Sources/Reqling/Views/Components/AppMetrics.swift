@@ -28,4 +28,7 @@ enum AppMetrics {
     static let labelSpacing: CGFloat = 8
     /// The gap between editors set side by side, such as a GraphQL query and its variables.
     static let sideBySideEditorSpacing: CGFloat = 16
+    /// The cell each trailing accessory of a sidebar row (an item count, the `{}` scripts badge, a run's status icon)
+    /// sits centered in, so the last one in every row lines up in one column, and those before it in the next.
+    static let sidebarAccessoryWidth: CGFloat = 20
 }
