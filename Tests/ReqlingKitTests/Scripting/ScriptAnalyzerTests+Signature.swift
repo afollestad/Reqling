@@ -12,8 +12,8 @@ extension ScriptAnalyzerTests {
         guard let help = ScriptAnalyzer(text: text, context: context).signatureHelp(at: cursor) else {
             return nil
         }
-        let signature = [help.receiver, help.member.signature].compactMap(\.self).joined(separator: ".")
-        return (signature, help.activeParameter.map { help.member.parameters[$0].name })
+        let signature = "\(help.name)(\(help.parameters.map(\.label).joined(separator: ", ")))" + (help.returnType.map { ": \($0)" } ?? "")
+        return (signature, help.activeParameter.map { help.parameters[$0].name })
     }
 
     func testTheArgumentAtTheCursorIsActive() throws {
@@ -55,6 +55,42 @@ extension ScriptAnalyzerTests {
         XCTAssertEqual(hint("Math.max(1, 2, |")?.active, "values")
     }
 
+    func testTheScriptsOwnFunctionsShowTheirParametersAsWritten() {
+        XCTAssertEqual(hint("function sign(key, data) {}\nsign(|")?.signature, "sign(key, data)")
+        XCTAssertEqual(hint("const add = (a, b = 1) => a + b\nadd(1, |")?.active, "b")
+        XCTAssertEqual(hint("const add = (a, b = 1) => a + b\nadd(|")?.signature, "add(a, b = 1)")
+        XCTAssertEqual(hint("const twice = x => x * 2\ntwice(|")?.signature, "twice(x)")
+        XCTAssertEqual(hint("const load = async function (url, ...rest) {}\nload(1, 2, 3, |")?.active, "rest", "a rest parameter")
+        XCTAssertEqual(hint("function f({ id, name }, done) {}\nf(|")?.signature, "f({ id, name }, done)")
+        XCTAssertEqual(hint("go(|)\nfunction go(where) {}")?.signature, "go(where)", "a declaration is hoisted")
+        XCTAssertNil(hint("later(|)\nconst later = (x) => x"), "a binding isn't, before it's declared")
+        XCTAssertEqual(hint("function btoa(value) {}\nbtoa(|")?.signature, "btoa(value)", "the script's own wins over a global")
+        XCTAssertNil(hint("const x = 1\nx(|"))
+    }
+
+    func testADocCommentDescribesTheScriptsOwnFunction() throws {
+        let text = """
+        /**
+         * Signs a payload with the key.
+         * @param {string} key - The secret.
+         * @param {object} [payload] What to sign.
+         * @returns {string}
+         */
+        function sign(key, payload) {}
+        sign(
+        """
+        let context = ScriptAnalysisContext(phase: .preRequest)
+        let help = try XCTUnwrap(ScriptAnalyzer(text: text, context: context).signatureHelp(at: (text as NSString).length))
+        XCTAssertEqual(help.summary, "Signs a payload with the key.")
+        XCTAssertEqual(help.parameters.map(\.label), ["key: string", "payload: object"])
+        XCTAssertEqual(help.parameters.map(\.summary), ["The secret.", "What to sign."])
+        XCTAssertNil(help.returnType)
+
+        let plain = "// Not a doc comment.\nfunction f(a) {}\nf("
+        let undocumented = try XCTUnwrap(ScriptAnalyzer(text: plain, context: context).signatureHelp(at: (plain as NSString).length))
+        XCTAssertEqual(undocumented.summary, "Declared in this script.")
+    }
+
     /// So accepting a method adds `()`, with the cursor between them only when there is something to type there.
     func testMethodCompletionsSayWhetherTheyTakeArguments() throws {
         let context = ScriptAnalysisContext(phase: .postResponse, protocols: ScriptAnalysisContext.protocols(for: .http))
@@ -76,7 +112,7 @@ extension ScriptAnalyzerTests {
 
         let context = ScriptAnalysisContext(phase: .preRequest)
         let postman = try XCTUnwrap(ScriptAnalyzer(text: "pm.environment.get(", context: context).signatureHelp(at: 19))
-        XCTAssertEqual(postman.receiver, "PostmanEnvironment")
+        XCTAssertEqual(postman.name, "PostmanEnvironment.get")
         XCTAssertEqual(postman.note, "For scripts from Postman. Reqling's own is `rq.environment.get`.")
         XCTAssertEqual(postman.openParen, 18)
     }

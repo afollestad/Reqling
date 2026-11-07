@@ -42,7 +42,8 @@ struct CodeSignatureHelp: Equatable {
     /// Such as `RequestCookies.get`.
     let name: String
     let parameters: [Parameter]
-    let returnType: String
+    /// Nil for a function whose result isn't known, such as one a script declares.
+    let returnType: String?
     /// Nil when the cursor's argument fills none, as past the last.
     let activeParameter: Int?
     /// What the method does.

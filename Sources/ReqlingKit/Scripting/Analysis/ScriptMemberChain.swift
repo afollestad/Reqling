@@ -32,8 +32,9 @@ struct ScriptExpressions {
 
     let tokens: [JavaScriptToken]
     let text: NSString
-    /// Comments, template text, and regexes: where nothing is completed.
-    private let nonCode: [JavaScriptToken]
+    /// Comments, template text, and regexes: where nothing is completed, and where a function's doc comment is found
+    /// (`ScriptLocalFunction`).
+    let nonCode: [JavaScriptToken]
     /// Read once, so looking bindings up for each name a script uses stays linear.
     private var declarations: [Declaration] = []
 

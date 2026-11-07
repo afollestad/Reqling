@@ -45,7 +45,7 @@ struct CodeSignatureHelpView: View {
             }
             text += label
         }
-        text += AttributedString("): \(help.returnType)")
+        text += AttributedString(")" + (help.returnType.map { ": \($0)" } ?? ""))
         return text
     }
 

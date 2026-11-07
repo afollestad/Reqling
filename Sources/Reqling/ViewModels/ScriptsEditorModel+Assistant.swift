@@ -41,14 +41,13 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
         guard let help = analyzer(text).signatureHelp(at: cursor) else {
             return nil
         }
-        let member = help.member
-        let summary = [member.summary, help.note].compactMap(\.self).map(Self.plain).joined(separator: "\n\n")
+        let summary = [help.summary, help.note].compactMap(\.self).map(Self.plain).joined(separator: "\n\n")
         return CodeSignatureHelp(
-            name: [help.receiver, member.name].compactMap(\.self).joined(separator: "."),
-            parameters: member.parameters.map { parameter in
-                CodeSignatureHelp.Parameter(name: parameter.name, label: parameter.signature, summary: Self.plain(parameter.summary))
+            name: help.name,
+            parameters: help.parameters.map { parameter in
+                CodeSignatureHelp.Parameter(name: parameter.name, label: parameter.label, summary: parameter.summary.map(Self.plain))
             },
-            returnType: member.type.description,
+            returnType: help.returnType,
             activeParameter: help.activeParameter,
             summary: summary.isEmpty ? nil : summary,
             anchor: help.openParen
