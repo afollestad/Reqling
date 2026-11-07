@@ -53,6 +53,24 @@ extension ProjectDocument {
         return result
     }
 
+    /// The requests inside a folder, its subfolders' included, in sidebar order; the whole project's for `nil`, and none
+    /// for a folder that's gone. What running a folder or project runs.
+    public func requests(inFolder folderID: RequestNodeID?) -> [RequestItem] {
+        var result: [RequestItem] = []
+        func visit(_ nodes: [RequestNode]) {
+            for node in nodes {
+                switch node {
+                case .request(let request):
+                    result.append(request)
+                case .folder(let folder):
+                    visit(folder.children)
+                }
+            }
+        }
+        visit(folderID.map { folder($0)?.children ?? [] } ?? items)
+        return result
+    }
+
     /// Inserts `node` into `parentID` at `index` (clamped; `nil` appends). Refuses a node with any ID, its own or a
     /// descendant's, that is already in the tree or repeats within it: saves place files by ID, so the two items would
     /// share one file and only the last written would survive.

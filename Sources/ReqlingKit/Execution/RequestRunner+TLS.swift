@@ -66,11 +66,16 @@ struct RunStamp {
     let spec: RequestKind?
     /// `nil` when the project is gone or the environment named for the run no longer exists.
     let environment: RequestEnvironment?
+    /// The run started from values an earlier step of its folder or project run made secret for that run alone.
+    var heldRunLocalSecrets = false
 
     func applied(to exchange: RequestExchange) -> RequestExchange {
         var stamped = exchange
         stamped.id = id
         stamped.spec = spec
+        if heldRunLocalSecrets {
+            stamped.heldRunLocalSecrets = true
+        }
         if let environment {
             stamped.environmentID = environment.id
             stamped.environmentName = environment.name

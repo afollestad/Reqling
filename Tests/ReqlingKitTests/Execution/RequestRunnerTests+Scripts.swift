@@ -8,7 +8,7 @@ import XCTest
 /// Pre-request and post-response scripts around HTTP runs, through the real helper.
 @MainActor
 extension RequestRunnerTests {
-    private struct ScriptedProject {
+    struct ScriptedProject {
         let id: ProjectID
         let folder: RequestFolder
         let login: RequestItem
@@ -17,7 +17,7 @@ extension RequestRunnerTests {
     }
 
     /// A Users folder holding Login (POST /login) and Me (GET /me), against `base`.
-    private func scriptedProject(base: String, trust: ScriptTrust = .trusted) throws -> ScriptedProject {
+    func scriptedProject(base: String, trust: ScriptTrust = .trusted) throws -> ScriptedProject {
         let id = try fixture.library.createProject(named: "Scripted")
         let folder = RequestFolder(name: "Users")
         let login = RequestItem(name: "Login", kind: .http(HTTPRequestSpec(method: .post, url: "{{base}}/login")))
@@ -33,12 +33,12 @@ extension RequestRunnerTests {
         return ScriptedProject(id: id, folder: folder, login: login, profile: profile, defaultEnvironment: defaultEnvironment)
     }
 
-    private func setScripts(_ project: ScriptedProject, request: RequestNodeID, _ scripts: ScriptSet) throws {
+    func setScripts(_ project: ScriptedProject, request: RequestNodeID, _ scripts: ScriptSet) throws {
         try fixture.library.mutate(project.id) { try $0.updateRequest(request) { $0.scripts = scripts } }
     }
 
     /// Answers /login with a token and echoes /me's Authorization header.
-    private func authServer() async throws -> TestHTTPServer {
+    func authServer() async throws -> TestHTTPServer {
         let server = try await TestHTTPServer.start { request in
             if request.uri.hasPrefix("/login") {
                 return .text(#"{"token": "t0k3n-value"}"#, headers: [("Content-Type", "application/json")])
@@ -378,7 +378,7 @@ extension RequestRunnerTests {
 
 /// Answers every trust question the same, counting them; a second question while one is open shares its answer.
 @MainActor
-private final class CountingTrustDecider: ScriptTrustDeciding {
+final class CountingTrustDecider: ScriptTrustDeciding {
     let answer: Bool?
     private(set) var questions = 0
     private(set) var lastFiles: [String] = []

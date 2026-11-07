@@ -49,7 +49,8 @@ public struct VariableScope: Sendable {
         activeEnvironmentID: EnvironmentID?,
         currentValues: CurrentValueSnapshot,
         overrides: [String: String] = [:],
-        iterationData: [String: String] = [:]
+        iterationData: [String: String] = [:],
+        locals: [String: TemplateVariable] = [:]
     ) {
         let active = activeEnvironmentID.flatMap { id in
             document.isDefaultEnvironment(id) ? nil : document.environment(id)
@@ -59,7 +60,8 @@ public struct VariableScope: Sendable {
             defaultEnvironment: VariableLayer(document.defaultEnvironment, current: currentValues.values(for: document.defaultEnvironment.id)),
             active: active.map { VariableLayer($0, current: currentValues.values(for: $0.id)) },
             overrides: overrides,
-            iterationData: iterationData
+            iterationData: iterationData,
+            local: locals
         )
         self.init(layers: layers, environments: Environments(global: global, defaultEnvironment: document.defaultEnvironment, active: active))
     }

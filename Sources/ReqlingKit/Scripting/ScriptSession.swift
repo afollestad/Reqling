@@ -44,8 +44,8 @@ final class ScriptSession {
     private(set) var layers: VariableLayers
     private(set) var changes: [ScriptRequestChange] = []
     private(set) var report = ScriptReport()
-    /// Every value a script made secret this run, which masking covers even after a later `unset` hides it from the
-    /// layers.
+    /// Every value a script made secret this run, or an earlier step of its folder or project run made secret for that
+    /// run, which masking covers even after a later `unset` hides it from the layers.
     private(set) var secretValues: Set<String> = []
     private var pendingWrites: [VariableWrite] = []
 
@@ -58,7 +58,8 @@ final class ScriptSession {
         levels: [ScriptPhase: [ScriptLevelSource]],
         secretSink: ScriptSecretSink?,
         iteration: Int = 0,
-        iterationCount: Int = 1
+        iterationCount: Int = 1,
+        carriedSecrets: Set<String> = []
     ) {
         self.project = project
         self.item = item
@@ -70,6 +71,8 @@ final class ScriptSession {
         self.iterationCount = iterationCount
         environmentID = environments.active?.id ?? environments.defaultEnvironment.id
         layers = scope.layers
+        // An earlier step's secrets mask this run's output even after a script here unsets them.
+        secretValues = carriedSecrets
     }
 
     func hasScripts(_ phase: ScriptPhase) -> Bool {

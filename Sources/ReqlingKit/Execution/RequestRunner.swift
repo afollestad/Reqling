@@ -3,64 +3,6 @@ import Observation
 import ReqlingScriptProtocol
 import ReqlingTemplating
 
-/// Options for one run, mostly used by agents through MCP.
-public struct RunOptions: Sendable {
-    /// `nil` uses the project's active environment.
-    public var environmentID: EnvironmentID?
-    /// One-run values that beat every environment.
-    public var variableOverrides: [String: String]
-    /// Replaces the saved spec for this run only, such as with an extra header or other messages; the saved template is
-    /// untouched. Its protocol must match the request's.
-    public var spec: RequestKind?
-    /// Send even when some `{{variables}}` cannot be resolved; they go out verbatim.
-    public var allowUnresolved: Bool
-    /// For client-streaming and bidirectional gRPC calls: leave the request stream open after the request's own
-    /// messages, for `RequestRunner.sendMessage` and `endStream`. The editor sets it; agents and tests leave it off, so
-    /// a call runs to completion unattended.
-    public var keepsStreamOpen: Bool
-    /// Stops an event-stream response or a WebSocket early, so an agent's run returns; `nil` lets it run until stopped.
-    public var streamLimit: StreamLimit?
-    /// Whether the run may ask the person at the Mac to trust the project's scripts (`ScriptTrustDeciding`). Only runs
-    /// they start set it; without it, a project not yet trusted runs without its scripts.
-    public var mayPromptForTrust: Bool
-
-    public init(
-        environmentID: EnvironmentID? = nil,
-        variableOverrides: [String: String] = [:],
-        spec: RequestKind? = nil,
-        allowUnresolved: Bool = false,
-        keepsStreamOpen: Bool = false,
-        streamLimit: StreamLimit? = nil,
-        mayPromptForTrust: Bool = false
-    ) {
-        self.environmentID = environmentID
-        self.variableOverrides = variableOverrides
-        self.spec = spec
-        self.allowUnresolved = allowUnresolved
-        self.keepsStreamOpen = keepsStreamOpen
-        self.streamLimit = streamLimit
-        self.mayPromptForTrust = mayPromptForTrust
-    }
-
-    /// Set by `RequestRunner.runUnsaved`: the request to run in place of a saved one. Its run is never recorded, so it
-    /// neither shows in the window nor lands in the history.
-    var unsaved: RequestItem?
-    /// Collects the secrets the run's scripts touch, for masking output built outside the run.
-    var scriptSecrets: ScriptSecretSink?
-}
-
-/// One request in one project. Runs are tracked by this, never by request ID alone: a request file copied between
-/// projects keeps its ID, and keying by that alone let sending one cancel the other and share its in-flight state.
-public struct RunKey: Hashable, Sendable {
-    public let projectID: ProjectID
-    public let requestID: RequestNodeID
-
-    public init(_ requestID: RequestNodeID, in projectID: ProjectID) {
-        self.projectID = projectID
-        self.requestID = requestID
-    }
-}
-
 /// Runs saved requests: resolves them against the project and environment, sends them, and records each run in
 /// `history`, keeping the latest exchange per request at hand. The UI and the MCP server share it, so a run started by
 /// an agent shows up in the window.
@@ -129,7 +71,9 @@ public final class RequestRunner {
     /// What recorded runs' scripts made secret, kept in memory only (`RequestRunner+Scripts`).
     @ObservationIgnored var scriptSecrets = ScriptSecretMemory()
     /// One trust question per project at a time, which every run waiting on it shares.
-    @ObservationIgnored var trustPrompts: [ProjectID: Task<Bool?, Never>] = [:]
+    @ObservationIgnored var trustPrompts: [ProjectID: TrustPrompt] = [:]
+    /// The folder or project run step each run belongs to, while it runs, so `cancel` can tell the step it was stopped.
+    @ObservationIgnored var batchSteps: [RunKey: BatchStepContext] = [:]
 
     public init(
         library: ProjectLibrary,
@@ -222,7 +166,11 @@ public final class RequestRunner {
         detach(key)
         let item = item(request, in: project, options: options)
         let environment = library.document(project).flatMap { runEnvironment(in: $0, project: project, options: options) }
-        let stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
+        let step = options.batchStep
+        var stamp = RunStamp(id: RunID(), startedAt: Date(), spec: item?.kind, environment: environment)
+        stamp.heldRunLocalSecrets = !(step?.carriedSecrets.isEmpty ?? true)
+        beginBatchStep(step, key: key, run: stamp.id, options: options)
+        defer { endBatchStep(step, key: key) }
         // Taken now, so editing a script while the run waits on its response never changes what runs.
         let session = item.flatMap { scriptSession(for: $0, in: project, options: options, mode: .run) }
         // Every kind runs its pre-request scripts and prepares inside its task, so both count as in flight and can be
@@ -260,11 +208,12 @@ public final class RequestRunner {
                 scriptSecrets.remember(session.secretValues, for: exchange.id)
             }
         }
+        finishBatchStep(step, session: session)
         tasks[key] = nil
         inFlight.remove(key)
         liveStamps[key] = nil
         scriptSessions[key] = nil
-        return options.unsaved == nil ? record(exchange) : exchange
+        return options.unsaved == nil ? record(exchange, step: step) : exchange
     }
 
     /// Runs `item` as though it were saved at the top of `project`, resolving against the project's environments and
@@ -306,6 +255,7 @@ public final class RequestRunner {
     /// open WebSocket takes no more messages from here on, while its close handshake finishes.
     public func cancel(_ request: RequestNodeID, in project: ProjectID) {
         let key = RunKey(request, in: project)
+        batchSteps[key]?.wasCancelled = true
         tasks[key]?.cancel()
         scriptTasks[key]?.cancel()
         liveSockets[key]?.isStopping = true
@@ -392,19 +342,26 @@ public final class RequestRunner {
         guard let environment = runEnvironment(in: document, project: projectID, options: options) else {
             throw RunFailure(kind: .invalidRequest, message: "The environment no longer exists.")
         }
+        let step = options.batchStep
         let scope = session?.scope ?? VariableScope(
             global: library.globalEnvironment,
             document: document,
             activeEnvironmentID: environment.id,
             currentValues: library.currentValues.snapshot(for: projectID),
-            overrides: options.variableOverrides
+            overrides: options.variableOverrides,
+            iterationData: step?.iterationData ?? [:],
+            locals: step?.locals ?? [:]
         )
         let resolver = TemplateResolver(scope: scope, dynamic: dynamic)
         var redaction = SecretRedaction(resolver: resolver)
-        if let session {
-            item.kind = session.kind
+        // A secret an earlier step made and unset is in no scope any more, yet may still be what a server echoes.
+        let carried = session?.allSecretValues ?? step?.carriedSecrets ?? []
+        if session != nil || !carried.isEmpty {
+            if let session {
+                item.kind = session.kind
+            }
             let scoped = scope.entries.values.filter(\.isSecret).flatMap { [$0.value, resolver.resolve($0.value).value] }
-            redaction = SecretRedaction(secrets: session.allSecretValues.union(scoped))
+            redaction = SecretRedaction(secrets: carried.union(scoped))
         }
         return RunContext(
             item: item,
@@ -477,11 +434,12 @@ public final class RequestRunner {
     }
 
     /// Publishes an exchange and adds it to the history, unless its project is gone: a deleted project must leave
-    /// nothing on disk.
-    func record(_ exchange: RequestExchange) -> RequestExchange {
+    /// nothing on disk. A folder or project run's `step` learns its run reached the history.
+    func record(_ exchange: RequestExchange, step: BatchStepContext? = nil) -> RequestExchange {
         guard library.project(exchange.projectID) != nil else {
             return exchange
         }
+        step?.wasRecorded = true
         latest[RunKey(exchange.requestID, in: exchange.projectID)] = exchange
         history.record(exchange)
         return exchange

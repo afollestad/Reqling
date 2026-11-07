@@ -23,6 +23,10 @@ public struct RequestExchange: Hashable, Sendable, Codable {
     public var isBodyTruncated: Bool
     /// What the run's scripts did, masked; `nil` when it had none. Optional, so runs recorded before scripts decode.
     public var scriptReport: ScriptReport?
+    /// The run started from values an earlier request of its folder or project run made secret for that run alone,
+    /// which nothing keeps once Reqling quits, so a later read of it can't mask them (`ScriptReport.madeRunLocalSecrets`
+    /// says the same of values the run's own scripts made). `nil` otherwise, and for runs recorded before batches.
+    public var heldRunLocalSecrets: Bool?
 
     public enum Outcome: Hashable, Sendable, Codable {
         case response(HTTPResponseRecord)

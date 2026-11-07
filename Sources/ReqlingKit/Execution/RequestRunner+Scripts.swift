@@ -21,12 +21,15 @@ extension RequestRunner {
             return nil
         }
         library.reloadSecretsIfUnread(for: project)
+        let step = options.batchStep
         let scope = VariableScope(
             global: library.globalEnvironment,
             document: document,
             activeEnvironmentID: environment.id,
             currentValues: library.currentValues.snapshot(for: project),
-            overrides: options.variableOverrides
+            overrides: options.variableOverrides,
+            iterationData: step?.iterationData ?? [:],
+            locals: step?.locals ?? [:]
         )
         return ScriptSession(
             project: project,
@@ -39,7 +42,10 @@ extension RequestRunner {
                 active: document.isDefaultEnvironment(environment.id) ? nil : environment
             ),
             levels: levels,
-            secretSink: options.scriptSecrets
+            secretSink: options.scriptSecrets,
+            iteration: step?.iteration ?? 0,
+            iterationCount: step?.iterationCount ?? 1,
+            carriedSecrets: step?.carriedSecrets ?? []
         )
     }
 
@@ -87,22 +93,34 @@ extension RequestRunner {
     }
 
     private func askTrust(for session: ScriptSession, options: RunOptions) async -> Bool {
-        guard options.mayPromptForTrust, let trustDecider, let name = library.document(session.project)?.name else {
-            return false
+        await askTrust(project: session.project, files: session.files, options: options) ?? false
+    }
+
+    /// Asks the person whether `project`'s scripts may run, listing `files`; `nil` when the question was dismissed, or
+    /// nobody may be asked. Every caller waiting meanwhile shares one question, and the question saves its own answer, so
+    /// a caller that stops waiting (a stopped folder or project run) leaves nothing stale and loses no answer.
+    func askTrust(project: ProjectID, files: [String], options: RunOptions) async -> Bool? {
+        guard options.mayPromptForTrust, let trustDecider, let name = library.document(project)?.name else {
+            return nil
         }
-        let project = session.project
-        let prompt = trustPrompts[project] ?? Task {
-            await trustDecider.decideScriptTrust(projectName: name, files: session.files)
+        let prompt: Task<Bool?, Never>
+        if let open = trustPrompts[project] {
+            prompt = open.task
+        } else {
+            let token = UUID()
+            prompt = Task {
+                let answer = await trustDecider.decideScriptTrust(projectName: name, files: files)
+                if self.trustPrompts[project]?.token == token {
+                    self.trustPrompts[project] = nil
+                }
+                if let answer {
+                    self.workspace.updateProject(project) { $0.scriptTrust = answer ? .trusted : .declined }
+                }
+                return answer
+            }
+            trustPrompts[project] = TrustPrompt(token: token, task: prompt)
         }
-        trustPrompts[project] = prompt
-        let answer = await prompt.value
-        if trustPrompts[project] == prompt {
-            trustPrompts[project] = nil
-        }
-        if let answer {
-            workspace.updateProject(project) { $0.scriptTrust = answer ? .trusted : .declined }
-        }
-        return answer ?? false
+        return await valueUnlessCancelled(of: prompt)
     }
 
     /// Runs the pre-request phase, when trusted; returns the failure that stops the run, if its scripts failed or were
@@ -198,6 +216,13 @@ extension RunFailure {
         noted.message += " The request's pre-request scripts didn't run, since this project's scripts aren't trusted on this Mac."
         return noted
     }
+}
+
+/// A trust question in flight, with the token its own task checks before clearing it, so a later question for the same
+/// project is never cleared by an earlier one's end.
+struct TrustPrompt {
+    let token: UUID
+    let task: Task<Bool?, Never>
 }
 
 /// The values each recorded run's scripts made secret, so masking a past run for an agent covers them too. Kept in

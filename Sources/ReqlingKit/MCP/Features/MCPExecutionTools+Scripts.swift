@@ -110,7 +110,8 @@ extension MCPExecutionTools {
 
     /// A recorded run as `get_last_response` and `get_run` return it, masked with `mask` (the project's secrets) and
     /// the values the run's scripts made secret, which Reqling keeps until it quits. A run whose scripts made run-local
-    /// secrets Reqling no longer holds can't be masked, so its response is withheld instead.
+    /// secrets, or that held ones an earlier step of its folder or project run made, can't be masked once Reqling no
+    /// longer holds them, so its response is withheld instead.
     @MainActor
     static func describeRecorded(_ exchange: RequestExchange, mask: @escaping (String) -> String, runner: RequestRunner) -> [String: Value] {
         if let secrets = runner.scriptSecrets.secrets(of: exchange.id) {
@@ -118,7 +119,8 @@ extension MCPExecutionTools {
             return describe(exchange, mask: { mask(redaction.apply($0)) })
         }
         var description = describe(exchange, mask: mask)
-        guard exchange.scriptReport?.madeRunLocalSecrets == true else {
+        let made = exchange.scriptReport?.madeRunLocalSecrets == true
+        guard made || exchange.heldRunLocalSecrets == true else {
             return description
         }
         for (key, kept) in withheldKeeps {
@@ -132,8 +134,11 @@ extension MCPExecutionTools {
             }
             description[key] = .object(payload)
         }
-        description["withheld"] = .string("This run's scripts made values secret for that run only, which Reqling no longer "
-            + "holds, so its response can't be masked and is left out. Send the request again to read one.")
+        let cause = made
+            ? "This run's scripts made values secret for that run only"
+            : "This run used values an earlier request of its folder or project run made secret for that run only"
+        description["withheld"] = .string("\(cause), which Reqling no longer holds, so its response can't be masked and is left "
+            + "out. Send the request again to read one.")
         return description
     }
 }
