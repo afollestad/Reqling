@@ -35,6 +35,12 @@ struct ReqlingCommands: Commands {
                 Button("Find Previous") { find(.previousMatch) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
             }
+            Divider()
+            // ⌥Esc, F5, and ⌘P work too, unlisted: a menu item shows one shortcut, and ⌘P is File ▸ Print's.
+            Button("Show Completions") { beepUnless(CodeTextView.showCompletions(in: NSApp.keyWindow)) }
+                .keyboardShortcut(.space, modifiers: .control)
+            Button("Show Parameter Hints") { beepUnless(CodeTextView.showParameterHints(in: NSApp.keyWindow)) }
+                .keyboardShortcut(.space, modifiers: [.command, .shift])
         }
         CommandGroup(after: .sidebar) {
             // Not ⌘F: that stays with the editors' own Find.
@@ -79,6 +85,13 @@ struct ReqlingCommands: Commands {
             }
             .keyboardShortcut("e", modifiers: .command)
             .disabled(model.activeProjectID == nil)
+        }
+    }
+
+    /// Editor commands act on the focused code editor; anywhere else there is nothing for them to do.
+    private func beepUnless(_ handled: Bool) {
+        if !handled {
+            NSSound.beep()
         }
     }
 

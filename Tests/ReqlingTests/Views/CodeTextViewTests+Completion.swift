@@ -227,6 +227,21 @@ extension CodeTextViewTests {
         window.close()
     }
 
+    /// Edit ▸ Show Completions acts on the focused editor, and only one with an assistant.
+    func testTheMenuItemOpensTheListInTheFocusedAssistedEditor() {
+        let (textView, presenter) = makeAssisted(text: "{  }")
+        let plain = makeTextView(isSingleLine: false, text: "{}")
+        let window = focus(textView, alongside: plain)
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+
+        XCTAssertTrue(CodeTextView.showCompletions(in: window))
+        XCTAssertNotNil(presenter.completions)
+        XCTAssertTrue(window.makeFirstResponder(plain))
+        XCTAssertFalse(CodeTextView.showCompletions(in: window), "an editor without an assistant")
+        XCTAssertFalse(CodeTextView.showCompletions(in: nil))
+        window.close()
+    }
+
     /// A disabled editor, such as one in a read-only project, could insert nothing chosen from the list.
     func testADisabledEditorOpensNoList() throws {
         let (textView, presenter) = makeAssisted(text: "{  }")

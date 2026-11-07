@@ -118,6 +118,20 @@ extension CodeTextViewTests {
         window.close()
     }
 
+    /// Edit ▸ Show Parameter Hints acts on the focused editor, and only one whose assistant has hints.
+    func testTheMenuItemShowsHintsInTheFocusedEditorWithHints() {
+        let (textView, presenter) = makeSignatureAssisted(text: "call(")
+        let (graphQL, _) = makeAssisted(text: "call(")
+        let window = focus(textView, alongside: graphQL)
+
+        XCTAssertTrue(CodeTextView.showParameterHints(in: window))
+        XCTAssertNotNil(presenter.signature)
+        XCTAssertTrue(window.makeFirstResponder(graphQL))
+        XCTAssertFalse(CodeTextView.showParameterHints(in: window))
+        XCTAssertFalse(CodeTextView.showParameterHints(in: nil))
+        window.close()
+    }
+
     func testScrollingOrLosingFocusClosesTheHints() throws {
         let (textView, presenter) = makeSignatureAssisted(text: "call(")
         let window = focus(textView)

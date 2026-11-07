@@ -6,10 +6,10 @@ import ReqlingTemplating
 /// and suggestions need their kind, type, and description.
 ///
 /// Typing opens it where the assistant has suggestions (`CodeEditorAssistant.opensCompletion`; GraphQL's are a name
-/// character, `@`, `$`, `(`, or a space after `:` or `on`); ⌃Space, ⌥Esc, and F5 open it anywhere, with what fits
-/// there (⌃Space only where macOS's input source switcher leaves it alone). Pastes, undo, and outside changes never
-/// open it. While it is open the text view keeps focus: ↑ and ↓ move the highlight, Return and Tab accept, Escape closes
-/// it without reaching a sheet's Cancel, and a ⌘ shortcut closes it and runs. Where the editor shows `{{variables}}`,
+/// character, `@`, `$`, `(`, or a space after `:` or `on`); ⌃Space, ⌥Esc, F5, and Edit ▸ Show Completions open it
+/// anywhere, with what fits there (⌃Space only where macOS's input source switcher leaves it alone). Pastes, undo, and
+/// outside changes never open it. While it is open the text view keeps focus: ↑ and ↓ move the highlight, Return and
+/// Tab accept, Escape closes it without reaching a sheet's Cancel, and a ⌘ shortcut closes it and runs. Where the editor shows `{{variables}}`,
 /// `{{` still opens AppKit's list of them, which wins: the two are never open together.
 extension CodeTextView {
     var isShowingAssistantCompletions: Bool {

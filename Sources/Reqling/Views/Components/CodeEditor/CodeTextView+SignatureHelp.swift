@@ -28,8 +28,8 @@ extension CodeTextView {
         }
     }
 
-    /// Shows the hints for where the cursor is, as ⇧⌘Space and ⌘P do; beeps where there are none, or where nothing
-    /// could be typed.
+    /// Shows the hints for where the cursor is, as ⇧⌘Space, ⌘P, and Edit ▸ Show Parameter Hints do; beeps where there
+    /// are none, or where nothing could be typed.
     func showParameterHints() {
         guard isEditable, signatureAssistant != nil else {
             NSSound.beep()
@@ -90,7 +90,7 @@ extension CodeTextView {
         }
     }
 
-    private var signatureAssistant: (any CodeEditorSignatureAssistant)? {
+    var signatureAssistant: (any CodeEditorSignatureAssistant)? {
         assistance.assistant as? any CodeEditorSignatureAssistant
     }
 

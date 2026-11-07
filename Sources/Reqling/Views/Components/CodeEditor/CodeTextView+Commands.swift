@@ -1,8 +1,33 @@
 import AppKit
 
-/// Edits and searches the app's menus and buttons ask of an editor: Find in multi-line editors, and whole-text
-/// replacements the user asked for (Beautify), which unlike outside changes are undoable.
+/// Edits and searches the app's menus and buttons ask of an editor: Find in multi-line editors, completion and
+/// parameter hints, and whole-text replacements the user asked for (Beautify), which unlike outside changes are
+/// undoable.
 extension CodeTextView {
+    /// Opens the completion list in `window`'s focused editor, as ⌃Space does (Edit ▸ Show Completions), returning
+    /// false when no editor with an assistant has focus. Whichever of the menu and the editor's own key handling sees
+    /// ⌃Space first opens the list, once.
+    @discardableResult
+    static func showCompletions(in window: NSWindow?) -> Bool {
+        guard let textView = window?.firstResponder as? CodeTextView, textView.assistance.assistant != nil else {
+            return false
+        }
+        textView.complete(nil)
+        return true
+    }
+
+    /// Shows parameter hints in `window`'s focused editor (Edit ▸ Show Parameter Hints), returning false when the
+    /// focused view is no editor with hints. The editor takes ⇧⌘Space itself while it has focus
+    /// (`handleSignatureShortcut`), so the menu's own shortcut reaches here only from anywhere else.
+    @discardableResult
+    static func showParameterHints(in window: NSWindow?) -> Bool {
+        guard let textView = window?.firstResponder as? CodeTextView, textView.signatureAssistant != nil else {
+            return false
+        }
+        textView.showParameterHints()
+        return true
+    }
+
     /// Runs a Find menu action in `window`'s focused multi-line editor, returning false when there is none.
     ///
     /// Sent to the editor directly rather than up the responder chain: a single-line field or a SwiftUI text field

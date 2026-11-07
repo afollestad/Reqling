@@ -4,7 +4,7 @@ A GraphQL body's query editor knows the API's schema. `{{variables}}` inside the
 
 ## Editing
 
-- **Completion** as you type, or on ⌃Space (or ⌥Esc) anywhere in the query: fields of the enclosing type, arguments, enum values, variables, directives, and fragments.
+- **Completion** as you type, or on ⌃Space (or ⌥Esc, or Edit ▸ Show Completions) anywhere in the query: fields of the enclosing type, arguments, enum values, variables, directives, and fragments.
 - **Descriptions** of whatever the pointer rests on.
 - **Checking.** Misspelled fields, missing required arguments, type mismatches, and deprecated usage are underlined, with a menu of the problems above the query.
 
