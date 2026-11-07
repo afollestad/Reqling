@@ -70,7 +70,8 @@ extension CodeTextView {
     /// An input method commits by inserting over its marked text; that edit is newer than any waiting change.
     /// Also marks the change as typed, which is what lets it open or narrow the assistant's completion list.
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        if let typed = string as? String, insertDedentedCloser(typed, replacementRange: replacementRange) {
+        if let typed = string as? String,
+           insertDedentedCloser(typed, replacementRange: replacementRange) || insertPairedParenthesis(typed, replacementRange: replacementRange) {
             return
         }
         let wasComposing = hasMarkedText()

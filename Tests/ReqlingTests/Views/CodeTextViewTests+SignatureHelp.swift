@@ -199,7 +199,7 @@ extension CodeTextViewTests {
         window.close()
     }
 
-    private func makeSignatureAssisted(text: String, delegate: (any NSTextViewDelegate)? = nil) -> (CodeTextView, RecordingPopups) {
+    func makeSignatureAssisted(text: String, delegate: (any NSTextViewDelegate)? = nil) -> (CodeTextView, RecordingPopups) {
         let textView = makeTextView(isSingleLine: false, text: text, delegate: delegate)
         let presenter = RecordingPopups()
         let assistant = FakeSignatureAssistant()

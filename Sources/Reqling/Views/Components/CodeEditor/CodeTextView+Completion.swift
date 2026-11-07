@@ -40,10 +40,13 @@ extension CodeTextView {
         }
     }
 
-    /// Backspace narrows the list as typing does.
+    /// Backspace narrows the list as typing does, and takes an empty `()` in a script with it (`CodeTextView+Pairs`).
     override func deleteBackward(_ sender: Any?) {
         assistance.typing = assistance.completion == nil ? nil : ""
         defer { assistance.typing = nil }
+        if deleteEmptyPairBackward() {
+            return
+        }
         super.deleteBackward(sender)
     }
 
