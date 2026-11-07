@@ -3,8 +3,8 @@ import XCTest
 
 @testable import Reqling
 
-/// Brackets and quotes pairing themselves in a JavaScript editor, through the text view; `CodePairsTests` covers when
-/// they do.
+/// Brackets and quotes pairing themselves in a JavaScript or GraphQL editor, through the text view; `CodePairsTests`
+/// covers when they do.
 extension CodeTextViewTests {
     func testTypingAnOpeningParenthesisPairsItAsOneUndoStepAndShowsHints() {
         let host = UndoHost()
@@ -141,13 +141,49 @@ extension CodeTextViewTests {
         window.close()
     }
 
-    func testOtherLanguagesTypeParenthesesAsTheyAre() {
-        let textView = makeTextView(isSingleLine: false, text: "field")
+    /// In a GraphQL query, a paired `(` still opens the arguments' completion, between the parentheses.
+    func testAGraphQLParenthesisPairsAndOpensCompletionBetween() throws {
+        let (textView, presenter) = makeAssisted(text: "{ books")
         textView.language = .graphQL
         let window = focus(textView)
 
         textView.insertText("(", replacementRange: textView.selectedRange())
-        XCTAssertEqual(textView.string, "field(")
+        XCTAssertEqual(textView.string, "{ books()")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 8, length: 0))
+        let list = try XCTUnwrap(presenter.completions)
+        XCTAssertFalse(list.items.isEmpty)
+        window.close()
+    }
+
+    /// `{{` pairs to `{{}}`, completing a variable fills in between without doubling the braces, and the braces typed
+    /// after the name step over the ones already there.
+    func testAGraphQLVariablesBracesPairAroundItsCompletion() {
+        let textView = makeTextView(isSingleLine: false, text: "{ book(id: ) }")
+        textView.language = .graphQL
+        let window = focus(textView)
+        textView.setSelectedRange(NSRange(location: 11, length: 0))
+
+        textView.insertText("{", replacementRange: textView.selectedRange())
+        textView.insertText("{", replacementRange: textView.selectedRange())
+        XCTAssertEqual(textView.string, "{ book(id: {{}}) }")
+        let range = textView.rangeForUserCompletion
+        XCTAssertEqual(range, NSRange(location: 13, length: 0))
+        textView.insertCompletion("token", forPartialWordRange: range, movement: NSReturnTextMovement, isFinal: true)
+        XCTAssertEqual(textView.string, "{ book(id: {{token}}) }")
+        textView.insertText("}", replacementRange: textView.selectedRange())
+        textView.insertText("}", replacementRange: textView.selectedRange())
+        XCTAssertEqual(textView.string, "{ book(id: {{token}}) }")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 20, length: 0))
+        window.close()
+    }
+
+    func testOtherLanguagesTypeParenthesesAsTheyAre() {
+        let textView = makeTextView(isSingleLine: false, text: "{\"a\": ")
+        textView.language = .json
+        let window = focus(textView)
+
+        textView.insertText("[", replacementRange: textView.selectedRange())
+        XCTAssertEqual(textView.string, "{\"a\": [")
         window.close()
     }
 

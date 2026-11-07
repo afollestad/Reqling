@@ -1,10 +1,10 @@
 import AppKit
 import ReqlingKit
 
-/// Brackets and quotes typed in a JavaScript editor pair themselves (`CodePairs`): an opener or quote brings its
-/// closer, one typed before the closer already there steps over it, and Backspace between an empty pair removes both.
-/// Each edit is one undo step, and reaches the completion list and parameter hints as the key that was typed, so `(`
-/// still opens the hints and a quote the variable names.
+/// Brackets and quotes typed in a JavaScript or GraphQL editor pair themselves (`CodePairs`): an opener or quote
+/// brings its closer, one typed before the closer already there steps over it, and Backspace between an empty pair
+/// removes both. Each edit is one undo step, and reaches the completion list and parameter hints as the key that was
+/// typed, so `(` still opens the hints and the arguments' completion, and a quote a script's variable names.
 extension CodeTextView {
     /// Types `typed` paired, or steps over its closer, when `CodePairs` says so; returns false to type it as is. Only
     /// a single character typed over an empty selection qualifies. Every keystroke passes through here, so anything but
