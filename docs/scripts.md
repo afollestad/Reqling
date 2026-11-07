@@ -92,7 +92,8 @@ rq.cookies.for("example.com").clear()
 
 ## Editor help
 
-- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Press ⌃Space, ⌥Esc, or F5 to open it anywhere.
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5 to open it anywhere.
+- **Parameter hints.** Typing `(` or `,` in a call shows the method's parameters above the line, with the one being typed highlighted and described, and what the method does. The highlight follows the cursor from argument to argument, and the hints close when it leaves the call or on Escape. Press ⇧⌘Space or ⌘P to show them again inside a call.
 - **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
 - **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of the other phase, or one of another protocol. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
@@ -162,11 +163,11 @@ Reqling's script API.
 
 Logs to the response's Tests tab; objects print as indented JSON.
 
-- `log(values: any): void`: Logs the values, separated by spaces.
-- `info(values: any): void`: Logs the values, separated by spaces.
-- `warn(values: any): void`: Logs the values, separated by spaces.
-- `error(values: any): void`: Logs the values, separated by spaces.
-- `debug(values: any): void`: Logs the values, separated by spaces.
+- `log(...values: any[]): void`: Logs the values, separated by spaces.
+- `info(...values: any[]): void`: Logs the values, separated by spaces.
+- `warn(...values: any[]): void`: Logs the values, separated by spaces.
+- `error(...values: any[]): void`: Logs the values, separated by spaces.
+- `debug(...values: any[]): void`: Logs the values, separated by spaces.
 
 ### `WebCrypto`
 
@@ -183,9 +184,9 @@ crypto-js 4.2.0. Lists the most used of its members.
 - `SHA1(message: any): object`: Hashes the message.
 - `SHA256(message: any): object`: Hashes the message.
 - `SHA512(message: any): object`: Hashes the message.
-- `HmacSHA1(message: any): object`: Hashes the message.
-- `HmacSHA256(message: any): object`: Hashes the message.
-- `HmacSHA512(message: any): object`: Hashes the message.
+- `HmacSHA1(message: any, key: any): object`: An HMAC of the message.
+- `HmacSHA256(message: any, key: any): object`: An HMAC of the message.
+- `HmacSHA512(message: any, key: any): object`: An HMAC of the message.
 - `enc: object`: Encoders: `Hex`, `Base64`, `Utf8`, and others.
 - `lib: object`: Building blocks, such as `WordArray`.
 - `AES: object`: AES encryption.
@@ -194,15 +195,15 @@ crypto-js 4.2.0. Lists the most used of its members.
 
 lodash 4.17.21. Lists the most used of its members.
 
-- `get(values: any): any`: lodash's `get`.
-- `set(values: any): any`: lodash's `set`.
-- `pick(values: any): any`: lodash's `pick`.
-- `omit(values: any): any`: lodash's `omit`.
-- `map(values: any): any`: lodash's `map`.
-- `filter(values: any): any`: lodash's `filter`.
-- `find(values: any): any`: lodash's `find`.
-- `chunk(values: any): any`: lodash's `chunk`.
-- `uniq(values: any): any`: lodash's `uniq`.
+- `get(...args: any[]): any`: lodash's `get`.
+- `set(...args: any[]): any`: lodash's `set`.
+- `pick(...args: any[]): any`: lodash's `pick`.
+- `omit(...args: any[]): any`: lodash's `omit`.
+- `map(...args: any[]): any`: lodash's `map`.
+- `filter(...args: any[]): any`: lodash's `filter`.
+- `find(...args: any[]): any`: lodash's `find`.
+- `chunk(...args: any[]): any`: lodash's `chunk`.
+- `uniq(...args: any[]): any`: lodash's `uniq`.
 
 ### `Info`
 
@@ -376,7 +377,7 @@ A Chai-style assertion: chain words such as `to`, `be`, and `have`, `.not`, `.de
 - `match(pattern: any): Expectation`: Matches the regular expression.
 - `lengthOf(length: number): Expectation`: Has the length or size.
 - `oneOf(values: any[]): Expectation`: Is one of the values.
-- `keys(names: any): Expectation`: Has exactly the keys.
+- `keys(...names: string[]): Expectation`: Has exactly the keys.
 - `members(values: any[]): Expectation`: Has the same members.
 - `throw(expected?: any): Expectation`: The function throws.
 - `ok: Expectation`: Asserts as it's read.

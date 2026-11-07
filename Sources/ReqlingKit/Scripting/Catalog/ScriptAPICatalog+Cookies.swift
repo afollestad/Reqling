@@ -9,7 +9,8 @@ extension ScriptAPICatalog {
             "The project's cookies that go to this request's URL. Pre-request changes go out with the request, and every change "
                 + "stays in the project's jar until Reqling quits.",
             members: cookieMembers(protocols: .withCookies) + [
-                .method("for", [ScriptParameter("target", .string)], returns: .named("Cookies"),
+                .method("for", [ScriptParameter("target", .string, "A URL, or a bare domain such as `example.com` for every cookie it has.")],
+                        returns: .named("Cookies"),
                         "The cookies for another URL, or every cookie for a bare domain such as `example.com`; `{{variables}}` resolve.")
             ]
         ),
@@ -27,15 +28,25 @@ extension ScriptAPICatalog {
         ])
     ]
 
+    /// A cookie's name, which `pm.cookies` shares.
+    static let cookieName = ScriptParameter("name", .string, "The cookie's name.")
+
     private static func cookieMembers(protocols: ScriptProtocols?) -> [ScriptMember] {
-        let name = ScriptParameter("name", .string)
+        let name = cookieName
+        let value = ScriptParameter("value", .any, "Its value; anything but a string is written as JSON.")
+        let options = ScriptParameter(
+            "options",
+            .object,
+            "`{ path, domain, expires, secure, httpOnly, sameSite }`; path `/`, this host alone, until Reqling quits by default.",
+            isOptional: true
+        )
         return [
             .method("get", [name], returns: .optional(.string), "The value of the first cookie with the name, or `undefined`.",
                     protocols: protocols),
             .method("has", [name], returns: .boolean, "Whether a cookie has the name.", protocols: protocols),
             .method("all", returns: .array(.named("Cookie")), "Every cookie, the most specific first.", protocols: protocols),
             .method("toObject", returns: .object, "Every cookie's value by name.", protocols: protocols),
-            .method("set", [name, ScriptParameter("value", .any), ScriptParameter("options", .object, isOptional: true)], returns: .void,
+            .method("set", [name, value, options], returns: .void,
                     "Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless "
                         + "`{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it.",
                     protocols: protocols),

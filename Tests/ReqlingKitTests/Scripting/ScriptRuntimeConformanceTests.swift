@@ -226,6 +226,8 @@ final class ScriptAPICatalogTests: XCTestCase {
             }
             for parameter in member.parameters {
                 referenced += parameter.type.namedType.map { [$0] } ?? []
+                // Parameter hints show it as a sentence under the signature.
+                XCTAssertTrue(parameter.summary.hasSuffix("."), "\(member.name)(\(parameter.name)) needs a summary ending in a period")
             }
         }
         for name in referenced {

@@ -82,6 +82,24 @@ extension SnapshotTests {
         return model
     }
 
+    /// Parameter hints: the argument being typed set apart in the signature, described, and the method beneath.
+    func testScriptParameterHints() {
+        let help = CodeSignatureHelp(
+            name: "RequestCookies.set",
+            parameters: [
+                .init(name: "name", label: "name: string", summary: "The cookie's name."),
+                .init(name: "value", label: "value: any", summary: "Its value; anything but a string is written as JSON."),
+                .init(name: "options", label: "options?: object", summary: nil)
+            ],
+            returnType: "void",
+            activeParameter: 1,
+            summary: "Sets a cookie for path / and this host alone, lasting until Reqling quits.",
+            anchor: 14
+        )
+
+        assertBothAppearances(CodeSignatureHelpView(help: help).padding(8), size: CGSize(width: 436, height: 140))
+    }
+
     /// A Postman name describes itself and its Reqling equivalent.
     func testPostmanHoverCard() {
         let content = CodeHoverCardContent(

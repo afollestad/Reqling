@@ -40,7 +40,7 @@ extension ScriptAnalyzer {
         )
     }
 
-    private static func note(for member: ScriptMember) -> String? {
+    static func note(for member: ScriptMember) -> String? {
         switch member.availability {
         case .supported:
             nil

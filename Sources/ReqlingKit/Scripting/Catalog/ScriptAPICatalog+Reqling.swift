@@ -5,18 +5,20 @@ extension ScriptAPICatalog {
     static let reqlingTypes: [ScriptType] = [
         ScriptType("Reqling", "Reqling's script API.", members: reqlingMembers),
         ScriptType("TestFunction", "Runs a named test.", members: [
-            .method("skip", [ScriptParameter("name", .string), ScriptParameter("callback", .function, isOptional: true)], returns: .void,
-                    "Reports a test as skipped without running it.")
+            .method("skip", [ScriptParameter("name", .string, "The test's name, as results show it."),
+                             ScriptParameter("callback", .function, "The test's body, which doesn't run.", isOptional: true)],
+                    returns: .void, "Reports a test as skipped without running it.")
         ]),
         ScriptType("Info", "Where this script runs.", members: infoMembers),
         ScriptType("IterationData", "This iteration's row of a folder or project run's data file, as text. Empty otherwise.", members: [
-            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The column's value in this row, or `undefined`."),
-            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether this row has the column."),
+            .method("get", [column], returns: .optional(.string), "The column's value in this row, or `undefined`."),
+            .method("has", [column], returns: .boolean, "Whether this row has the column."),
             .method("toObject", returns: .object, "Every column of this row with its value.")
         ]),
         ScriptType("Execution", "What happens to this request, and what a folder or project run runs next.", members: [
             .method("skipRequest", returns: .void, "Doesn't send this request. The rest of the pre-request scripts still run.", phases: .pre),
-            .method("setNextRequest", [ScriptParameter("request", .optional(.string))], returns: .void,
+            .method("setNextRequest", [ScriptParameter("request", .optional(.string), "A request's name or ID, or `null` to end the iteration.")],
+                    returns: .void,
                     "In a folder or project run, runs the request with this name or ID next; `null` ends the iteration. "
                         + "Ignored when the request runs on its own.")
         ]),
@@ -49,6 +51,21 @@ extension ScriptAPICatalog {
             + "assertions such as `equal`, `include`, and `property`.", isOpen: true, members: expectationMembers)
     ]
 
+    /// `rq.test`'s, which `pm.test` shares.
+    static let testParameters = [
+        ScriptParameter("name", .string, "The test's name, as results show it."),
+        ScriptParameter("callback", .function, "The test's body; the test fails when it throws or its promise rejects.")
+    ]
+
+    /// `rq.expect`'s, which `pm.expect` shares.
+    static let expectParameters = [
+        ScriptParameter("value", .any, "The value the assertion is about."),
+        ScriptParameter("message", .string, "Leads the failure's message, to tell this assertion from others.", isOptional: true)
+    ]
+
+    /// A data row's column, which `rq.iterationData` and `pm.iterationData` read.
+    static let column = ScriptParameter("name", .string, "The column's name: a CSV header, or a JSON row's key.")
+
     private static let reqlingMembers: [ScriptMember] = [
         .property("info", .named("Info"), "Where this script runs: its phase, level, request, and environment."),
         .property("environment", .named("Environment"), "The active environment's variables. A value set here is kept on this Mac."),
@@ -60,10 +77,9 @@ extension ScriptAPICatalog {
         .property("request", .named("Request"), "The request as typed. Pre-request scripts can change its headers and query."),
         .property("cookies", .named("RequestCookies"), "The project's cookies for this request's URL, or for any other through `for(…)`."),
         .property("response", .named("Response"), "What came back.", phases: .post),
-        .method("test", [ScriptParameter("name", .string), ScriptParameter("callback", .function)], returns: .void,
+        .method("test", testParameters, returns: .void,
                 "Runs a named test; it fails when the callback throws or its promise rejects.", functionType: "TestFunction"),
-        .method("expect", [ScriptParameter("value", .any), ScriptParameter("message", .string, isOptional: true)],
-                returns: .named("Expectation"), "Starts a Chai-style assertion about a value."),
+        .method("expect", expectParameters, returns: .named("Expectation"), "Starts a Chai-style assertion about a value."),
         .property("crypto", .named("Crypto"), "Hashes and HMACs for signing requests.")
     ]
 
@@ -80,10 +96,12 @@ extension ScriptAPICatalog {
     ]
 
     private static func variableType(_ name: String, _ summary: String, source: ScriptVariableSource, named: Bool) -> ScriptType {
-        let key = ScriptParameter("name", .string, completion: .variableName(source))
+        let key = ScriptParameter("name", .string, "The variable's name.", completion: .variableName(source))
+        let value = ScriptParameter("value", .any, "Its new value; anything but a string is stored as JSON.")
+        let options = ScriptParameter("options", .object, "`{ secret: true }` keeps the value in the Keychain and masked.", isOptional: true)
         var members: [ScriptMember] = [
             .method("get", [key], returns: .optional(.string), "The variable's value, or `undefined`."),
-            .method("set", [key, ScriptParameter("value", .any), ScriptParameter("options", .object, isOptional: true)], returns: .void,
+            .method("set", [key, value, options], returns: .void,
                     "Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked."),
             .method("unset", [key], returns: .void, source == .all
                 ? "Drops a value set earlier in this run."
@@ -95,7 +113,7 @@ extension ScriptAPICatalog {
         if named {
             members.append(.property("name", .string, "The environment's name."))
         } else {
-            members.append(.method("replaceIn", [ScriptParameter("text", .string)], returns: .string,
+            members.append(.method("replaceIn", [ScriptParameter("text", .string, "Text holding `{{name}}` references.")], returns: .string,
                                    "Resolves `{{name}}` references as the request will."))
         }
         return ScriptType(name, summary, members: members)
@@ -115,7 +133,7 @@ extension ScriptAPICatalog {
     ]
 
     private static func rowsType(_ name: String, _ summary: String, mutable: Bool) -> ScriptType {
-        let key = ScriptParameter("name", .string)
+        let key = ScriptParameter("name", .string, "The entry's name; header names ignore case.")
         var members: [ScriptMember] = [
             .method("get", [key], returns: .optional(.string), "The first value with the name, or `undefined`; header names ignore case."),
             .method("has", [key], returns: .boolean, "Whether an entry has the name."),
@@ -123,7 +141,7 @@ extension ScriptAPICatalog {
             .method("toObject", returns: .object, "Every entry by name.")
         ]
         if mutable {
-            let value = ScriptParameter("value", .any)
+            let value = ScriptParameter("value", .any, "Its value; anything but a string is written as JSON.")
             members += [
                 .method("upsert", [key, value], returns: .void, "Sets the first entry with the name, dropping the others, or adds one.",
                         phases: .pre),
@@ -135,13 +153,26 @@ extension ScriptAPICatalog {
     }
 
     private static let cryptoMembers: [ScriptMember] = {
-        let data = ScriptParameter("data", .string)
-        let options = ScriptParameter("options", .object, isOptional: true)
+        let data = ScriptParameter("data", .string, "What to hash: UTF-8 text unless `inputEncoding` says hex or base64.")
+        let options = ScriptParameter(
+            "options",
+            .object,
+            "`{ encoding: \"hex\" | \"base64\", inputEncoding: \"utf8\" | \"hex\" | \"base64\" }`; hex output and UTF-8 input by default.",
+            isOptional: true
+        )
+        let hmacOptions = ScriptParameter(
+            "options",
+            .object,
+            "`{ encoding, inputEncoding, keyEncoding }`: hex output, and UTF-8 data and key, by default.",
+            isOptional: true
+        )
         let digests: [ScriptMember] = ["md5", "sha1", "sha256", "sha384", "sha512"].map { name in
             .method(name, [data, options], returns: .string, "The \(name.uppercased()) hash.")
         }
         return digests + [
-            .method("hmac", [ScriptParameter("algorithm", .string), ScriptParameter("key", .string), data, options], returns: .string,
+            .method("hmac", [ScriptParameter("algorithm", .string, "`md5`, `sha1`, `sha256`, `sha384`, or `sha512`."),
+                             ScriptParameter("key", .string, "The secret key: UTF-8 text unless `keyEncoding` says hex or base64."),
+                             data, hmacOptions], returns: .string,
                     "An HMAC with `md5`, `sha1`, `sha256`, `sha384`, or `sha512`; `{ keyEncoding }` reads the key as hex or base64."),
             .method("randomUUID", returns: .string, "A random UUID.")
         ]
@@ -150,25 +181,39 @@ extension ScriptAPICatalog {
     private static let expectationMembers: [ScriptMember] = {
         let chain = ["to", "be", "been", "is", "that", "which", "and", "has", "have", "with", "at", "of", "same", "not", "deep", "own"]
         let chainMembers: [ScriptMember] = chain.map { .property($0, .named("Expectation"), "Reads on; `not` negates and `deep` compares deeply.") }
-        let value = ScriptParameter("expected", .any)
+        let value = ScriptParameter("expected", .any, "The value to compare with.")
+        let type = ScriptParameter(
+            "type",
+            .string,
+            "`string`, `number`, `boolean`, `object`, `array`, `null`, `undefined`, `function`, `date`, or `regexp`."
+        )
+        let low = ScriptParameter("low", .number, "The lowest value allowed.")
+        let high = ScriptParameter("high", .number, "The highest value allowed.")
+        let pattern = ScriptParameter("pattern", .any, "A regular expression, such as `/^ok$/`.")
+        let length = ScriptParameter("length", .number, "The length or size it must have.")
+        let names = ScriptParameter("names", .string, "Every key it must have, or one array of them.", isRest: true)
+        let thrown = ScriptParameter("expected", .any, "Text the error's message includes, a regular expression, or an error type.", isOptional: true)
         let methods: [ScriptMember] = [
             .method("equal", [value], returns: .named("Expectation"), "Strictly equal, or deeply after `.deep`."),
             .method("eql", [value], returns: .named("Expectation"), "Deeply equal."),
             .method("include", [value], returns: .named("Expectation"), "Contains the value, substring, or subset."),
-            .method("property", [ScriptParameter("name", .string), ScriptParameter("value", .any, isOptional: true)],
+            .method("property", [ScriptParameter("name", .string, "The property's name."),
+                                 ScriptParameter("value", .any, "The value it must have.", isOptional: true)],
                     returns: .named("Expectation"), "Has the property, with the value when given; chains on to it."),
-            .method("a", [ScriptParameter("type", .string)], returns: .named("Expectation"), "Is of the type: `string`, `array`, `null`, …"),
+            .method("a", [type], returns: .named("Expectation"), "Is of the type: `string`, `array`, `null`, …"),
             .method("above", [value], returns: .named("Expectation"), "Greater than."),
             .method("below", [value], returns: .named("Expectation"), "Less than."),
             .method("least", [value], returns: .named("Expectation"), "At least."),
             .method("most", [value], returns: .named("Expectation"), "At most."),
-            .method("within", [ScriptParameter("low", .number), ScriptParameter("high", .number)], returns: .named("Expectation"), "In the range."),
-            .method("match", [ScriptParameter("pattern", .any)], returns: .named("Expectation"), "Matches the regular expression."),
-            .method("lengthOf", [ScriptParameter("length", .number)], returns: .named("Expectation"), "Has the length or size."),
-            .method("oneOf", [ScriptParameter("values", .array(.any))], returns: .named("Expectation"), "Is one of the values."),
-            .method("keys", [ScriptParameter("names", .any)], returns: .named("Expectation"), "Has exactly the keys."),
-            .method("members", [ScriptParameter("values", .array(.any))], returns: .named("Expectation"), "Has the same members."),
-            .method("throw", [ScriptParameter("expected", .any, isOptional: true)], returns: .named("Expectation"), "The function throws.")
+            .method("within", [low, high], returns: .named("Expectation"), "In the range."),
+            .method("match", [pattern], returns: .named("Expectation"), "Matches the regular expression."),
+            .method("lengthOf", [length], returns: .named("Expectation"), "Has the length or size."),
+            .method("oneOf", [ScriptParameter("values", .array(.any), "The values it may be.")], returns: .named("Expectation"),
+                    "Is one of the values."),
+            .method("keys", [names], returns: .named("Expectation"), "Has exactly the keys."),
+            .method("members", [ScriptParameter("values", .array(.any), "The members it must have, in any order.")], returns: .named("Expectation"),
+                    "Has the same members."),
+            .method("throw", [thrown], returns: .named("Expectation"), "The function throws.")
         ]
         let assertions = ["ok", "true", "false", "null", "undefined", "exist", "empty", "NaN"].map { name in
             ScriptMember.property(name, .named("Expectation"), "Asserts as it's read.")

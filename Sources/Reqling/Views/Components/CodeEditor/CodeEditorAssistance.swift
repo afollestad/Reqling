@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// What shows the completion list and the hover card. Editor tests swap in a recorder; only the panels' own test puts
-/// one on screen.
+/// What shows the completion list, the hover card, and parameter hints. Editor tests swap in a recorder; only the
+/// panels' own test puts one on screen.
 @MainActor
 protocol CodeEditorPopupPresenting: AnyObject {
     /// `anchor` is in screen coordinates: the first character the list completes, or the name the card describes.
@@ -10,15 +10,20 @@ protocol CodeEditorPopupPresenting: AnyObject {
     func hideCompletions()
     func showHover(_ content: CodeHoverCardContent, below anchor: NSRect, from view: NSView)
     func hideHover()
+    /// Above `anchor`, the cursor's line, so the completion list can open below it at the same time.
+    func showSignature(_ help: CodeSignatureHelp, above anchor: NSRect, from view: NSView)
+    func hideSignature()
 }
 
-/// One editor's completion and hover state, kept together so `CodeTextView` holds a single reference.
+/// One editor's completion, hover, and parameter-hint state, kept together so `CodeTextView` holds a single reference.
 @MainActor
 final class CodeEditorAssistance {
     weak var assistant: (any CodeEditorAssistant)?
     var presenter: any CodeEditorPopupPresenting = CodeEditorPopupPanels()
     /// The open list; nil when none is.
     var completion: Completion?
+    /// The parameter hints shown; nil when none are.
+    var signature: CodeSignatureHelp?
     /// What `insertText` is inserting, so `didChangeText` can tell typing from pastes, undo, and outside changes.
     var typing: String?
     /// Set while an accepted item is inserted, which must not reopen the list.
@@ -47,6 +52,7 @@ final class CodeEditorAssistance {
         hoverTask?.cancel()
         presenter.hideCompletions()
         presenter.hideHover()
+        presenter.hideSignature()
     }
 }
 
@@ -56,6 +62,7 @@ final class CodeEditorAssistance {
 final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
     private var completionPanel: CodeEditorPopupPanel?
     private var hoverPanel: CodeEditorPopupPanel?
+    private var signaturePanel: CodeEditorPopupPanel?
 
     func showCompletions(_ model: CodeCompletionModel, below anchor: NSRect, from view: NSView) {
         guard let window = view.window, window.isVisible else {
@@ -66,7 +73,7 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
         // Each opening brings a new model, so the reused panel shows the one it is given, never the first it showed.
         panel.place(
             CodeCompletionListView(model: model).appAccent(Self.accent(of: view)),
-            below: anchor,
+            beside: anchor,
             attachedTo: window,
             appearance: view.effectiveAppearance,
             width: CodeCompletionModel.width
@@ -86,7 +93,7 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
         hoverPanel = panel
         panel.place(
             CodeHoverCard(content: content).appAccent(Self.accent(of: view)),
-            below: anchor,
+            beside: anchor,
             attachedTo: window,
             appearance: view.effectiveAppearance,
             width: CodeHoverCard.maxWidth
@@ -96,6 +103,26 @@ final class CodeEditorPopupPanels: CodeEditorPopupPresenting {
     func hideHover() {
         hoverPanel?.detach()
         hoverPanel = nil
+    }
+
+    func showSignature(_ help: CodeSignatureHelp, above anchor: NSRect, from view: NSView) {
+        guard let window = view.window, window.isVisible else {
+            return
+        }
+        let panel = signaturePanel ?? CodeEditorPopupPanel(ignoresMouse: true)
+        signaturePanel = panel
+        panel.place(
+            CodeSignatureHelpView(help: help).appAccent(Self.accent(of: view)),
+            beside: anchor,
+            preferring: .top,
+            attachedTo: window,
+            appearance: view.effectiveAppearance,
+            width: CodeHoverCard.maxWidth
+        )
+    }
+
+    func hideSignature() {
+        signaturePanel?.detach()
     }
 
     /// The accent the editor draws with, which panel content cannot inherit from the window's SwiftUI environment.
@@ -127,17 +154,28 @@ final class CodeEditorPopupPanel: NSPanel {
         false
     }
 
-    /// Shows `content`, sized at `width`, under `anchor`, or above it when the screen ends first, and attaches the
-    /// panel to `window` so it moves with it. `content` carries its own `appAccent`, which a panel cannot inherit from
-    /// the window's SwiftUI environment.
-    func place(_ content: some View, below anchor: NSRect, attachedTo window: NSWindow, appearance: NSAppearance, width: CGFloat) {
+    /// Shows `content`, sized at `width`, on `edge`'s side of `anchor`, or the other side when the screen ends first,
+    /// and attaches the panel to `window` so it moves with it. `content` carries its own `appAccent`, which a panel
+    /// cannot inherit from the window's SwiftUI environment.
+    func place(
+        _ content: some View,
+        beside anchor: NSRect,
+        preferring edge: VerticalEdge = .bottom,
+        attachedTo window: NSWindow,
+        appearance: NSAppearance,
+        width: CGFloat
+    ) {
         self.appearance = appearance
         host.rootView = AnyView(content)
         let fitting = NSHostingController(rootView: host.rootView).sizeThatFits(in: CGSize(width: width, height: 2_000))
         let visible = window.screen?.visibleFrame ?? .infinite
-        var origin = NSPoint(x: anchor.minX - 6, y: anchor.minY - fitting.height - 4)
-        if origin.y < visible.minY {
-            origin.y = anchor.maxY + 4
+        let below = anchor.minY - fitting.height - 4
+        let above = anchor.maxY + 4
+        var origin = NSPoint(x: anchor.minX - 6, y: edge == .bottom ? below : above)
+        if edge == .bottom, below < visible.minY {
+            origin.y = above
+        } else if edge == .top, above + fitting.height > visible.maxY {
+            origin.y = below
         }
         origin.x = min(max(origin.x, visible.minX), visible.maxX - fitting.width)
         setFrame(NSRect(origin: origin, size: fitting), display: true)

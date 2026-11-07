@@ -20,6 +20,9 @@ public struct ScriptCompletionItem: Hashable, Sendable {
     public let detail: String?
     public let summary: String?
     public let insertText: String
+    /// For a method, whether it takes arguments, so accepting it can add `()` with the cursor where typing goes on;
+    /// `nil` for anything that isn't called.
+    public let takesArguments: Bool?
 }
 
 public struct ScriptCompletionList: Hashable, Sendable {
@@ -129,13 +132,21 @@ extension ScriptAnalyzer {
         let detail: String
         let kind: ScriptSymbolKind
         if member.isMethod {
-            detail = "(\(member.parameters.map(\.name).joined(separator: ", "))) → \(member.type.description)"
+            let names = member.parameters.map { $0.isRest ? "...\($0.name)" : $0.name }
+            detail = "(\(names.joined(separator: ", "))) → \(member.type.description)"
             kind = .method
         } else {
             detail = member.type.description
             kind = member.type.namedType == nil ? .property : .namespace
         }
-        return ScriptCompletionItem(label: member.name, kind: kind, detail: detail, summary: member.summary, insertText: member.name)
+        return ScriptCompletionItem(
+            label: member.name,
+            kind: kind,
+            detail: detail,
+            summary: member.summary,
+            insertText: member.name,
+            takesArguments: member.isMethod ? !member.parameters.isEmpty : nil
+        )
     }
 
     private func jsonKeys(at path: [String?]) -> [ScriptCompletionItem] {
@@ -145,7 +156,8 @@ extension ScriptAnalyzer {
                 kind: .jsonKey,
                 detail: Self.describe(key.kind),
                 summary: "`\(Self.jsonPath(path, key: key.name))` in the latest response's JSON.",
-                insertText: key.name
+                insertText: key.name,
+                takesArguments: nil
             )
         }
     }
@@ -153,7 +165,7 @@ extension ScriptAnalyzer {
     /// What a name may start: the script's own declarations, the globals that work here (not `pm`), and keywords.
     private func names(prefix: String, replacement: NSRange) -> ScriptCompletionList? {
         let locals = expressions.bindings(before: replacement.location).keys.sorted().map { name in
-            ScriptCompletionItem(label: name, kind: .local, detail: nil, summary: "Declared in this script.", insertText: name)
+            ScriptCompletionItem(label: name, kind: .local, detail: nil, summary: "Declared in this script.", insertText: name, takesArguments: nil)
         }
         let globals = catalog.globals.compactMap { member -> ScriptCompletionItem? in
             guard member.availability == .supported, member.applies(to: context.phase, protocols: context.protocols) else {
@@ -162,7 +174,7 @@ extension ScriptAnalyzer {
             return item(for: member)
         }
         let keywords = Self.completionKeywords.map { keyword, summary in
-            ScriptCompletionItem(label: keyword, kind: .keyword, detail: nil, summary: summary, insertText: keyword)
+            ScriptCompletionItem(label: keyword, kind: .keyword, detail: nil, summary: summary, insertText: keyword, takesArguments: nil)
         }
         return list(locals + globals + keywords, prefix: prefix, replacement: replacement)
     }
@@ -208,7 +220,7 @@ extension ScriptAnalyzer {
         let contents = expressions.stringContents(token) as NSString
         let typed = contents.substring(to: min(contents.length, cursor - start))
         let names = variables(from: source).map { name in
-            ScriptCompletionItem(label: name, kind: .variable, detail: nil, summary: nil, insertText: name)
+            ScriptCompletionItem(label: name, kind: .variable, detail: nil, summary: nil, insertText: name, takesArguments: nil)
         }
         let items = names.filter { $0.label.lowercased().hasPrefix(typed.lowercased()) }
         return ScriptCompletionList(replacementRange: NSRange(location: start, length: contents.length), items: items, isVariableNames: true)

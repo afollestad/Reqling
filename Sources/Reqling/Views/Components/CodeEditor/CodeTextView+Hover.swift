@@ -102,6 +102,7 @@ extension CodeTextView {
     override func scrollWheel(with event: NSEvent) {
         hideHover()
         dismissCompletions()
+        hideSignatureHelp()
         super.scrollWheel(with: event)
     }
 

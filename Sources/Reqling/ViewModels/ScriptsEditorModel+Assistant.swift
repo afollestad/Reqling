@@ -2,10 +2,11 @@ import Foundation
 import ReqlingKit
 import ReqlingScriptProtocol
 
-/// Completion, hover, and problems for the shown script, from `ScriptAnalyzer` and `ScriptSyntaxChecker`: the only
-/// place their results become the editor's `Code*` types. Checking waits for typing to pause and runs off the main
-/// actor; each result is stamped with the text it checked, which the editor shows only while that is still its text.
-extension ScriptsEditorModel: CodeEditorAssistant {
+/// Completion, hover, parameter hints, and problems for the shown script, from `ScriptAnalyzer` and
+/// `ScriptSyntaxChecker`: the only place their results become the editor's `Code*` types. Checking waits for typing
+/// to pause and runs off the main actor; each result is stamped with the text it checked, which the editor shows only
+/// while that is still its text.
+extension ScriptsEditorModel: CodeEditorSignatureAssistant {
     static let validationDelay: Duration = .milliseconds(300)
 
     func completions(in text: String, cursor: Int) -> CodeCompletionList? {
@@ -21,7 +22,8 @@ extension ScriptsEditorModel: CodeEditorAssistant {
                 detail: item.detail,
                 summary: (item.summary ?? describeVariable?(item.label)).map(Self.plain),
                 isDeprecated: false,
-                insertText: item.insertText
+                insertText: item.insertText,
+                parentheses: item.takesArguments.map { $0 ? .withArguments : .withoutArguments }
             )
         }
         return CodeCompletionList(replacementRange: list.replacementRange, items: items, nameCharacters: list.isVariableNames ? .variableName : .code)
@@ -33,6 +35,24 @@ extension ScriptsEditorModel: CodeEditorAssistant {
         }
         let summary = [hover.summary, hover.note].compactMap(\.self).map(Self.plain).joined(separator: "\n\n")
         return CodeHoverContent(range: hover.range, signature: hover.signature, summary: summary.isEmpty ? nil : summary, deprecationReason: nil)
+    }
+
+    func signatureHelp(in text: String, cursor: Int) -> CodeSignatureHelp? {
+        guard let help = analyzer(text).signatureHelp(at: cursor) else {
+            return nil
+        }
+        let member = help.member
+        let summary = [member.summary, help.note].compactMap(\.self).map(Self.plain).joined(separator: "\n\n")
+        return CodeSignatureHelp(
+            name: [help.receiver, member.name].compactMap(\.self).joined(separator: "."),
+            parameters: member.parameters.map { parameter in
+                CodeSignatureHelp.Parameter(name: parameter.name, label: parameter.signature, summary: Self.plain(parameter.summary))
+            },
+            returnType: member.type.description,
+            activeParameter: help.activeParameter,
+            summary: summary.isEmpty ? nil : summary,
+            anchor: help.openParen
+        )
     }
 
     /// A member after `.`, a name as it starts, and a variable name as a string starts: the analyzer offers names

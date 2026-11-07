@@ -117,8 +117,7 @@ public struct ScriptMember: Sendable, Hashable {
         case .property:
             return "\(name): \(type.description)"
         case .method(let parameters):
-            let list = parameters.map { "\($0.name)\($0.isOptional ? "?" : ""): \($0.type.description)" }.joined(separator: ", ")
-            return "\(name)(\(list)): \(type.description)"
+            return "\(name)(\(parameters.map(\.signature).joined(separator: ", "))): \(type.description)"
         }
     }
 
@@ -137,16 +136,36 @@ public struct ScriptMember: Sendable, Hashable {
 
 public struct ScriptParameter: Sendable, Hashable {
     public let name: String
+    /// Its type; for a rest parameter, the type of each argument it takes.
     public let type: ScriptValueType
+    /// What the argument is, as parameter hints show it under the signature. Required, so every parameter added to
+    /// the catalog is described there.
+    public let summary: String
     public let isOptional: Bool
+    /// Takes every argument from here on, as `console.log`'s values do, so parameter hints keep it highlighted.
+    public let isRest: Bool
     /// What completion offers inside this argument's string.
     public let completion: ScriptArgumentCompletion?
 
-    init(_ name: String, _ type: ScriptValueType, isOptional: Bool = false, completion: ScriptArgumentCompletion? = nil) {
+    init(
+        _ name: String,
+        _ type: ScriptValueType,
+        _ summary: String,
+        isOptional: Bool = false,
+        isRest: Bool = false,
+        completion: ScriptArgumentCompletion? = nil
+    ) {
         self.name = name
         self.type = type
+        self.summary = summary
         self.isOptional = isOptional
+        self.isRest = isRest
         self.completion = completion
+    }
+
+    /// As signatures show it: `name?: string`, or `...values: any[]` for a rest parameter.
+    public var signature: String {
+        isRest ? "...\(name): \(ScriptValueType.array(type).description)" : "\(name)\(isOptional ? "?" : ""): \(type.description)"
     }
 }
 

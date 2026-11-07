@@ -6,8 +6,8 @@ extension ScriptAPICatalog {
     static let postmanTypes: [ScriptType] = [
         ScriptType("Postman", "Postman's script API, for scripts written for Postman.", members: postmanMembers),
         ScriptType("PostmanTestFunction", "Runs a named test.", members: [
-            .method("skip", [ScriptParameter("name", .string), ScriptParameter("callback", .function, isOptional: true)], returns: .void,
-                    "Reports a test as skipped.").postman("rq.test.skip")
+            .method("skip", [testParameters[0], ScriptParameter("callback", .function, "The test's body, which doesn't run.", isOptional: true)],
+                    returns: .void, "Reports a test as skipped.").postman("rq.test.skip")
         ]),
         ScriptType("PostmanInfo", "Where this script runs.", members: [
             .property("eventName", .string, "`prerequest` or `test`.").postman("rq.info.phase"),
@@ -17,13 +17,14 @@ extension ScriptAPICatalog {
             .property("iterationCount", .number, "How many iterations the run makes.").postman("rq.info.iterationCount")
         ]),
         ScriptType("PostmanIterationData", "This iteration's data row.", members: [
-            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The column's value.").postman("rq.iterationData.get"),
-            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether the row has the column.").postman("rq.iterationData.has"),
+            .method("get", [column], returns: .optional(.string), "The column's value.").postman("rq.iterationData.get"),
+            .method("has", [column], returns: .boolean, "Whether the row has the column.").postman("rq.iterationData.has"),
             .method("toObject", returns: .object, "Every column with its value.").postman("rq.iterationData.toObject")
         ]),
         ScriptType("PostmanExecution", "What happens to this request, and what the run runs next.", members: [
             .method("skipRequest", returns: .void, "Doesn't send this request.", phases: .pre).postman("rq.execution.skipRequest"),
-            .method("setNextRequest", [ScriptParameter("request", .optional(.string))], returns: .void,
+            .method("setNextRequest", [ScriptParameter("request", .optional(.string), "A request's name or ID, or `null` to end the iteration.")],
+                    returns: .void,
                     "Runs this request next; `null` ends the iteration.").postman("rq.execution.setNextRequest")
         ]),
         postmanVariables("PostmanEnvironment", equivalent: "rq.environment", source: .environment, extra: [
@@ -32,7 +33,8 @@ extension ScriptAPICatalog {
         postmanVariables("PostmanGlobals", equivalent: "rq.globals", source: .globals),
         postmanVariables("PostmanCollectionVariables", equivalent: "rq.defaultEnvironment", source: .defaultEnvironment),
         postmanVariables("PostmanVariables", equivalent: "rq.variables", source: .all, extra: [
-            .method("replaceIn", [ScriptParameter("text", .string)], returns: .string, "Resolves `{{name}}` references.")
+            .method("replaceIn", [ScriptParameter("text", .string, "Text holding `{{name}}` references.")], returns: .string,
+                    "Resolves `{{name}}` references.")
                 .postman("rq.variables.replaceIn")
         ]),
         ScriptType("PostmanRequest", "The request as typed.", members: [
@@ -43,9 +45,9 @@ extension ScriptAPICatalog {
         ]),
         ScriptType("PostmanList", "Headers or query parameters, as `{ key, value }`.", members: postmanListMembers),
         ScriptType("PostmanCookies", "The cookies for the request's URL.", members: [
-            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The cookie's value.", protocols: .withCookies)
+            .method("get", [cookieName], returns: .optional(.string), "The cookie's value.", protocols: .withCookies)
                 .postman("rq.cookies.get"),
-            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether there's a cookie with the name.",
+            .method("has", [cookieName], returns: .boolean, "Whether there's a cookie with the name.",
                     protocols: .withCookies).postman("rq.cookies.has"),
             .method("toObject", returns: .object, "Every cookie's value by name.", protocols: .withCookies).postman("rq.cookies.toObject"),
             .method("jar", returns: .named("PostmanCookieJar"), "The project's whole jar, by URL.").postman("rq.cookies.for")
@@ -71,11 +73,15 @@ extension ScriptAPICatalog {
             .property("be", .named("PostmanBe"), "Asserts what the response isn't.")
         ]),
         ScriptType("PostmanHave", "Asserts what the response has.", members: [
-            .method("status", [ScriptParameter("status", .any)], returns: .void, "The status code, or reason phrase."),
-            .method("header", [ScriptParameter("name", .string), ScriptParameter("value", .string, isOptional: true)], returns: .void,
+            .method("status", [ScriptParameter("status", .any, "A status code such as `200`, or a reason phrase such as `\"OK\"`.")], returns: .void,
+                    "The status code, or reason phrase."),
+            .method("header", [ScriptParameter("name", .string, "The header's name, in any case."),
+                               ScriptParameter("value", .string, "The value it must have.", isOptional: true)], returns: .void,
                     "The header, with the value when given."),
-            .method("body", [ScriptParameter("body", .any, isOptional: true)], returns: .void, "A body, or this one."),
-            .method("jsonBody", [ScriptParameter("path", .string, isOptional: true), ScriptParameter("value", .any, isOptional: true)],
+            .method("body", [ScriptParameter("body", .any, "The whole body's text, or a regular expression it matches.", isOptional: true)],
+                    returns: .void, "A body, or this one."),
+            .method("jsonBody", [ScriptParameter("path", .string, "A dotted path into the JSON, such as `data.id`.", isOptional: true),
+                                 ScriptParameter("value", .any, "The value at the path, compared as JSON.", isOptional: true)],
                     returns: .void, "A JSON body, with the dotted path, or the path's value.")
         ]),
         ScriptType("PostmanBe", "Asserts what the response is.", members: [
@@ -86,10 +92,8 @@ extension ScriptAPICatalog {
     ]
 
     private static let postmanMembers: [ScriptMember] = [
-        .method("test", [ScriptParameter("name", .string), ScriptParameter("callback", .function)], returns: .void,
-                "Runs a named test.", functionType: "PostmanTestFunction").postman("rq.test"),
-        .method("expect", [ScriptParameter("value", .any), ScriptParameter("message", .string, isOptional: true)],
-                returns: .named("Expectation"), "Starts an assertion.").postman("rq.expect"),
+        .method("test", testParameters, returns: .void, "Runs a named test.", functionType: "PostmanTestFunction").postman("rq.test"),
+        .method("expect", expectParameters, returns: .named("Expectation"), "Starts an assertion.").postman("rq.expect"),
         .property("info", .named("PostmanInfo"), "Where this script runs.").postman("rq.info"),
         .property("environment", .named("PostmanEnvironment"), "The active environment's variables.").postman("rq.environment"),
         .property("globals", .named("PostmanGlobals"), "The Global environment's variables.").postman("rq.globals"),
@@ -112,10 +116,11 @@ extension ScriptAPICatalog {
         source: ScriptVariableSource,
         extra: [ScriptMember] = []
     ) -> ScriptType {
-        let key = ScriptParameter("name", .string, completion: .variableName(source))
+        let key = ScriptParameter("name", .string, "The variable's name.", completion: .variableName(source))
+        let value = ScriptParameter("value", .any, "Its new value; anything but a string is stored as JSON.")
         let members: [ScriptMember] = [
             .method("get", [key], returns: .optional(.string), "The variable's value.").postman("\(equivalent).get"),
-            .method("set", [key, ScriptParameter("value", .any)], returns: .void, "Sets a value.").postman("\(equivalent).set"),
+            .method("set", [key, value], returns: .void, "Sets a value.").postman("\(equivalent).set"),
             .method("unset", [key], returns: .void, "Unsets a value.").postman("\(equivalent).unset"),
             .method("has", [key], returns: .boolean, "Whether it has a value.").postman("\(equivalent).has"),
             .method("toObject", returns: .object, "Every variable with its value.").postman("\(equivalent).toObject"),
@@ -125,28 +130,31 @@ extension ScriptAPICatalog {
     }
 
     private static let postmanListMembers: [ScriptMember] = {
-        let item = ScriptParameter("item", .any)
+        let key = ScriptParameter("key", .string, "The entry's key; header keys ignore case.")
+        let item = ScriptParameter("item", .any, "A `{ key, value }` object, or the entry's key.")
+        let value = ScriptParameter("value", .any, "The value, when `item` is a key.", isOptional: true)
         return [
-            .method("get", [ScriptParameter("key", .string)], returns: .optional(.string), "The value.").postman("rq.request.headers.get"),
-            .method("has", [ScriptParameter("key", .string)], returns: .boolean, "Whether it's there.").postman("rq.request.headers.has"),
+            .method("get", [key], returns: .optional(.string), "The value.").postman("rq.request.headers.get"),
+            .method("has", [key], returns: .boolean, "Whether it's there.").postman("rq.request.headers.has"),
             .method("all", returns: .array(.object), "Every `{ key, value }`.").postman("rq.request.headers.all"),
             .method("toObject", returns: .object, "Every value by key.").postman("rq.request.headers.toObject"),
-            .method("add", [item, ScriptParameter("value", .any, isOptional: true)], returns: .void, "Adds one.", phases: .pre)
+            .method("add", [item, value], returns: .void, "Adds one.", phases: .pre)
                 .postman("rq.request.headers.add"),
-            .method("upsert", [item, ScriptParameter("value", .any, isOptional: true)], returns: .void, "Sets or adds one.", phases: .pre)
+            .method("upsert", [item, value], returns: .void, "Sets or adds one.", phases: .pre)
                 .postman("rq.request.headers.upsert"),
             .method("remove", [item], returns: .void, "Drops one.", phases: .pre).postman("rq.request.headers.remove")
         ]
     }()
 
     private static let postmanJarMembers: [ScriptMember] = {
-        let url = ScriptParameter("url", .string)
-        let name = ScriptParameter("name", .string)
-        let callback = ScriptParameter("callback", .function, isOptional: true)
+        let url = ScriptParameter("url", .string, "The URL whose cookies these are, or a bare domain for every cookie it has.")
+        let name = ScriptParameter("name", .string, "The cookie's name.")
+        let callback = ScriptParameter("callback", .function, "Called with `(error, result)` before the call returns.", isOptional: true)
         return [
             .method("get", [url, name, callback], returns: .void, "The cookie's value.").postman("rq.cookies.for(url).get"),
             .method("getAll", [url, callback], returns: .void, "Every cookie for the URL.").postman("rq.cookies.for(url).all"),
-            .method("set", [url, ScriptParameter("name", .any), ScriptParameter("value", .any, isOptional: true), callback], returns: .void,
+            .method("set", [url, ScriptParameter("name", .any, "The cookie's name, or `{ name, value, ...options }`."),
+                            ScriptParameter("value", .any, "Its value, when `name` is a name.", isOptional: true), callback], returns: .void,
                     "Sets a cookie, by name and value or as `{ name, value, ...options }`.").postman("rq.cookies.for(url).set"),
             .method("unset", [url, name, callback], returns: .void, "Removes the cookie.").postman("rq.cookies.for(url).remove"),
             .method("clear", [url, callback], returns: .void, "Removes every cookie for the URL.").postman("rq.cookies.for(url).clear")

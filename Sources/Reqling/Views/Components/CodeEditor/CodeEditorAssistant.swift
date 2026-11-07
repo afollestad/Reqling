@@ -21,6 +21,40 @@ extension CodeEditorAssistant {
     }
 }
 
+/// An assistant that also knows what a call's arguments are, for parameter hints. A separate protocol so an editor
+/// whose assistant can't say (GraphQL's, whose arguments are named) leaves ⇧⌘Space and ⌘P to the rest of the app.
+@MainActor
+protocol CodeEditorSignatureAssistant: CodeEditorAssistant {
+    /// The call whose arguments hold `cursor`, or nil outside one it knows.
+    func signatureHelp(in text: String, cursor: Int) -> CodeSignatureHelp?
+}
+
+/// What parameter hints show: the signature of the method being called, and which parameter the cursor's argument
+/// fills.
+struct CodeSignatureHelp: Equatable {
+    struct Parameter: Equatable {
+        let name: String
+        /// As the signature shows it, such as `options?: object`.
+        let label: String
+        let summary: String?
+    }
+
+    /// Such as `RequestCookies.get`.
+    let name: String
+    let parameters: [Parameter]
+    let returnType: String
+    /// Nil when the cursor's argument fills none, as past the last.
+    let activeParameter: Int?
+    /// What the method does.
+    let summary: String?
+    /// The call's `(`, which the hints line up with when it is on the cursor's line. UTF-16.
+    let anchor: Int
+
+    var active: Parameter? {
+        activeParameter.flatMap { parameters.indices.contains($0) ? parameters[$0] : nil }
+    }
+}
+
 /// Suggestions for the name at the cursor, already ranked by what is typed there.
 struct CodeCompletionList: Equatable {
     /// Which characters a name in a list is made of, so typing one narrows the list rather than closing it.
@@ -55,6 +89,15 @@ struct CodeCompletionItem: Equatable, Identifiable {
     let summary: String?
     let isDeprecated: Bool
     let insertText: String
+    /// The parentheses accepting adds after `insertText`, for a method; `nil` for anything else.
+    var parentheses: Parentheses?
+
+    enum Parentheses: Equatable {
+        /// `(|)`, with parameter hints for what goes between.
+        case withArguments
+        /// `()|`.
+        case withoutArguments
+    }
 }
 
 /// What the hover card shows for a name.

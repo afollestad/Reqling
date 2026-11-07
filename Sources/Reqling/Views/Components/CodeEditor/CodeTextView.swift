@@ -147,6 +147,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
             return
         }
         dismissCompletions()
+        hideSignatureHelp()
         let edit = TextEdit.minimal(from: string as NSString, to: newText as NSString)
         let selection = edit.mapping(selectedRange())
         breakUndoCoalescing()
@@ -323,6 +324,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         refreshHighlighting()
         hideHover()
         updateAssistantCompletion()
+        updateSignatureHelp()
         offerCompletionAfterOpeningBraces()
     }
 
@@ -348,7 +350,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
     /// `.cancelAction` answers; Option-Escape and F5 still invoke `complete(_:)`. During a session AppKit keeps it, so
     /// Escape still dismisses the list.
     override func doCommand(by selector: Selector) {
-        if handleCompletionCommand(selector) {
+        if handleCompletionCommand(selector) || handleSignatureCommand(selector) {
             return
         }
         if selector == #selector(cancelOperation(_:)), !isCompleting {
@@ -417,6 +419,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         if accepted {
             isCompleting = false
             dismissCompletions()
+            hideSignatureHelp()
             hideHover()
             onFocusChange?(false)
         }

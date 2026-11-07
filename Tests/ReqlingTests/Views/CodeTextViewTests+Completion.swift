@@ -417,6 +417,18 @@ final class RecordingPopups: CodeEditorPopupPresenting {
     func hideHover() {
         hover = nil
     }
+
+    private(set) var signature: CodeSignatureHelp?
+    private(set) var signatureAnchors: [NSRect] = []
+
+    func showSignature(_ help: CodeSignatureHelp, above anchor: NSRect, from view: NSView) {
+        signature = help
+        signatureAnchors.append(anchor)
+    }
+
+    func hideSignature() {
+        signature = nil
+    }
 }
 
 /// A `CodeEditor` whose text and placeholder a test changes, as a parent view would.

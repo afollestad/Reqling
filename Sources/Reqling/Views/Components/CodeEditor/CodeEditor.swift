@@ -74,6 +74,7 @@ struct CodeEditor: NSViewRepresentable {
         if textView.assistance.assistant !== assistant {
             textView.assistance.assistant = assistant
             textView.dismissCompletions()
+            textView.hideSignatureHelp()
             textView.hideHover()
             textView.updateHoverTracking()
         }

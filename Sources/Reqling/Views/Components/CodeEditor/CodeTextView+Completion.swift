@@ -92,8 +92,11 @@ extension CodeTextView {
         return true
     }
 
-    /// A ⌘ shortcut closes the list before it runs.
+    /// A ⌘ shortcut closes the list before it runs, unless it shows parameter hints (`handleSignatureShortcut`).
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handleSignatureShortcut(event) {
+            return true
+        }
         if event.modifierFlags.contains(.command) {
             dismissCompletions()
         }
@@ -112,9 +115,10 @@ extension CodeTextView {
         return true
     }
 
-    /// Moving the cursor out of the name being completed closes the list.
+    /// Moving the cursor out of the name being completed closes the list; parameter hints follow it.
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        followSignatureHelp()
         guard let completion = assistance.completion, !assistance.isAccepting, assistance.typing == nil else {
             return
         }
@@ -128,7 +132,8 @@ extension CodeTextView {
         }
     }
 
-    /// A window that stops being key hides the panels (`hidesOnDeactivate`); close the list too, so its keys stop.
+    /// A window that stops being key hides the panels (`hidesOnDeactivate`); close the list and hints too, so their
+    /// keys stop.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         assistance.windowObserver.map(NotificationCenter.default.removeObserver)
@@ -136,6 +141,7 @@ extension CodeTextView {
             NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.dismissCompletions()
+                    self?.hideSignatureHelp()
                     self?.hideHover()
                 }
             }
@@ -184,7 +190,8 @@ extension CodeTextView {
         announceHighlight()
     }
 
-    /// Replaces the name being typed with `item`, as one undo step.
+    /// Replaces the name being typed with `item`, as one undo step. A method gets its `()`, unless a `(` already
+    /// follows: the cursor goes between them, with parameter hints, when it takes arguments, and after them otherwise.
     func accept(_ item: CodeCompletionItem) {
         guard let completion = assistance.completion else {
             return
@@ -192,12 +199,21 @@ extension CodeTextView {
         let cursor = selectedRange().location
         let start = completion.replacementRange.location
         let range = NSRange(location: start, length: max(completion.replacementRange.length, cursor - start))
+        let text = string as NSString
+        let isCalled = NSMaxRange(range) < text.length && text.substring(with: NSRange(location: NSMaxRange(range), length: 1)) == "("
+        let parentheses = isCalled ? nil : item.parentheses
         dismissCompletions()
         assistance.isAccepting = true
         breakUndoCoalescing()
-        insertText(item.insertText, replacementRange: range)
+        insertText(item.insertText + (parentheses == nil ? "" : "()"), replacementRange: range)
+        if parentheses == .withArguments {
+            setSelectedRange(NSRange(location: selectedRange().location - 1, length: 0))
+        }
         breakUndoCoalescing()
         assistance.isAccepting = false
+        if parentheses == .withArguments {
+            refreshSignatureHelp()
+        }
     }
 
     /// Where `range` sits on screen, for anchoring a panel; nil while the view is in no window.

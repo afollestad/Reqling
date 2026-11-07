@@ -85,6 +85,88 @@ struct ScriptExpressions {
         return nil
     }
 
+    /// Whether `offset` is inside a comment, where parameter hints never show; unlike `isInsideNonCode`, a regex or
+    /// template text can be an argument.
+    func isInsideComment(_ offset: Int) -> Bool {
+        nonCode.contains { token in
+            if case .comment = token.kind {
+                return token.holds(offset)
+            }
+            return false
+        }
+    }
+
+    /// The `(` of the innermost call whose arguments hold `offset`, and which of its arguments that is, for parameter
+    /// hints. Unlike `call(enclosing:)`, it reads through what an argument may be built from: an array, an object
+    /// literal (a `{` after `(`, `,`, `[`, or `:`), a template's `${`, and a grouping `(`, such as an arrow
+    /// function's parameters. A block's `{` or a control statement's `(` ends the search, so a callback's body never
+    /// shows hints for the call it is passed to.
+    func call(containing offset: Int) -> (open: Int, argument: Int)? {
+        guard var index = tokenIndex(before: offset) else {
+            return nil
+        }
+        var depth = 0
+        var argument = 0
+        while index >= 0 {
+            let token = tokens[index]
+            if token.isPunctuator(")") || token.isPunctuator("]") || token.isPunctuator("}") {
+                depth += 1
+            } else if token.isPunctuator("(") || token.isPunctuator("[") || token.isPunctuator("{") || token.isPunctuator("${") {
+                if depth > 0 {
+                    depth -= 1
+                } else if token.isPunctuator("(") {
+                    switch parenthesis(at: index) {
+                    case .call: return (index, argument)
+                    case .grouping: argument = 0
+                    case .control: return nil
+                    }
+                } else if token.isPunctuator("{"), !isObjectLiteral(at: index) {
+                    return nil
+                } else {
+                    argument = 0
+                }
+            } else if token.isPunctuator(","), depth == 0 {
+                argument += 1
+            }
+            index -= 1
+        }
+        return nil
+    }
+
+    private enum Parenthesis {
+        case call
+        case grouping
+        /// `if (`, a `function`'s parameters, and the like: no call holds what is inside.
+        case control
+    }
+
+    private static let controlKeywords: Set<String> = ["if", "for", "while", "switch", "catch", "with", "function"]
+
+    /// What the `(` at `index` opens, by the token before it: a call follows a name, `)`, or `]`.
+    private func parenthesis(at index: Int) -> Parenthesis {
+        guard index >= 1 else {
+            return .grouping
+        }
+        let previous = tokens[index - 1]
+        if previous.kind == .identifier || previous.isPunctuator(")") || previous.isPunctuator("]")
+            || (Self.isMemberName(previous) && index >= 2 && Self.isDot(tokens[index - 2])) {
+            return .call
+        }
+        if previous.kind == .keyword, Self.controlKeywords.contains(previous.text) {
+            return .control
+        }
+        return .grouping
+    }
+
+    /// Whether the `{` at `index` starts an object literal rather than a block.
+    private func isObjectLiteral(at index: Int) -> Bool {
+        guard index >= 1 else {
+            return false
+        }
+        let previous = tokens[index - 1]
+        return ["(", ",", "[", ":"].contains { previous.isPunctuator($0) }
+    }
+
     /// The chain whose last token is `tokens[last]`, read backwards; `nil` when it isn't one.
     func chain(endingAt last: Int) -> ScriptMemberChain? {
         var steps: [ScriptMemberChain.Step] = []
