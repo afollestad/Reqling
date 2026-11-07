@@ -288,6 +288,25 @@
         </div>
     </section>
 
+    <section class="section-feature section-centered" id="runs">
+        <div class="container">
+            <p class="chip">Folder runs</p>
+            <h2>Run the whole flow, row by row</h2>
+            <p class="feature-copy">
+                Run every request in a folder or project in order, a number of times or once per row of a CSV or JSON
+                file, with scripts carrying tokens and IDs from one request to the next. Each request shows how it went
+                right in the sidebar.
+            </p>
+            <picture>
+                <source srcset="images/batch-dark.webp" type="image/webp" data-theme="dark"
+                    media="(prefers-color-scheme: dark)">
+                <img class="screenshot" src="images/batch-light.webp"
+                    alt="The Users folder in Acme API after a run of three iterations from a data file. In the sidebar, List users and Delete user passed every iteration, Get user passed all 6 of its tests, and Create user failed 1 of its 6 tests in the second iteration, so the folder shows a failure; a bar at the sidebar's foot reads “Ran Users, Finished 3 iterations, Default, 11 passed, 1 failed”, with Run Again and Dismiss. The folder's pane offers Run Folder… beside New Request and New Folder."
+                    width="1920" height="1248" loading="lazy" decoding="async">
+            </picture>
+        </div>
+    </section>
+
     <section class="section-feature" id="mcp">
         <div class="container feature-split feature-split-reverse">
             <div class="feature-text">
