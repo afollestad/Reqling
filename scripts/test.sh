@@ -40,9 +40,23 @@ run_filtered test ${keep_awake[@]+"${keep_awake[@]}"} swift test \
 # Any warning fails the run, compiler warnings and XCTest runtime issues alike. The gate reads xcsift's `warnings`
 # count, so it needs xcsift; xcodebuild-style `--Werror` would also fail on xcsift's own bookkeeping, while the test
 # command's exit status stays the authority on test failures.
-if [ -f "$logs_dir/test.toon" ] && grep -Eq '^ *warnings: [1-9]' "$logs_dir/test.toon"; then
-  echo "Tests emitted warnings; fix them (see warnings[] above)." >&2
-  exit 1
+#
+# Type-check budget readings are the exception: the compiler flags every one past TYPECHECK_BUDGET_MS, but
+# `typecheck_budget_report_offenders` judges them, against TYPECHECK_TEST_BUDGET_MS for `Tests/` and with its noise
+# exemptions. Counting them here would fail every test reading past the base budget, so neither could ever apply.
+if [ -f "$logs_dir/test.toon" ]; then
+  warning_count=$(awk '/^ *warnings: [0-9]+/ { print $2; exit }' "$logs_dir/test.toon")
+  # The `warnings[n]{...}:` table lists one indented row per warning, up to the next top-level key.
+  budget_reading_count=$(awk '
+    /^warnings\[[0-9]+\]/ { in_table = 1; next }
+    /^[^ ]/ { in_table = 0 }
+    in_table && /took [0-9]+ms to type-check/ { count++ }
+    END { print count + 0 }
+  ' "$logs_dir/test.toon")
+  if [ $(( ${warning_count:-0} - budget_reading_count )) -gt 0 ]; then
+    echo "Tests emitted warnings; fix them (see warnings[] above)." >&2
+    exit 1
+  fi
 fi
 typecheck_budget_report_offenders "$logs_dir/test.log"
 echo "Tests passed."
