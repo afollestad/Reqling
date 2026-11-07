@@ -293,14 +293,15 @@ final class GraphQLSchemaServiceTests: XCTestCase {
 
     func makeRunner(
         fetcher: any GraphQLIntrospectionFetching = LiveGraphQLIntrospectionFetcher(),
-        scripts: any ScriptRunning = ScriptFixtures.realRunner
+        scripts: any ScriptRunning = ScriptFixtures.realRunner,
+        probe: any PKCS12ImportProbe = TLSFixtures.probe
     ) -> RequestRunner {
         RequestRunner(
             library: fixture.library,
             workspace: workspace,
             settings: settings,
             keychain: EmptyKeychain(),
-            pkcs12Probe: TLSFixtures.probe,
+            pkcs12Probe: probe,
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
             graphQLSchemas: GraphQLSchemaService(

@@ -5,15 +5,27 @@ import Foundation
 extension RequestRunner {
     /// The certificates a prepared request uses: the project's CAs and the client certificate for its host.
     func tls(for prepared: PreparedHTTPRequest, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
+        try tls(for: prepared, project: project, context: context, reusing: nil).context
+    }
+
+    /// `tls(for:project:context:)`, reusing `earlier` when it was built for the same host, port, and verification: a
+    /// schema lookup prepares its request twice, script-free for its cache key and then as scripts left it, and a script
+    /// can set a variable its URL uses, so only an unchanged endpoint shares the certificates read for the first.
+    func tls(
+        for prepared: PreparedHTTPRequest,
+        project: ProjectID,
+        context: RunContext,
+        reusing earlier: PreparedTLS?
+    ) throws(RunFailure) -> PreparedTLS {
         let url = prepared.urlRequest.url
+        let host = url?.host ?? ""
+        let port = url?.port ?? (["https", "wss"].contains(url?.scheme?.lowercased()) ? 443 : 80)
+        if let earlier, earlier.host == host, earlier.port == port, earlier.verifiesServer == prepared.verifyTLS {
+            return earlier
+        }
         do {
-            return try tlsContext(
-                host: url?.host ?? "",
-                port: url?.port ?? (["https", "wss"].contains(url?.scheme?.lowercased()) ? 443 : 80),
-                verifiesServer: prepared.verifyTLS,
-                project: project,
-                context: context
-            )
+            let built = try tlsContext(host: host, port: port, verifiesServer: prepared.verifyTLS, project: project, context: context)
+            return PreparedTLS(host: host, port: port, verifiesServer: prepared.verifyTLS, context: built)
         } catch {
             throw error.redacting(context.redaction)
         }
@@ -65,4 +77,13 @@ struct RunStamp {
         }
         return stamped
     }
+}
+
+/// A TLS context with the endpoint it was built for, so one lookup that prepares an endpoint twice reads the project's
+/// certificates once (`RequestRunner.tls(for:project:context:reusing:)`).
+struct PreparedTLS {
+    let host: String
+    let port: Int
+    let verifiesServer: Bool
+    let context: TLSContext
 }

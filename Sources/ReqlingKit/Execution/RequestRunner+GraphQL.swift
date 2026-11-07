@@ -18,7 +18,7 @@ extension RequestRunner {
         guard case .introspection = found.spec.body.graphQL.schema else {
             return try await graphQLSchemaFile(found)
         }
-        let probe = try graphQLEndpoint(found, project: project, options: Self.probeOptions(options))
+        let (probe, probeTLS) = try graphQLEndpoint(found, project: project, options: Self.probeOptions(options))
         if !refresh, let cached = await found.service.cached(probe, in: project) {
             return cached
         }
@@ -29,7 +29,7 @@ extension RequestRunner {
             let scripted = try session.map { session throws(RunFailure) in
                 try graphQLContext(request, in: project, options: options, session: session)
             } ?? found
-            let endpoint = try graphQLEndpoint(scripted, project: project, options: options, key: probe.key)
+            let endpoint = try graphQLEndpoint(scripted, project: project, options: options, key: probe.key, reusing: probeTLS).endpoint
             do throws(GraphQLSchemaLookupError) {
                 return try await found.service.introspected(endpoint, in: project, refresh: refresh)
             } catch {
@@ -73,7 +73,7 @@ extension RequestRunner {
         case .file(let reference):
             return try? await found.service.file(reference, paths: found.context.paths)
         case .introspection:
-            guard let endpoint = try? graphQLEndpoint(found, project: project, options: Self.probeOptions(options)) else {
+            guard let endpoint = try? graphQLEndpoint(found, project: project, options: Self.probeOptions(options)).endpoint else {
                 return nil
             }
             return await found.service.cached(endpoint, in: project)
@@ -110,13 +110,14 @@ extension RequestRunner {
 
     /// The request as introspection sends it: a POST of the query as a GraphQL body, its own query parameters,
     /// headers, and auth kept, and `Content-Type` set even if the request turned the automatic one off. `key`, when
-    /// given, replaces the one this request would be cached under.
+    /// given, replaces the one this request would be cached under, and `earlier` is TLS built for the same lookup.
     private func graphQLEndpoint(
         _ found: GraphQLContext,
         project: ProjectID,
         options: RunOptions,
-        key: String? = nil
-    ) throws(RunFailure) -> GraphQLEndpoint {
+        key: String? = nil,
+        reusing earlier: PreparedTLS? = nil
+    ) throws(RunFailure) -> (endpoint: GraphQLEndpoint, tls: PreparedTLS) {
         let (spec, context) = (found.spec, found.context)
         // Takes the runner rather than capturing it, so `send` holds it weakly.
         let prepare = { (runner: RequestRunner, query: String) throws(RunFailure) -> PreparedHTTPRequest in
@@ -127,7 +128,8 @@ extension RequestRunner {
             return prepared
         }
         let probe = try prepare(self, GraphQLIntrospection.probeQuery)
-        let tls = try tls(for: probe, project: project, context: context)
+        let prepared = try tls(for: probe, project: project, context: context, reusing: earlier)
+        let tls = prepared.context
         let isHTTPS = probe.urlRequest.url?.scheme?.lowercased() == "https"
         // The masked URL, so rotating a secret token does not refetch, and the certificates only where they apply.
         let probeKey = [probe.summary.url, probe.verifyTLS ? "verified" : "unverified", isHTTPS ? tls.fingerprint.base64EncodedString() : ""]
@@ -135,7 +137,7 @@ extension RequestRunner {
         let executor = executor(for: project)
         let fetcher = found.service.fetcher
         let redaction = context.redaction
-        return GraphQLEndpoint(
+        let endpoint = GraphQLEndpoint(
             key: key ?? probeKey,
             shownURL: probe.summary.url,
             send: { [weak self] query throws(RunFailure) in
@@ -151,6 +153,7 @@ extension RequestRunner {
             },
             mask: { redaction.apply($0) }
         )
+        return (endpoint, prepared)
     }
 
     static func introspectionSpec(_ spec: HTTPRequestSpec, query: String) -> HTTPRequestSpec {

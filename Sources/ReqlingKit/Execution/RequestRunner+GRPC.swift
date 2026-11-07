@@ -55,7 +55,7 @@ extension RequestRunner {
             guard let scriptedSpec = scripted.item.kind.grpcSpec else {
                 throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
             }
-            let endpoint = try connection(for: scriptedSpec, context: scripted, project: project, options: options)
+            let endpoint = try connection(for: scriptedSpec, context: scripted, project: project, options: options, reusing: probe)
             return try await schema(for: scriptedSpec, context: scripted, project: project, endpoint: endpoint)
         } catch {
             throw error.noting(session)
@@ -204,12 +204,15 @@ extension RequestRunner {
         let templates: RunTemplates
     }
 
-    /// Fails on unresolved names before any network use, reflection included, as HTTP fails before sending.
+    /// Fails on unresolved names before any network use, reflection included, as HTTP fails before sending. `earlier`'s
+    /// TLS is reused when it was built for the same target and verification, as a schema lookup's script-free probe is:
+    /// a script can set a variable the target uses, so only an unchanged one shares the certificates read for it.
     private func connection(
         for spec: GRPCRequestSpec,
         context: RunContext,
         project: ProjectID,
-        options: RunOptions
+        options: RunOptions,
+        reusing earlier: Connection? = nil
     ) throws(RunFailure) -> Connection {
         do throws(RunFailure) {
             var templates = RunTemplates(resolver: context.resolver)
@@ -222,17 +225,23 @@ extension RequestRunner {
             if !options.allowUnresolved, !templates.unresolved.isEmpty {
                 throw RunFailure.undefinedVariables(templates.unresolved)
             }
-            let security: GRPCTransportSecurity = switch spec.security {
-            case .plaintext:
-                .plaintext
-            case .tls:
-                .tls(try tlsContext(
-                    host: resolved.target.host,
-                    port: resolved.target.port,
-                    verifiesServer: resolved.verifiesServer,
-                    project: project,
-                    context: context
-                ))
+            let security: GRPCTransportSecurity
+            if spec.security == .tls, let earlier, case .tls = earlier.security,
+               earlier.resolved.target == resolved.target, earlier.resolved.verifiesServer == resolved.verifiesServer {
+                security = earlier.security
+            } else {
+                security = switch spec.security {
+                case .plaintext:
+                    .plaintext
+                case .tls:
+                    .tls(try tlsContext(
+                        host: resolved.target.host,
+                        port: resolved.target.port,
+                        verifiesServer: resolved.verifiesServer,
+                        project: project,
+                        context: context
+                    ))
+                }
             }
             return Connection(resolved: resolved, security: security, templates: templates)
         } catch {
