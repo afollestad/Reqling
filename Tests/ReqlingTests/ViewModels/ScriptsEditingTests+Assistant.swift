@@ -42,6 +42,23 @@ extension ScriptsEditingTests {
         XCTAssertTrue(scripts.opensCompletion(".", before: 3, in: "rq."))
     }
 
+    func testAVariableNameSaysWhereItIsDefinedButNeverItsValue() throws {
+        let login = RequestItem(name: "Login", kind: .http(HTTPRequestSpec(url: "https://api.test/login")))
+        try changeExternally { document in
+            document.defaultEnvironment.variables = [Variable(key: "token", value: "secret-value")]
+            try document.insert(.request(login), into: nil)
+            try document.updateRequest(login.id) { $0.scripts.postResponse = "rq.environment.set('token', 1)\nrq.globals.set('session', 2)" }
+        }
+        let scripts = try openRequest()
+
+        let names = try XCTUnwrap(scripts.completions(in: #"rq.variables.get(""#, cursor: 18))
+        let summaries = Dictionary(uniqueKeysWithValues: names.items.map { ($0.label, $0.summary) })
+
+        XCTAssertEqual(summaries["token"], "In Default. Set by the post-response script of “Login”.")
+        XCTAssertEqual(summaries["session"], "Set by the post-response script of “Login”.")
+        XCTAssertFalse(names.items.contains { $0.summary?.contains("secret-value") == true })
+    }
+
     func testProblemsMarkASyntaxErrorAndAMemberThatDoesntWorkWhereTheScriptRuns() async throws {
         let scripts = try openRequest()
 

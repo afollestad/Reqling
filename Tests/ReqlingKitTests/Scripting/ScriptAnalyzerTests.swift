@@ -52,6 +52,25 @@ final class ScriptAnalyzerTests: XCTestCase {
         XCTAssertEqual(labels("const body = rq.response.json()\nbody.data.u", shape: shape), ["users"])
     }
 
+    func testEveryCompletionOfACodeNameIsDescribed() throws {
+        let shape = try XCTUnwrap(ScriptJSONShape(json: Data(#"{"data":{"users":[{"id":1}]},"content-type":{"a":1}}"#.utf8)))
+        let context = ScriptAnalysisContext(phase: .postResponse, protocols: Self.http, responseShape: shape)
+        func summaries(_ text: String) throws -> [String: String?] {
+            let list = try XCTUnwrap(ScriptAnalyzer(text: text, context: context).completions(at: (text as NSString).length))
+            return Dictionary(uniqueKeysWithValues: list.items.map { ($0.label, $0.summary) })
+        }
+
+        let names = try summaries("const total = 1\n")
+        let keys = try summaries("rq.response.json().data.users[0].")
+        let quoted = try summaries(#"rq.response.json()["content-type"]."#)
+
+        XCTAssertEqual(names["total"], "Declared in this script.")
+        XCTAssertEqual(names["await"], "Waits for a promise and gives its value.")
+        XCTAssertTrue(names.values.allSatisfy { $0 != nil }, "Globals, locals, and keywords alike")
+        XCTAssertEqual(keys["id"], "`data.users[].id` in the latest response's JSON.")
+        XCTAssertEqual(quoted["a"], #"`["content-type"].a` in the latest response's JSON."#)
+    }
+
     func testAStringArgumentCompletesTheVariablesItsAccessorReads() throws {
         let variables: [ScriptVariableSource: [String]] = [.environment: ["token", "tenant"], .globals: ["region"]]
         let context = ScriptAnalysisContext(phase: .preRequest, protocols: Self.http, variables: variables)

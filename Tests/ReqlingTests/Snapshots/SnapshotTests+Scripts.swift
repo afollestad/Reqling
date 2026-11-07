@@ -53,19 +53,33 @@ extension SnapshotTests {
 
     /// A script's suggestions: members by kind, a variable name in a string, and a key from the latest response.
     func testScriptCompletionList() {
+        assertBothAppearances(CodeCompletionListView(model: Self.scriptCompletions(highlighted: 0)).padding(8), size: CGSize(width: 396, height: 180))
+    }
+
+    /// The highlighted key's path in the latest response, described beneath the list as every suggestion is.
+    func testScriptCompletionListDescribesKeys() {
+        assertBothAppearances(CodeCompletionListView(model: Self.scriptCompletions(highlighted: 4)).padding(8), size: CGSize(width: 396, height: 180))
+    }
+
+    private static func scriptCompletions(highlighted: Int) -> CodeCompletionModel {
         let model = CodeCompletionModel()
         model.items = [
             CodeCompletionItem(id: 0, label: "response", kind: .namespace, detail: "Response", summary: "What came back.",
                                isDeprecated: false, insertText: "response"),
-            CodeCompletionItem(id: 1, label: "test", kind: .method, detail: "(name, callback) → void", summary: nil,
+            CodeCompletionItem(id: 1, label: "test", kind: .method, detail: "(name, callback) → void",
+                               summary: "Runs a named test; it fails when the callback throws or its promise rejects.",
                                isDeprecated: false, insertText: "test"),
-            CodeCompletionItem(id: 2, label: "code", kind: .property, detail: "number", summary: nil, isDeprecated: false, insertText: "code"),
-            CodeCompletionItem(id: 3, label: "token", kind: .scriptVariable, detail: nil, summary: nil, isDeprecated: false, insertText: "token"),
-            CodeCompletionItem(id: 4, label: "users", kind: .jsonKey, detail: "array", summary: nil, isDeprecated: false, insertText: "users"),
-            CodeCompletionItem(id: 5, label: "signature", kind: .local, detail: nil, summary: nil, isDeprecated: false, insertText: "signature")
+            CodeCompletionItem(id: 2, label: "code", kind: .property, detail: "number", summary: "The status code.",
+                               isDeprecated: false, insertText: "code"),
+            CodeCompletionItem(id: 3, label: "token", kind: .scriptVariable, detail: nil, summary: "In Staging and Global.",
+                               isDeprecated: false, insertText: "token"),
+            CodeCompletionItem(id: 4, label: "users", kind: .jsonKey, detail: "array", summary: "data.users in the latest response's JSON.",
+                               isDeprecated: false, insertText: "users"),
+            CodeCompletionItem(id: 5, label: "signature", kind: .local, detail: nil, summary: "Declared in this script.",
+                               isDeprecated: false, insertText: "signature")
         ]
-
-        assertBothAppearances(CodeCompletionListView(model: model).padding(8), size: CGSize(width: 396, height: 180))
+        model.highlighted = highlighted
+        return model
     }
 
     /// A Postman name describes itself and its Reqling equivalent.

@@ -12,13 +12,14 @@ extension ScriptsEditorModel: CodeEditorAssistant {
         guard let list = analyzer(text).completions(at: cursor), !list.items.isEmpty else {
             return nil
         }
+        let describeVariable = list.isVariableNames ? variableDescriber() : nil
         let items = list.items.enumerated().map { index, item in
             CodeCompletionItem(
                 id: index,
                 label: item.label,
                 kind: Self.kind(item.kind),
                 detail: item.detail,
-                summary: item.summary.map(Self.plain),
+                summary: (item.summary ?? describeVariable?(item.label)).map(Self.plain),
                 isDeprecated: false,
                 insertText: item.insertText
             )
@@ -106,6 +107,46 @@ extension ScriptsEditorModel: CodeEditorAssistant {
 
     private func analyzer(_ text: String) -> ScriptAnalyzer {
         ScriptAnalyzer(text: text, context: analysisContext)
+    }
+
+    /// Where each variable a string argument completes with is defined: the environments that hold it, and the scripts
+    /// that set it, never its value. Built only for such a list, as the editor offers one far less often than it checks.
+    private func variableDescriber() -> (String) -> String? {
+        let layers = app.scope(for: projectID).layers
+        let document = app.library.document(projectID)
+        var environments: [(name: String, keys: Set<String>)] = []
+        if let active = layers.active, let id = app.activeEnvironmentID(for: projectID), let environment = document?.environment(id) {
+            environments.append((environment.name, active.visibleKeys))
+        }
+        if let document {
+            environments.append((document.defaultEnvironment.name, layers.defaultEnvironment.visibleKeys))
+        }
+        environments.append((app.library.globalEnvironment.name, layers.global.visibleKeys))
+        var setters: [String: [String]] = [:]
+        for variable in app.scriptSetVariables(in: projectID) where !(setters[variable.name] ?? []).contains(variable.setter) {
+            setters[variable.name, default: []].append(variable.setter)
+        }
+        return { name in
+            var sentences: [String] = []
+            let holders = environments.filter { $0.keys.contains(name) }.map(\.name)
+            if !holders.isEmpty {
+                sentences.append("In \(Self.list(holders)).")
+            }
+            if let setters = setters[name], let first = setters.first {
+                let others = setters.count - 1
+                sentences.append("Set by \(first)\(others > 0 ? " and \(others) more" : "").")
+            }
+            return sentences.isEmpty ? nil : sentences.joined(separator: " ")
+        }
+    }
+
+    /// "A", "A and B", or "A, B, and C".
+    private static func list(_ names: [String]) -> String {
+        switch names.count {
+        case 1: names[0]
+        case 2: "\(names[0]) and \(names[1])"
+        default: names.dropLast().joined(separator: ", ") + ", and " + (names.last ?? "")
+        }
     }
 
     /// A request's protocols; a folder's or the project's scripts run for every protocol.

@@ -34,9 +34,29 @@ public struct ScriptCompletionList: Hashable, Sendable {
 /// variable names inside the string argument of an accessor such as `rq.environment.get("…")`. Members are those that
 /// work in the script's phase and protocols; nothing is offered inside comments, other strings, or `pm` chains.
 extension ScriptAnalyzer {
-    static let completionKeywords = [
-        "await", "async", "const", "let", "if", "else", "return", "for", "of", "in", "try", "catch", "finally", "throw",
-        "new", "function", "true", "false", "null", "undefined", "typeof"
+    /// The keywords a name may start, each with what the popup says about it.
+    static let completionKeywords: KeyValuePairs<String, String> = [
+        "await": "Waits for a promise and gives its value.",
+        "async": "Marks a function that can use `await`.",
+        "const": "Declares a name that can't be reassigned.",
+        "let": "Declares a name that can be reassigned.",
+        "if": "Runs a block when a condition holds.",
+        "else": "Runs a block when the `if` condition doesn't hold.",
+        "return": "Ends the script or function, giving back a value.",
+        "for": "Loops: over a counter, over values with `of`, or over keys with `in`.",
+        "of": "In `for (… of …)`, loops over an array's values.",
+        "in": "In `for (… in …)`, loops over an object's keys; elsewhere, tests for a key.",
+        "try": "Runs a block, handing any error it throws to `catch`.",
+        "catch": "Handles an error thrown in the `try` block.",
+        "finally": "Runs after `try` and `catch`, whatever happened.",
+        "throw": "Raises an error, which fails the script unless something catches it.",
+        "new": "Creates an object from a constructor, such as `new Date()`.",
+        "function": "Declares a function.",
+        "true": "The boolean true.",
+        "false": "The boolean false.",
+        "null": "No value, on purpose.",
+        "undefined": "A value never set.",
+        "typeof": "Gives a value's type as text, such as `\"string\"`."
     ]
 
     public func completions(at cursor: Int) -> ScriptCompletionList? {
@@ -120,14 +140,20 @@ extension ScriptAnalyzer {
 
     private func jsonKeys(at path: [String?]) -> [ScriptCompletionItem] {
         (context.responseShape?.keys(at: path) ?? []).map { key in
-            ScriptCompletionItem(label: key.name, kind: .jsonKey, detail: Self.describe(key.kind), summary: nil, insertText: key.name)
+            ScriptCompletionItem(
+                label: key.name,
+                kind: .jsonKey,
+                detail: Self.describe(key.kind),
+                summary: "`\(Self.jsonPath(path, key: key.name))` in the latest response's JSON.",
+                insertText: key.name
+            )
         }
     }
 
     /// What a name may start: the script's own declarations, the globals that work here (not `pm`), and keywords.
     private func names(prefix: String, replacement: NSRange) -> ScriptCompletionList? {
         let locals = expressions.bindings(before: replacement.location).keys.sorted().map { name in
-            ScriptCompletionItem(label: name, kind: .local, detail: nil, summary: nil, insertText: name)
+            ScriptCompletionItem(label: name, kind: .local, detail: nil, summary: "Declared in this script.", insertText: name)
         }
         let globals = catalog.globals.compactMap { member -> ScriptCompletionItem? in
             guard member.availability == .supported, member.applies(to: context.phase, protocols: context.protocols) else {
@@ -135,8 +161,36 @@ extension ScriptAnalyzer {
             }
             return item(for: member)
         }
-        let keywords = Self.completionKeywords.map { ScriptCompletionItem(label: $0, kind: .keyword, detail: nil, summary: nil, insertText: $0) }
+        let keywords = Self.completionKeywords.map { keyword, summary in
+            ScriptCompletionItem(label: keyword, kind: .keyword, detail: nil, summary: summary, insertText: keyword)
+        }
         return list(locals + globals + keywords, prefix: prefix, replacement: replacement)
+    }
+
+    /// A key's path from the response's root as a script reaches it, such as `data.users[].name`: `[]` for an array's
+    /// items, and `["…"]` for a key that isn't a plain name.
+    static func jsonPath(_ path: [String?], key: String) -> String {
+        var text = ""
+        for step in path + [key] {
+            guard let step else {
+                text += "[]"
+                continue
+            }
+            if isPlainName(step) {
+                text += text.isEmpty ? step : ".\(step)"
+            } else {
+                let escaped = step.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                text += "[\"\(escaped)\"]"
+            }
+        }
+        return text
+    }
+
+    private static func isPlainName(_ name: String) -> Bool {
+        guard let first = name.first, first.isLetter || first == "_" || first == "$" else {
+            return false
+        }
+        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "$" }
     }
 
     /// The names the accessor whose string argument holds the cursor reads, when the catalog says what it reads.

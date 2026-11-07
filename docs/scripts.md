@@ -64,7 +64,7 @@ rq.test("returns the user", () => {
 
 ## Editor help
 
-- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. Press ⌃Space, ⌥Esc, or F5 to open it anywhere.
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Press ⌃Space, ⌥Esc, or F5 to open it anywhere.
 - **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
 - **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of the other phase, or one of another protocol. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
