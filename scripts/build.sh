@@ -16,8 +16,8 @@ for arg in "$@"; do
   case "$arg" in
     --release)
       configuration=release
-      # Releases ship one universal binary for Apple silicon and Intel Macs.
-      build_flags=(--arch arm64 --arch x86_64)
+      # Releases ship for Apple silicon only, whatever Mac builds them; Reqling doesn't support Intel Macs.
+      build_flags=(--arch arm64)
       ;;
     --no-xcsift)
       use_xcsift=false

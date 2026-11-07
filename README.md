@@ -31,7 +31,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 
 ## Requirements
 
-- macOS 26 or later
+- A Mac with Apple silicon, on macOS 26 or later
 - Xcode 26 or later (Swift 6.2 or newer)
 - Homebrew, for `xcsift`, SwiftLint, Needle, and protobuf
 
@@ -81,7 +81,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 ./scripts/build.sh --release
 ```
 
-This builds a universal `.build/app/release/Reqling.app` with its dSYM beside it. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution; otherwise it's signed ad hoc.
+This builds `.build/app/release/Reqling.app` for Apple silicon, with its dSYM beside it. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution; otherwise it's signed ad hoc.
 
 ## License
 
