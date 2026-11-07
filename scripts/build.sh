@@ -54,9 +54,21 @@ ditto "$repo_root/Sources/ReqlingScriptRunner/Runtime" "$app/Contents/Resources/
 cp Resources/Info.plist "$app/Contents/"
 
 # Dependencies that declare SwiftPM resources (privacy manifests, for one) build a `<package>_<target>.bundle` beside the
-# binary, and `Bundle.module` looks for it in the app's resources.
+# binary, and `Bundle.module` looks for it in the app's resources. This package's test targets build theirs into the same
+# folder whenever tests build, and those hold only fixtures, so they stay out, picked by target type rather than by name.
+test_bundles=$(swift package describe --type json | python3 -c '
+import json, sys
+package = json.load(sys.stdin)
+for target in package["targets"]:
+    if target["type"] == "test":
+        print(package["name"] + "_" + target["name"] + ".bundle")
+')
 find "$bin_path" -maxdepth 1 -name '*.bundle' -type d -print0 | while IFS= read -r -d '' resource_bundle; do
-  ditto "$resource_bundle" "$app/Contents/Resources/$(basename "$resource_bundle")"
+  bundle_name=$(basename "$resource_bundle")
+  if printf '%s\n' "$test_bundles" | grep -qxF "$bundle_name"; then
+    continue
+  fi
+  ditto "$resource_bundle" "$app/Contents/Resources/$bundle_name"
 done
 
 # SwiftPM can't compile asset catalogs or Icon Composer documents, so actool builds Assets.car and AppIcon.icns.
