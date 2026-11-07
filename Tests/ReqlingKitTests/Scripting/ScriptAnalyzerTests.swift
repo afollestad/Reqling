@@ -112,6 +112,8 @@ final class ScriptAnalyzerTests: XCTestCase {
         XCTAssertEqual(warnings("rq.request.foo"), ["rq.request has no “foo”."])
         XCTAssertEqual(warnings("rq.request.metadata"), ["rq.request.metadata applies only to gRPC requests."])
         XCTAssertEqual(warnings("pm.sendRequest()"), ["pm.sendRequest isn't supported in Reqling: scripts can't make network calls."])
+        XCTAssertEqual(warnings("pm.iterationData.get('a')\npm.execution.setNextRequest(null)"), [], "A folder or project run supports them")
+        XCTAssertEqual(warnings("rq.execution.skipRequest()", phase: .postResponse), ["rq.execution.skipRequest works only in pre-request scripts."])
         XCTAssertEqual(warnings("const r = rq.request\nr.nope"), ["rq.request has no “nope”."])
         XCTAssertEqual(warnings("rq.expect(1).to.be.true\n_.whatever(1)\nlocal.thing"), [], "Open types and locals are never warned about")
     }

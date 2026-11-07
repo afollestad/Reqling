@@ -13,6 +13,10 @@ final class ScriptPhaseRunner {
     let request: ScriptRequestModel
     let reporter: ScriptReporter
     let response: ScriptResponseAccess?
+    /// What `rq.execution` asked last, across every level, so a script calling it in a loop writes one event per
+    /// change rather than one per call, which no limit would bound.
+    private var skipsRequest = false
+    private var nextRequest: String?? = .none
 
     init(input: ScriptRunnerInput, blobs: [Data], runtime: ScriptRuntimeFiles, events: EventWriter) {
         self.input = input
@@ -43,6 +47,23 @@ final class ScriptPhaseRunner {
             }
         }
         return true
+    }
+
+    func skipRequest() {
+        guard !skipsRequest else {
+            return
+        }
+        skipsRequest = true
+        events.write(.flow(.skipRequest))
+    }
+
+    /// `nil` ends the iteration.
+    func setNextRequest(_ request: String?) {
+        guard nextRequest != .some(request) else {
+            return
+        }
+        nextRequest = .some(request)
+        events.write(.flow(.setNextRequest(request)))
     }
 }
 

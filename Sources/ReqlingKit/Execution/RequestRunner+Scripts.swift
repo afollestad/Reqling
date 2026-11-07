@@ -126,11 +126,16 @@ extension RequestRunner {
         session.commit(to: library)
         switch outcome {
         case .finished:
-            return nil
+            // Only a run skips: a preview, introspection, or reflection lookup still builds what a send would.
+            guard session.mode == .run, session.isSkipRequested else {
+                return nil
+            }
+            return RunFailure(kind: .skipped, message: "A pre-request script skipped this request, so it wasn't sent.")
         case .cancelled:
             return RunFailure(kind: .cancelled, message: HTTPExecutionError.cancelled.localizedDescription)
         case .failed:
-            let summary = session.report.phase(.preRequest)?.failureSummary ?? "The pre-request script failed."
+            // The masked report, since this message is shown and kept in the history.
+            let summary = session.maskedReport().phase(.preRequest)?.failureSummary ?? "The pre-request script failed."
             return RunFailure(kind: .script, message: summary)
         }
     }
@@ -160,6 +165,8 @@ extension RequestRunner {
                     pendingPostExchanges[key] = nil
                 }
                 session.commit(to: library)
+            } else if exchange.failure?.kind == .skipped {
+                session.skip(.postResponse, reason: .requestSkipped)
             } else if let kind = exchange.failure?.kind, ![.script, .cancelled].contains(kind) {
                 // A failed pre-request script, or a stop, already says why nothing came back.
                 session.skip(.postResponse, reason: .requestFailed)

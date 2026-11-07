@@ -99,7 +99,7 @@ public struct RequestExchange: Hashable, Sendable, Codable {
         case .response(let response): response.statusCode < 400 && response.eventStream?.end?.isFailure != true ? .succeeded : .failed
         case .grpc(let call): call.status?.isOK == true ? .succeeded : .failed
         case .webSocket(let record): record.isFailure ? .failed : .succeeded
-        case .failure: .failed
+        case .failure(let failure): failure.kind == .skipped ? .notSent : .failed
         }
     }
 }
@@ -110,6 +110,9 @@ public struct RunFailure: Hashable, Sendable, Codable, Error {
         case invalidRequest
         /// A pre-request script threw, timed out, or couldn't run, so the request wasn't sent.
         case script
+        /// A pre-request script asked not to send the request (`rq.execution.skipRequest`). No failure: its run counts
+        /// as not sent, unless a test failed.
+        case skipped
         case tls
         case cancelled
         case timedOut

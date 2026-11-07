@@ -98,6 +98,7 @@ struct TemplateTokenContext: Equatable {
             switch entry.source {
             case .environment(_, let name): source = name
             case .override: source = "Override"
+            case .iterationData: source = "Data"
             case .script: source = "Script"
             }
             return Entry(

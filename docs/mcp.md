@@ -8,7 +8,7 @@ Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agen
 - Write pre-request and post-response scripts, with the [API reference](scripts.md#api-reference) and the problems in what they wrote.
 - Compile protos.
 - Read a GraphQL request's schema and check queries against it.
-- Send requests and read their responses, with their scripts' test results and console. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
+- Send requests and read their responses, with their scripts' test results and console; one a pre-request script skips comes back not sent. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
 - Look back through each request's run history.
 
 ## Setup

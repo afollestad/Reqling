@@ -46,6 +46,8 @@ public enum VariableLayerKind: String, Hashable, Sendable, Codable {
     case defaultEnvironment
     case activeEnvironment
     case override
+    /// A column of the data row a folder or project run's iteration reads.
+    case iterationData
     /// Set by a script for the rest of this run only.
     case local
 }
@@ -88,10 +90,11 @@ public struct VariableWrite: Hashable, Sendable, Codable {
     }
 }
 
-/// Every variable one run can see, layered: run-local values beat one-run overrides, which beat each environment's
-/// current-over-saved values, active above Default above Global. This is the only implementation of that order: Reqling's
-/// `VariableScope` flattens it, and the script runner reads and writes it, so a script's `get` agrees with what the
-/// request resolves. A marker (`CurrentVariable.unset`) hides only its own layer's saved value; lower layers still show.
+/// Every variable one run can see, layered: run-local values beat one-run overrides, which beat the iteration's data
+/// row, which beats each environment's current-over-saved values, active above Default above Global. This is the only
+/// implementation of that order: Reqling's `VariableScope` flattens it, and the script runner reads and writes it, so a
+/// script's `get` agrees with what the request resolves. A marker (`CurrentVariable.unset`) hides only its own layer's
+/// saved value; lower layers still show.
 public struct VariableLayers: Hashable, Sendable, Codable {
     /// Values shorter than this are never treated as secrets found inside other text: masking every "42" would garble
     /// output while hiding nothing.
@@ -102,6 +105,9 @@ public struct VariableLayers: Hashable, Sendable, Codable {
     /// `nil` while Default is the active environment.
     public var active: VariableLayer?
     public var overrides: [String: String]
+    /// The data row of a folder or project run's iteration, as text; read-only, and never secret, since the person
+    /// chose the file it came from.
+    public var iterationData: [String: String]
     public var local: [String: TemplateVariable]
 
     public init(
@@ -109,12 +115,14 @@ public struct VariableLayers: Hashable, Sendable, Codable {
         defaultEnvironment: VariableLayer = VariableLayer(),
         active: VariableLayer? = nil,
         overrides: [String: String] = [:],
+        iterationData: [String: String] = [:],
         local: [String: TemplateVariable] = [:]
     ) {
         self.global = global
         self.defaultEnvironment = defaultEnvironment
         self.active = active
         self.overrides = overrides
+        self.iterationData = iterationData
         self.local = local
     }
 
@@ -124,6 +132,9 @@ public struct VariableLayers: Hashable, Sendable, Codable {
         }
         if let value = overrides[key] {
             return ResolvedVariable(variable: TemplateVariable(value: value), layer: .override, isCurrentValue: false)
+        }
+        if let value = iterationData[key] {
+            return ResolvedVariable(variable: TemplateVariable(value: value), layer: .iterationData, isCurrentValue: false)
         }
         let environments: [(VariableLayer?, VariableLayerKind)] = [
             (active, .activeEnvironment),
@@ -140,7 +151,8 @@ public struct VariableLayers: Hashable, Sendable, Codable {
 
     /// Every visible key with what `lookup` gives it.
     public func flattened() -> [String: ResolvedVariable] {
-        var keys = Set(local.keys).union(overrides.keys).union(defaultEnvironment.visibleKeys).union(global.visibleKeys)
+        var keys = Set(local.keys).union(overrides.keys).union(iterationData.keys).union(defaultEnvironment.visibleKeys)
+            .union(global.visibleKeys)
         if let active {
             keys.formUnion(active.visibleKeys)
         }

@@ -130,6 +130,37 @@ extension ScriptRunnerTests {
         ])
     }
 
+    func testScriptsReadTheIterationAndItsDataRowAsText() async {
+        let variables = VariableLayers(overrides: ["email": "override@acme.dev"], iterationData: ["email": "ada@acme.dev", "age": "36"])
+        let run = await fixtures.run(ScriptFixtures.input(.preRequest, ["""
+        console.log(rq.info.iteration, rq.info.iterationCount, pm.info.iteration, pm.info.iterationCount)
+        console.log(rq.iterationData.get("age"), typeof rq.iterationData.get("age"), rq.iterationData.has("nope"))
+        console.log(JSON.stringify(Object.entries(pm.iterationData.toObject()).sort()), rq.variables.get("age"), rq.variables.get("email"))
+        """], variables: variables, iteration: (2, 5)))
+
+        XCTAssertEqual(run.console, [
+            "2 5 2 5",
+            "36 string false",
+            #"[["age","36"],["email","ada@acme.dev"]] 36 override@acme.dev"#
+        ], "Data reads as text, and one-run overrides beat it as `{{name}}` resolves")
+    }
+
+    func testFlowRequestsAreReportedOncePerChangeAndSkipOnlyBeforeTheRequest() async {
+        let pre = await fixtures.run(ScriptFixtures.input(.preRequest, ["""
+        for (let i = 0; i < 1000; i++) { rq.execution.setNextRequest("Login"); rq.execution.skipRequest() }
+        pm.execution.setNextRequest(null)
+        try { rq.execution.setNextRequest() } catch (error) { console.log(error.message) }
+        """]))
+        let post = await fixtures.run(ScriptFixtures.input(.postResponse, ["""
+        try { pm.execution.skipRequest() } catch (error) { console.log(error.message) }
+        """], response: httpResponse(Data())))
+
+        XCTAssertEqual(pre.flow, [.setNextRequest("Login"), .skipRequest, .setNextRequest(nil)])
+        XCTAssertEqual(pre.console, ["rq.execution.setNextRequest needs a request's name or ID, or null to end the iteration."])
+        XCTAssertEqual(post.flow, [])
+        XCTAssertEqual(post.console, ["rq.execution.skipRequest() works only in pre-request scripts."])
+    }
+
     func testPreRequestScriptsChangeHeadersAndQueryForLaterLevels() async {
         let run = await fixtures.run(ScriptFixtures.input(.preRequest, [
             """

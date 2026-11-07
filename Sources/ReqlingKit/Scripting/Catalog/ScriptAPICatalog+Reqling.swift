@@ -9,6 +9,17 @@ extension ScriptAPICatalog {
                     "Reports a test as skipped without running it.")
         ]),
         ScriptType("Info", "Where this script runs.", members: infoMembers),
+        ScriptType("IterationData", "This iteration's row of a folder or project run's data file, as text. Empty otherwise.", members: [
+            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The column's value in this row, or `undefined`."),
+            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether this row has the column."),
+            .method("toObject", returns: .object, "Every column of this row with its value.")
+        ]),
+        ScriptType("Execution", "What happens to this request, and what a folder or project run runs next.", members: [
+            .method("skipRequest", returns: .void, "Doesn't send this request. The rest of the pre-request scripts still run.", phases: .pre),
+            .method("setNextRequest", [ScriptParameter("request", .optional(.string))], returns: .void,
+                    "In a folder or project run, runs the request with this name or ID next; `null` ends the iteration. "
+                        + "Ignored when the request runs on its own.")
+        ]),
         variableType("Environment", "The active environment's variables: its saved values, with this Mac's current values over them.",
                      source: .environment, named: true),
         variableType("DefaultEnvironment", "The project's Default environment's variables.", source: .defaultEnvironment, named: true),
@@ -44,6 +55,8 @@ extension ScriptAPICatalog {
         .property("defaultEnvironment", .named("DefaultEnvironment"), "The project's Default environment's variables."),
         .property("globals", .named("Globals"), "The Global environment's variables."),
         .property("variables", .named("Variables"), "Every variable as `{{name}}` resolves it; a value set here lasts for this run."),
+        .property("iterationData", .named("IterationData"), "This iteration's row of a folder or project run's data file."),
+        .property("execution", .named("Execution"), "Skips this request, or picks what a folder or project run runs next."),
         .property("request", .named("Request"), "The request as typed. Pre-request scripts can change its headers and query."),
         .property("response", .named("Response"), "What came back.", phases: .post),
         .method("test", [ScriptParameter("name", .string), ScriptParameter("callback", .function)], returns: .void,
@@ -61,7 +74,8 @@ extension ScriptAPICatalog {
         .property("requestId", .string, "The ID of the request running."),
         .property("protocol", .string, "`http`, `grpc`, or `websocket`."),
         .property("environment", .string, "The active environment's name."),
-        .property("iteration", .number, "Always 0; there for scripts written for runners.")
+        .property("iteration", .number, "Which iteration of a folder or project run this is, from 0; 0 when the request runs on its own."),
+        .property("iterationCount", .number, "How many iterations the folder or project run makes; 1 when the request runs on its own.")
     ]
 
     private static func variableType(_ name: String, _ summary: String, source: ScriptVariableSource, named: Bool) -> ScriptType {

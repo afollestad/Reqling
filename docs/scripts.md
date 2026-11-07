@@ -60,6 +60,7 @@ rq.test("returns the user", () => {
 - **Status bar.** **Tests 2/3** counts the tests that passed of those that ran. It's green when all of them passed and no script threw, and red otherwise.
 - **Failures.** A failed test, or a post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
 - **Request tab.** Headers, metadata, and query parameters that a pre-request script added or replaced are marked `{}`.
+- **Skipped.** A pre-request script that calls `rq.execution.skipRequest()` keeps the request from being sent. The rest of the pre-request scripts still run, and the run counts as not sent unless a test failed or a script threw. `rq.execution.setNextRequest()` matters only when a folder or project runs; a request run on its own ignores it.
 - **History.** Each run in the history shows its test counts, and the history keeps the newest 512 KB of a run's console.
 
 ## Editor help
@@ -71,7 +72,7 @@ rq.test("returns the user", () => {
 
 ## Scripts from Postman
 
-Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.cookies`, `pm.vault`, `pm.iterationData`, `pm.execution`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
+Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.cookies`, `pm.vault`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
 
 ## Trust
 
@@ -120,6 +121,8 @@ Reqling's script API.
 - `defaultEnvironment: DefaultEnvironment`: The project's Default environment's variables.
 - `globals: Globals`: The Global environment's variables.
 - `variables: Variables`: Every variable as `{{name}}` resolves it; a value set here lasts for this run.
+- `iterationData: IterationData`: This iteration's row of a folder or project run's data file.
+- `execution: Execution`: Skips this request, or picks what a folder or project run runs next.
 - `request: Request`: The request as typed. Pre-request scripts can change its headers and query.
 - `response: Response`: What came back. *(post-response only)*
 - `test(name: string, callback: function): void`: Runs a named test; it fails when the callback throws or its promise rejects.
@@ -183,7 +186,8 @@ Where this script runs.
 - `requestId: string`: The ID of the request running.
 - `protocol: string`: `http`, `grpc`, or `websocket`.
 - `environment: string`: The active environment's name.
-- `iteration: number`: Always 0; there for scripts written for runners.
+- `iteration: number`: Which iteration of a folder or project run this is, from 0; 0 when the request runs on its own.
+- `iterationCount: number`: How many iterations the folder or project run makes; 1 when the request runs on its own.
 
 ### `Environment`
 
@@ -232,6 +236,21 @@ Every variable as `{{name}}` resolves it; values set here last only for this run
 - `isSecret(name: string): boolean`: Whether the variable's value is secret.
 - `toObject(): object`: Every variable with its value.
 - `replaceIn(text: string): string`: Resolves `{{name}}` references as the request will.
+
+### `IterationData`
+
+This iteration's row of a folder or project run's data file, as text. Empty otherwise.
+
+- `get(name: string): string | null`: The column's value in this row, or `undefined`.
+- `has(name: string): boolean`: Whether this row has the column.
+- `toObject(): object`: Every column of this row with its value.
+
+### `Execution`
+
+What happens to this request, and what a folder or project run runs next.
+
+- `skipRequest(): void`: Doesn't send this request. The rest of the pre-request scripts still run. *(pre-request only)*
+- `setNextRequest(request: string | null): void`: In a folder or project run, runs the request with this name or ID next; `null` ends the iteration. Ignored when the request runs on its own.
 
 ### `Request`
 
@@ -442,8 +461,8 @@ Scripts from Postman run as they are. Each name works like its Reqling equivalen
 - `pm.sendRequest`: not supported, since scripts can't make network calls
 - `pm.cookies`: not supported, since scripts can't read the cookie jar
 - `pm.vault`: not supported, since Reqling keeps secrets as secret variables
-- `pm.iterationData`: not supported, since Reqling has no collection runner
-- `pm.execution`: not supported, since Reqling has no collection runner
+- `pm.iterationData`: `rq.iterationData`
+- `pm.execution`: `rq.execution`
 - `pm.visualizer`: not supported, since Reqling shows responses itself
 
 <!-- script-reference:end -->

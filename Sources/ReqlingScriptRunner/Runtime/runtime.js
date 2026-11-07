@@ -395,7 +395,27 @@
       requestId: info.requestId,
       protocol: info.protocol,
       environment: info.environment,
-      iteration: 0,
+      iteration: info.iteration,
+      iterationCount: info.iterationCount,
+    }),
+    iterationData: Object.freeze({
+      get: (key) => native.dataGet(String(key)),
+      has: (key) => native.dataGet(String(key)) !== undefined,
+      toObject: () => native.dataValues(),
+    }),
+    execution: Object.freeze({
+      skipRequest() {
+        if (!isPre) {
+          fail('rq.execution.skipRequest() works only in pre-request scripts.');
+        }
+        native.skipRequest();
+      },
+      setNextRequest(request) {
+        if (request === undefined) {
+          fail('rq.execution.setNextRequest needs a request\'s name or ID, or null to end the iteration.');
+        }
+        native.setNextRequest(request === null ? null : String(request));
+      },
     }),
     environment: Object.freeze(variableScope('environment', info.environment)),
     defaultEnvironment: Object.freeze(variableScope('defaultEnvironment', info.defaultEnvironment)),

@@ -118,11 +118,14 @@ public enum ScriptSkipReason: String, Hashable, Sendable, Codable {
     case requestFailed
     /// Reqling quit before the phase could run or finish.
     case quit
+    /// A pre-request script skipped the request, so there was no response.
+    case requestSkipped
 
     public var message: String {
         switch self {
         case .untrusted: "Scripts are off for this project."
         case .requestFailed: "The request failed, so post-response scripts didn't run."
+        case .requestSkipped: "A pre-request script skipped the request, so post-response scripts didn't run."
         case .quit: "Reqling quit before the post-response scripts finished."
         }
     }

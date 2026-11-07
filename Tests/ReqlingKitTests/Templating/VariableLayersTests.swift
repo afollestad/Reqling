@@ -13,6 +13,7 @@ final class VariableLayersTests: XCTestCase {
             defaultEnvironment: VariableLayer(saved: ["key": variable("default saved")], current: ["key": .value(variable("default current"))]),
             active: VariableLayer(saved: ["key": variable("active saved")], current: ["key": .value(variable("active current"))]),
             overrides: ["key": "override"],
+            iterationData: ["key": "data"],
             local: ["key": variable("local")]
         )
         var seen: [String] = []
@@ -21,6 +22,7 @@ final class VariableLayersTests: XCTestCase {
             switch found.layer {
             case .local: layers.local["key"] = nil
             case .override: layers.overrides["key"] = nil
+            case .iterationData: layers.iterationData["key"] = nil
             case .activeEnvironment where found.isCurrentValue: layers.active?.current["key"] = nil
             case .activeEnvironment: layers.active?.saved["key"] = nil
             case .defaultEnvironment where found.isCurrentValue: layers.defaultEnvironment.current["key"] = nil
@@ -31,7 +33,7 @@ final class VariableLayersTests: XCTestCase {
         }
 
         XCTAssertEqual(seen, [
-            "local", "override", "active current", "active saved", "default current", "default saved", "global current", "global saved"
+            "local", "override", "data", "active current", "active saved", "default current", "default saved", "global current", "global saved"
         ])
     }
 
@@ -49,12 +51,14 @@ final class VariableLayersTests: XCTestCase {
     }
 
     func testFlattenedIncludesCurrentOnlyKeysAndMarksThem() {
-        let layers = VariableLayers(global: VariableLayer(current: ["fresh": .value(variable("new"))]))
+        let layers = VariableLayers(global: VariableLayer(current: ["fresh": .value(variable("new"))]), iterationData: ["column": "1"])
 
         let flattened = layers.flattened()
 
         XCTAssertEqual(flattened["fresh"]?.variable.value, "new")
         XCTAssertEqual(flattened["fresh"]?.isCurrentValue, true)
+        XCTAssertEqual(flattened["column"]?.layer, .iterationData)
+        XCTAssertEqual(flattened["column"]?.variable.isSecret, false)
     }
 
     func testEnvironmentWritesLandInDefaultWhileDefaultIsActive() {

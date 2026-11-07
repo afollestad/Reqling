@@ -31,8 +31,16 @@ final class ScriptSession {
     /// The scripts each phase runs, outermost level first; a phase with none is absent.
     let levels: [ScriptPhase: [ScriptLevelSource]]
     let secretSink: ScriptSecretSink?
+    /// Which pass of a folder or project run this is, and how many it makes, as `rq.info` reports them.
+    let iteration: Int
+    let iterationCount: Int
     /// `nil` until the run has decided; `false` runs the request without its scripts.
     var isTrusted: Bool?
+    /// A pre-request script asked not to send the request (`rq.execution.skipRequest`).
+    private(set) var isSkipRequested = false
+    /// What a folder or project run runs next, as a script last named it (`rq.execution.setNextRequest`); a run of the
+    /// request on its own ignores it.
+    private(set) var nextRequest: ScriptNextRequest?
     private(set) var layers: VariableLayers
     private(set) var changes: [ScriptRequestChange] = []
     private(set) var report = ScriptReport()
@@ -48,7 +56,9 @@ final class ScriptSession {
         scope: VariableScope,
         environments: VariableScope.Environments,
         levels: [ScriptPhase: [ScriptLevelSource]],
-        secretSink: ScriptSecretSink?
+        secretSink: ScriptSecretSink?,
+        iteration: Int = 0,
+        iterationCount: Int = 1
     ) {
         self.project = project
         self.item = item
@@ -56,6 +66,8 @@ final class ScriptSession {
         self.environments = environments
         self.levels = levels
         self.secretSink = secretSink
+        self.iteration = iteration
+        self.iterationCount = iterationCount
         environmentID = environments.active?.id ?? environments.defaultEnvironment.id
         layers = scope.layers
     }
@@ -112,7 +124,9 @@ final class ScriptSession {
                 requestID: item.id.description,
                 protocolName: item.kind.name.rawValue,
                 environmentName: environments.active?.name ?? environments.defaultEnvironment.name,
-                defaultEnvironmentName: environments.defaultEnvironment.name
+                defaultEnvironmentName: environments.defaultEnvironment.name,
+                iteration: iteration,
+                iterationCount: iterationCount
             ),
             request: ScriptInputBuilder.request(kind),
             response: response?.snapshot,
@@ -226,6 +240,10 @@ final class ScriptSession {
             phaseReport.levels[level].tests.append(ScriptTestReport(name: name, result: result, message: message))
         case .levelFailed(let level, let error) where phaseReport.levels.indices.contains(level):
             phaseReport.levels[level].error = error
+        case .flow(.skipRequest) where phase == .preRequest:
+            isSkipRequested = true
+        case .flow(.setNextRequest(let request)):
+            nextRequest = request.map(ScriptNextRequest.request) ?? .stop
         default:
             break
         }
@@ -241,4 +259,12 @@ final class ScriptSession {
         masked.stack = error.stack.map(redaction.apply)
         return masked
     }
+}
+
+/// What a script named for a folder or project run to run next.
+enum ScriptNextRequest: Hashable, Sendable {
+    /// A request's name or ID.
+    case request(String)
+    /// `null`: end the iteration.
+    case stop
 }

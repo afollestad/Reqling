@@ -13,8 +13,19 @@ public enum ScriptRunnerEvent: Hashable, Sendable, Codable {
     /// The level threw, or a timer or promise it started did, or its promise never settled.
     case levelFailed(level: Int, error: ScriptError)
     case levelFinished(level: Int)
+    /// A script asked to skip the request, or named what a folder or project run does next. Written only when that
+    /// changes, so a loop calling it writes once.
+    case flow(ScriptFlowRequest)
     /// Every level ran; the helper exits next.
     case done
+}
+
+/// What `rq.execution` asks of the run.
+public enum ScriptFlowRequest: Hashable, Sendable, Codable {
+    /// Don't send the request; only a pre-request script can ask.
+    case skipRequest
+    /// The request a folder or project run runs next, by name or ID; `nil` ends the iteration.
+    case setNextRequest(String?)
 }
 
 /// One change a pre-request script makes to a header (or gRPC metadata entry) or query parameter.

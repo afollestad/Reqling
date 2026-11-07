@@ -13,6 +13,7 @@ extension ScriptLevelHost {
         }
         installReporting(on: native)
         installVariables(on: native)
+        installFlow(on: native)
         installRequest(on: native)
         installResponse(on: native)
         installCrypto(on: native)
@@ -31,7 +32,9 @@ extension ScriptLevelHost {
                 "requestId": input.info.requestID,
                 "protocol": input.info.protocolName,
                 "environment": input.info.environmentName,
-                "defaultEnvironment": input.info.defaultEnvironmentName
+                "defaultEnvironment": input.info.defaultEnvironmentName,
+                "iteration": input.info.iteration,
+                "iterationCount": input.info.iterationCount
             ]
         }
         let log: @convention(block) (String, String) -> Void = { [unowned self] severity, text in
@@ -77,11 +80,34 @@ extension ScriptLevelHost {
         let replaceIn: @convention(block) (String) -> String = { text in
             variables.replaceIn(text)
         }
+        let dataGet: @convention(block) (String) -> JSValue = { [unowned self] key in
+            guard let value = variables.layers.iterationData[key] else {
+                return JSValue(undefinedIn: context)
+            }
+            return JSValue(object: value, in: context)
+        }
+        let dataValues: @convention(block) () -> [String: String] = {
+            variables.layers.iterationData
+        }
         set(native, "varGet", get)
         set(native, "varIsSecret", isSecret)
         set(native, "varValues", values)
         set(native, "varSet", setValue)
         set(native, "replaceIn", replaceIn)
+        set(native, "dataGet", dataGet)
+        set(native, "dataValues", dataValues)
+    }
+
+    /// `rq.execution`; the runtime checks the phase and the argument first.
+    private func installFlow(on native: JSValue) {
+        let skipRequest: @convention(block) () -> Void = { [unowned self] in
+            phase.skipRequest()
+        }
+        let setNextRequest: @convention(block) (JSValue) -> Void = { [unowned self] request in
+            phase.setNextRequest(request.isNull ? nil : request.toString())
+        }
+        set(native, "skipRequest", skipRequest)
+        set(native, "setNextRequest", setNextRequest)
     }
 
     private func installRequest(on native: JSValue) {

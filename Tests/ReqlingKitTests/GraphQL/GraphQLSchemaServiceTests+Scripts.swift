@@ -43,6 +43,20 @@ extension GraphQLSchemaServiceTests {
         XCTAssertTrue(fixture.library.currentValues.values(in: .environment(setup.project, defaultEnvironment)).isEmpty)
     }
 
+    /// A request whose script skips it still introspects: only a run skips.
+    func testARequestWhoseScriptSkipsItStillIntrospects() async throws {
+        let server = try await start(.init())
+        let setup = try makeProject(base: server.url.absoluteString)
+        try fixture.library.mutate(setup.project) { document in
+            try document.updateRequest(setup.request) { $0.scripts.preRequest = "rq.execution.skipRequest()" }
+        }
+        workspace.updateProject(setup.project) { $0.scriptTrust = .trusted }
+
+        let schema = try await makeRunner().graphQLSchema(for: setup.request, in: setup.project)
+
+        XCTAssertNotNil(schema.typeSystem.type(named: "Book"))
+    }
+
     /// Introspection reads the project's certificates once when scripts leave the endpoint as it was, and again when
     /// one sends it elsewhere, so it never presents the first host's certificate to another.
     func testIntrospectionReadsCertificatesAgainOnlyForAnotherHost() async throws {

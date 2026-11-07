@@ -184,13 +184,18 @@ struct ResponseFailureView: View {
     }
 
     private var icon: String {
-        failure.kind == .cancelled ? "xmark.circle" : "exclamationmark.triangle"
+        switch failure.kind {
+        case .cancelled: "xmark.circle"
+        case .skipped: "arrow.uturn.forward.circle"
+        default: "exclamationmark.triangle"
+        }
     }
 
     private var title: String {
         switch failure.kind {
         case .invalidRequest: "The Request Couldn't Be Sent"
         case .script: "The Pre-request Script Failed"
+        case .skipped: "Skipped"
         case .tls: "TLS Failed"
         case .cancelled: "Cancelled"
         case .timedOut: "Timed Out"

@@ -96,7 +96,7 @@ extension MCPExecutionTools {
         switch reason {
         case .untrusted:
             "The project's scripts didn't run: they aren't trusted on this Mac. Only the person at the Mac can trust them, in Reqling."
-        case .requestFailed, .quit:
+        case .requestFailed, .quit, .requestSkipped:
             reason.message
         }
     }

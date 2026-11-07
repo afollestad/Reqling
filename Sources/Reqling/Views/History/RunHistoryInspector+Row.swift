@@ -124,7 +124,7 @@ struct RunStatusBadge: View {
         case .webSocket(.refused(let code)): StatusBadge.color(for: code)
         case .webSocket(.closed(let code)): WebSocketBadge.color(forClose: code)
         case .webSocket(.unclosed): .red
-        case .failure(.cancelled): .gray
+        case .failure(.cancelled), .failure(.skipped): .gray
         case .failure: .red
         }
     }
@@ -133,6 +133,7 @@ struct RunStatusBadge: View {
         switch kind {
         case .invalidRequest: "Not Sent"
         case .script: "Script Error"
+        case .skipped: "Skipped"
         case .tls: "TLS Failed"
         case .cancelled: "Cancelled"
         case .timedOut: "Timed Out"

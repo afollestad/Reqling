@@ -6,7 +6,7 @@ import ReqlingTemplating
 /// never base64'd into the JSON.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 1
+    public static let currentProtocolVersion = 2
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
@@ -74,13 +74,27 @@ public struct ScriptRunInfo: Hashable, Sendable, Codable {
     public var protocolName: String
     public var environmentName: String
     public var defaultEnvironmentName: String
+    /// Which pass of a folder or project run this is, from 0; 0 for a request run on its own.
+    public var iteration: Int
+    /// How many passes the folder or project run makes; 1 for a request run on its own.
+    public var iterationCount: Int
 
-    public init(requestName: String, requestID: String, protocolName: String, environmentName: String, defaultEnvironmentName: String) {
+    public init(
+        requestName: String,
+        requestID: String,
+        protocolName: String,
+        environmentName: String,
+        defaultEnvironmentName: String,
+        iteration: Int = 0,
+        iterationCount: Int = 1
+    ) {
         self.requestName = requestName
         self.requestID = requestID
         self.protocolName = protocolName
         self.environmentName = environmentName
         self.defaultEnvironmentName = defaultEnvironmentName
+        self.iteration = iteration
+        self.iterationCount = iterationCount
     }
 }
 

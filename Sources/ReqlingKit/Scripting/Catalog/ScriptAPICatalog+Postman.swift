@@ -13,8 +13,18 @@ extension ScriptAPICatalog {
             .property("eventName", .string, "`prerequest` or `test`.").postman("rq.info.phase"),
             .property("requestName", .string, "The request's name.").postman("rq.info.requestName"),
             .property("requestId", .string, "The request's ID.").postman("rq.info.requestId"),
-            .property("iteration", .number, "Always 0.").postman("rq.info.iteration"),
-            .property("iterationCount", .number, "Always 1.").postman("rq.info.iteration")
+            .property("iteration", .number, "Which iteration of the run this is, from 0.").postman("rq.info.iteration"),
+            .property("iterationCount", .number, "How many iterations the run makes.").postman("rq.info.iterationCount")
+        ]),
+        ScriptType("PostmanIterationData", "This iteration's data row.", members: [
+            .method("get", [ScriptParameter("name", .string)], returns: .optional(.string), "The column's value.").postman("rq.iterationData.get"),
+            .method("has", [ScriptParameter("name", .string)], returns: .boolean, "Whether the row has the column.").postman("rq.iterationData.has"),
+            .method("toObject", returns: .object, "Every column with its value.").postman("rq.iterationData.toObject")
+        ]),
+        ScriptType("PostmanExecution", "What happens to this request, and what the run runs next.", members: [
+            .method("skipRequest", returns: .void, "Doesn't send this request.", phases: .pre).postman("rq.execution.skipRequest"),
+            .method("setNextRequest", [ScriptParameter("request", .optional(.string))], returns: .void,
+                    "Runs this request next; `null` ends the iteration.").postman("rq.execution.setNextRequest")
         ]),
         postmanVariables("PostmanEnvironment", equivalent: "rq.environment", source: .environment, extra: [
             .property("name", .string, "The environment's name.").postman("rq.environment.name")
@@ -81,8 +91,8 @@ extension ScriptAPICatalog {
         .unsupported("sendRequest", "scripts can't make network calls", isMethod: true),
         .unsupported("cookies", "scripts can't read the cookie jar"),
         .unsupported("vault", "Reqling keeps secrets as secret variables"),
-        .unsupported("iterationData", "Reqling has no collection runner"),
-        .unsupported("execution", "Reqling has no collection runner"),
+        .property("iterationData", .named("PostmanIterationData"), "This iteration's data row.").postman("rq.iterationData"),
+        .property("execution", .named("PostmanExecution"), "Skips this request, or picks what runs next.").postman("rq.execution"),
         .unsupported("visualizer", "Reqling shows responses itself")
     ]
 

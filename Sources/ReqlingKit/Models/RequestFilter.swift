@@ -4,7 +4,7 @@ public enum RunOutcomeKind: String, Hashable, Sendable, Codable, CaseIterable {
     case succeeded
     /// The server answered 400 or above, or the run failed or was cancelled.
     case failed
-    /// The request has not been run on this Mac.
+    /// The request has not been run on this Mac, or a script skipped its latest run.
     case notSent
 }
 

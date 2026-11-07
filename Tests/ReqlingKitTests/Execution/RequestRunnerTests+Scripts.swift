@@ -117,6 +117,47 @@ extension RequestRunnerTests {
         XCTAssertEqual(exchange.outcomeKind, .failed)
     }
 
+    func testASkippedRequestIsNotSentThoughEveryPreRequestScriptRuns() async throws {
+        let server = try await authServer()
+        let project = try scriptedProject(base: server.baseURL)
+        try fixture.library.mutate(project.id) { document in
+            try document.updateFolder(project.folder.id) { $0.scripts.preRequest = "rq.execution.skipRequest()" }
+            try document.updateRequest(project.profile.id) { request in
+                request.scripts = ScriptSet(preRequest: "console.log('still runs')", postResponse: "rq.test('never', () => {})")
+            }
+        }
+        let runner = makeRunner()
+
+        let skipped = await runner.run(project.profile.id, in: project.id)
+        let prepared = try await runner.prepare(project.profile.id, in: project.id)
+
+        XCTAssertEqual(skipped.failure?.kind, .skipped)
+        XCTAssertEqual(skipped.outcomeKind, .notSent)
+        XCTAssertTrue(server.requests.isEmpty)
+        XCTAssertEqual(skipped.scriptReport?.phase(.preRequest)?.console.map(\.text), ["still runs"])
+        XCTAssertEqual(skipped.scriptReport?.phase(.postResponse)?.skipReason, .requestSkipped)
+        XCTAssertEqual(prepared.urlRequest.url?.path, "/me", "A preview builds what a send would, skip or not")
+    }
+
+    func testAFailureOutweighsASkip() async throws {
+        let server = try await authServer()
+        let project = try scriptedProject(base: server.baseURL)
+        try setScripts(project, request: project.login.id, ScriptSet(preRequest: """
+        rq.execution.skipRequest()
+        rq.test("fails", () => { throw new Error("x") })
+        """))
+        try setScripts(project, request: project.profile.id, ScriptSet(preRequest: "rq.execution.skipRequest()\nthrow new Error('boom')"))
+        let runner = makeRunner()
+
+        let failedTest = await runner.run(project.login.id, in: project.id)
+        let thrown = await runner.run(project.profile.id, in: project.id)
+
+        XCTAssertEqual(failedTest.failure?.kind, .skipped)
+        XCTAssertEqual(failedTest.outcomeKind, .failed, "A failed test fails the run, skipped or not")
+        XCTAssertEqual(thrown.failure?.kind, .script, "A throw beats the skip")
+        XCTAssertTrue(server.requests.isEmpty)
+    }
+
     func testAPreRequestScriptPastItsTimeLimitStopsTheRun() async throws {
         let server = try await authServer()
         let project = try scriptedProject(base: server.baseURL)

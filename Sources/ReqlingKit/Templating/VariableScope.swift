@@ -2,8 +2,9 @@ import Foundation
 import ReqlingTemplating
 
 /// The variables visible to one run, flattened from its `VariableLayers`: Global's enabled variables, overridden by the
-/// project's Default's, overridden by the active environment's, overridden by one-run overrides (from MCP's
-/// `execute_request`, for example), overridden by values a script set for the run.
+/// project's Default's, overridden by the active environment's, overridden by a folder or project run's data row,
+/// overridden by one-run overrides (from MCP's `execute_request`, for example), overridden by values a script set for
+/// the run.
 public struct VariableScope: Sendable {
     public struct Entry: Hashable, Sendable {
         public let value: String
@@ -23,6 +24,8 @@ public struct VariableScope: Sendable {
     public enum Source: Hashable, Sendable {
         case environment(id: EnvironmentID, name: String)
         case override
+        /// A column of a folder or project run's data row.
+        case iterationData
         /// Set by a script for the rest of its run.
         case script
     }
@@ -45,7 +48,8 @@ public struct VariableScope: Sendable {
         document: ProjectDocument,
         activeEnvironmentID: EnvironmentID?,
         currentValues: CurrentValueSnapshot,
-        overrides: [String: String] = [:]
+        overrides: [String: String] = [:],
+        iterationData: [String: String] = [:]
     ) {
         let active = activeEnvironmentID.flatMap { id in
             document.isDefaultEnvironment(id) ? nil : document.environment(id)
@@ -54,7 +58,8 @@ public struct VariableScope: Sendable {
             global: VariableLayer(global, current: currentValues.global),
             defaultEnvironment: VariableLayer(document.defaultEnvironment, current: currentValues.values(for: document.defaultEnvironment.id)),
             active: active.map { VariableLayer($0, current: currentValues.values(for: $0.id)) },
-            overrides: overrides
+            overrides: overrides,
+            iterationData: iterationData
         )
         self.init(layers: layers, environments: Environments(global: global, defaultEnvironment: document.defaultEnvironment, active: active))
     }
@@ -69,6 +74,7 @@ public struct VariableScope: Sendable {
             case .activeEnvironment:
                 environments.active.map { .environment(id: $0.id, name: $0.name) } ?? .override
             case .override: .override
+            case .iterationData: .iterationData
             case .local: .script
             }
             return Entry(

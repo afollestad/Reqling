@@ -59,7 +59,8 @@ struct ScriptFixtures {
         variables: VariableLayers = VariableLayers(),
         request: ScriptRequestSnapshot = ScriptFixtures.request(),
         response: ScriptResponseSnapshot? = nil,
-        limits: ScriptLimits = .standard
+        limits: ScriptLimits = .standard,
+        iteration: (index: Int, count: Int) = (0, 1)
     ) -> ScriptRunnerInput {
         let kinds: [ScriptLevelKind] = sources.count == 1 ? [.request] : [.project] + Array(repeating: .folder, count: sources.count - 2) + [.request]
         let levels = sources.enumerated().map { index, source in
@@ -75,7 +76,9 @@ struct ScriptFixtures {
                 requestID: "request-id",
                 protocolName: request.protocolName,
                 environmentName: "Staging",
-                defaultEnvironmentName: "Default"
+                defaultEnvironmentName: "Default",
+                iteration: iteration.index,
+                iterationCount: iteration.count
             ),
             request: request,
             response: response,
@@ -137,6 +140,15 @@ struct ScriptRun {
         events.compactMap { event in
             if case .request(let change) = event {
                 return change
+            }
+            return nil
+        }
+    }
+
+    var flow: [ScriptFlowRequest] {
+        events.compactMap { event in
+            if case .flow(let request) = event {
+                return request
             }
             return nil
         }

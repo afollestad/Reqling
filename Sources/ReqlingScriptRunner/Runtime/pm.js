@@ -172,8 +172,8 @@
       eventName: rq.info.phase === 'preRequest' ? 'prerequest' : 'test',
       requestName: rq.info.requestName,
       requestId: rq.info.requestId,
-      iteration: 0,
-      iterationCount: 1,
+      iteration: rq.info.iteration,
+      iterationCount: rq.info.iterationCount,
     }),
     environment: variableScope(rq.environment, { name: rq.environment.name }),
     globals: variableScope(rq.globals),
@@ -182,8 +182,15 @@
     sendRequest: unsupported('pm.sendRequest', 'scripts can\'t make network calls'),
     cookies: Object.freeze({ get: unsupported('pm.cookies'), has: unsupported('pm.cookies'), toObject: unsupported('pm.cookies') }),
     vault: Object.freeze({ get: unsupported('pm.vault'), set: unsupported('pm.vault'), unset: unsupported('pm.vault') }),
-    iterationData: Object.freeze({ get: unsupported('pm.iterationData'), has: unsupported('pm.iterationData'), toObject: unsupported('pm.iterationData') }),
-    execution: Object.freeze({ setNextRequest: unsupported('pm.execution.setNextRequest'), skipRequest: unsupported('pm.execution.skipRequest') }),
+    iterationData: Object.freeze({
+      get: (key) => rq.iterationData.get(key),
+      has: (key) => rq.iterationData.has(key),
+      toObject: () => rq.iterationData.toObject(),
+    }),
+    execution: Object.freeze({
+      setNextRequest: (request) => rq.execution.setNextRequest(request),
+      skipRequest: () => rq.execution.skipRequest(),
+    }),
     visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
   };
   Object.defineProperty(pm, 'request', { get: () => (request === undefined ? (request = buildRequest()) : request), enumerable: true });
