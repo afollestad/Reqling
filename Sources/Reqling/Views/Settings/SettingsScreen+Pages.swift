@@ -75,7 +75,8 @@ struct RequestsSettingsPage: View {
         }
     }
 
-    private static let scriptTimeLimitHelp = "How long a request's pre-request or post-response scripts may run before they're stopped, "
+    private static let scriptTimeLimitHelp = "How long a request's pre-request or post-response scripts, or a stream script's handlers on "
+        + "each event or message, may run before they're stopped, "
         + "\(Int(AppSettings.scriptTimeLimitRange.lowerBound))–\(Int(AppSettings.scriptTimeLimitRange.upperBound)) seconds."
 
     private var scriptTimeLimit: Binding<Double> {

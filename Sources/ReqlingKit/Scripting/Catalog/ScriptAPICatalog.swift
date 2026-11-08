@@ -40,7 +40,8 @@ public struct ScriptType: Sendable, Hashable {
     }
 
     /// The members named `name`; a response member can differ by protocol (`status` is a string for HTTP and an
-    /// object for gRPC), so there may be several.
+    /// object for gRPC), so there may be several. Members sharing a name never share a protocol in a phase they share,
+    /// so where the protocol is known, one applies.
     public func members(named name: String) -> [ScriptMember] {
         members.filter { $0.name == name }
     }
@@ -124,13 +125,26 @@ public struct ScriptMember: Sendable, Hashable {
     /// Whether the member applies to a script in `phase` whose request or response is one of `protocols` (`nil` when
     /// that isn't known, as for a folder's script, which runs for every protocol).
     public func applies(to phase: ScriptPhase, protocols context: ScriptProtocols?) -> Bool {
-        guard phases.contains(phase) else {
-            return false
-        }
+        phases.contains(phase) && matches(protocols: context)
+    }
+
+    /// Whether the member is one for `protocols`, whatever the phase.
+    public func matches(protocols context: ScriptProtocols?) -> Bool {
         guard let protocols, let context else {
             return true
         }
         return !protocols.isDisjoint(with: context)
+    }
+
+    /// The parameter at `position` of the function a script passes as argument `argument`, as the API calls it, when
+    /// that argument is a callback (`ScriptValueType.callback`).
+    public func callbackParameter(argument: Int, position: Int) -> ScriptParameter? {
+        let parameters = parameters
+        let parameter = argument < parameters.count ? parameters[argument] : parameters.last.flatMap { $0.isRest ? $0 : nil }
+        guard case .callback(let arguments)? = parameter?.type, arguments.indices.contains(position) else {
+            return nil
+        }
+        return arguments[position]
     }
 }
 

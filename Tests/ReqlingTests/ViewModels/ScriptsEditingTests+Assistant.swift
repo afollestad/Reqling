@@ -92,3 +92,24 @@ extension ScriptsEditingTests {
         XCTAssertNil(outside.entries["signature"], "A run-local name only where its script runs first")
     }
 }
+
+/// A stream script: its own phase, its placeholder, and its handlers' parameters.
+@MainActor
+extension ScriptsEditingTests {
+    func testAStreamScriptCompletesItsHandlersParameterAndSavesAsItsOwnPhase() async throws {
+        let scripts = try openRequest()
+        scripts.phase = .stream
+
+        scripts.source = "rq.onEvent(event => event.da)"
+        let items = scripts.completions(in: scripts.source, cursor: 28)
+        await releaseAutosave()
+        await waitUntil("the save") { self.stored?.scripts.stream == "rq.onEvent(event => event.da)" }
+
+        XCTAssertEqual(items?.items.map(\.label), ["data"])
+        XCTAssertEqual(stored?.scripts.preRequest, "")
+        XCTAssertTrue(ScriptsPane.placeholder(for: .stream, kind: .http).contains("event stream"))
+        XCTAssertTrue(ScriptsPane.placeholder(for: .stream, kind: .webSocket).contains("rq.onMessage"))
+        let folder = ScriptsPane.placeholder(for: .stream, kind: nil)
+        XCTAssertTrue(folder.contains("rq.onEvent") && folder.contains("rq.onMessage"), "A folder's script serves every kind")
+    }
+}

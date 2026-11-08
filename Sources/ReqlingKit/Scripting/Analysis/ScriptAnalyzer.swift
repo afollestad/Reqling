@@ -111,9 +111,29 @@ extension ScriptAnalyzer {
             case .index(let key):
                 value = indexed(value, key: key)
                 text += "[\(key.map { "\"\($0)\"" } ?? "…")]"
+            case .parameter(let argument, let position):
+                value = callbackParameter(of: value, receiver: steps.last?.receiver, argument: argument, position: position)
+                    .map { .typed($0.type) } ?? .unknown
             }
         }
         return (value, steps)
+    }
+
+    /// The parameter at `position` of the function passed as argument `argument` to `value`'s method, as the API calls
+    /// it. `nil` when that argument is no callback, or when the methods sharing its name call it with different types,
+    /// as `rq.onMessage` does in a folder's script, whose protocol isn't known: the parameter is then left untyped,
+    /// neither completing nor warning.
+    func callbackParameter(of value: ScriptResolvedValue, receiver: ScriptType?, argument: Int, position: Int) -> ScriptParameter? {
+        guard case .method(let method) = value else {
+            return nil
+        }
+        let named = receiver?.members(named: method.name) ?? [method]
+        let applicable = named.filter { $0.applies(to: context.phase, protocols: context.protocols) }
+        let parameters = (applicable.isEmpty ? [method] : applicable).map { $0.callbackParameter(argument: argument, position: position) }
+        guard let first = parameters.first, let parameter = first, parameters.allSatisfy({ $0?.type == parameter.type }) else {
+            return nil
+        }
+        return parameter
     }
 
     /// The global or alias a chain starts from, and how messages name it: an alias by what it stands for. Anything else
@@ -128,6 +148,10 @@ extension ScriptAnalyzer {
                 return (.unknown, chain.root)
             }
             let resolved = resolve(bound, bindings: bindings, depth: depth + 1)
+            // A handler's parameter is named as the script names it: `event`, not `rq.onEvent`.
+            if case .parameter = bound.steps.last {
+                return (resolved.value, chain.root)
+            }
             let text = resolved.steps.last.map { "\($0.receiverText).\($0.name)" } ?? bound.root
             return (resolved.value, bound.steps.contains { if case .name = $0 { true } else { false } } ? text : chain.root)
         }
@@ -166,15 +190,18 @@ extension ScriptAnalyzer {
             return MemberLookup()
         }
         let candidates = receiver.members(named: name)
-        guard let member = candidates.first(where: { $0.applies(to: context.phase, protocols: context.protocols) }) ?? candidates.first else {
+        let applicable = candidates.filter { $0.applies(to: context.phase, protocols: context.protocols) }
+        // Failing that, the one for the script's protocol, whose problem is its phase.
+        guard let member = applicable.first ?? candidates.first(where: { $0.matches(protocols: context.protocols) }) ?? candidates.first else {
             return MemberLookup(receiver: receiver, problem: receiver.isOpen ? nil : .missing)
         }
-        return MemberLookup(
-            value: member.isMethod ? .method(member) : .typed(member.type),
-            receiver: receiver,
-            member: member,
-            problem: problem(with: member, among: candidates)
-        )
+        var value: ScriptResolvedValue = member.isMethod ? .method(member) : .typed(member.type)
+        // Where the protocol isn't known, members sharing the name may hold different types, so what follows can't be
+        // checked: `rq.response.messages` in a folder's script is gRPC's or a WebSocket's.
+        if !member.isMethod, Set(applicable.map(\.type)).count > 1 {
+            value = .unknown
+        }
+        return MemberLookup(value: value, receiver: receiver, member: member, problem: problem(with: member, among: candidates))
     }
 
     private func problem(with member: ScriptMember, among candidates: [ScriptMember]) -> ScriptStepProblem? {
@@ -185,7 +212,9 @@ extension ScriptAnalyzer {
             return .phases(member.phases)
         }
         if !member.applies(to: context.phase, protocols: context.protocols) {
-            return .protocols(candidates.reduce(into: ScriptProtocols()) { $0.formUnion($1.protocols ?? []) })
+            // Only the protocols it works for here: in a stream script, `rq.response.status` is HTTP's alone.
+            let here = candidates.filter { $0.phases.contains(context.phase) }
+            return .protocols(here.reduce(into: ScriptProtocols()) { $0.formUnion($1.protocols ?? []) })
         }
         return nil
     }

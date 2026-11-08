@@ -20,7 +20,7 @@ struct ScriptsChainLink: Hashable, Identifiable {
     }
 }
 
-/// What a Scripts pane edits: a request's, folder's, or project's two scripts, the phase shown, and whether the owner
+/// What a Scripts pane edits: a request's, folder's, or project's scripts, one per phase, the phase shown, and whether the owner
 /// runs inherited scripts. Whoever owns the draft (a request editor, or `ContainerScriptsEditor`) hears of each edit
 /// through `onChange` and answers with `show(_:runsInheritedScripts:)` when it adopts a stored version, which is no edit.
 @MainActor
@@ -129,8 +129,8 @@ struct ScriptsContent: Equatable {
     var scripts: ScriptSet
     var runsInheritedScripts: Bool
 
-    /// Each script as the draft changed it since `base`, else as stored, so editing one phase keeps the other's
-    /// change made elsewhere.
+    /// Each script as the draft changed it since `base`, else as stored, so editing one phase keeps the others'
+    /// changes made elsewhere.
     static func merge(base: ScriptSet, draft: ScriptSet, stored: ScriptSet) -> ScriptSet {
         var merged = draft
         for phase in ScriptPhase.allCases where draft[phase] == base[phase] {

@@ -15,6 +15,7 @@ Switch a request to gRPC from the protocol menu in its header.
 - **Timeline.** Every message, as a collapsible tree or as text, following the newest while you're scrolled to the end.
 - **Metadata.** The initial metadata, trailers, and final status.
 - **Unknown fields.** A received message notes any fields the schema doesn't define, which usually means your protos are older than the server's.
+- **Scripts.** A [stream script](scripts.md#stream-scripts) handles each message received. While a streaming call's request stream is open, it can send more with `rq.send`.
 
 ## Schema source
 

@@ -170,10 +170,15 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
 
     /// A request's protocols; a folder's or the project's scripts run for every protocol.
     private var protocols: ScriptProtocols? {
-        guard case .request(let id) = owner, let kind = app.library.document(projectID)?.request(id)?.kind.name else {
+        requestKind.map(ScriptAnalysisContext.protocols(for:))
+    }
+
+    /// The edited request's kind; `nil` for a folder's or the project's scripts, which run for every kind.
+    var requestKind: RequestKind.Name? {
+        guard case .request(let id) = owner else {
             return nil
         }
-        return ScriptAnalysisContext.protocols(for: kind)
+        return app.library.document(projectID)?.request(id)?.kind.name
     }
 
     private nonisolated static func problems(in source: String, context: ScriptAnalysisContext) -> [CodeDiagnostic] {

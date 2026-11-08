@@ -9,7 +9,7 @@ Run every request in a folder, or in a whole project, one after another in sideb
   - **Environment.** The run uses this one throughout, whatever is active meanwhile.
   - **Iterations.** Repeat the requests a number of times, or once per row of a data file.
   - **On Failure.** Stop the run at the first request that fails, or carry on.
-  - **Streams.** How long an event stream or WebSocket stays open before the run moves on (10 seconds unless you change it); its post-response scripts then run on what arrived. gRPC calls end at their own deadline.
+  - **Streams.** How long an event stream or WebSocket stays open before the run moves on (10 seconds unless you change it); its stream scripts handle what arrives, and its post-response scripts then run on it. gRPC calls end at their own deadline.
   - **Requests.** Untick any to leave them out; a folder's checkbox sets all of its own. Shift-click ranges and **Select All** / **Select None** work as elsewhere.
 - **Remembered** until Reqling quits: the sheet opens with the settings the folder or project last ran with.
 - **One run at a time,** whether you or an agent started it. **Stop Run** (⇧⌘.) or the bar's Stop button ends it.

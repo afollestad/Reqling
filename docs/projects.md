@@ -13,7 +13,7 @@ My API.reqling/
   requests/users/list-users.post.js
 ```
 
-Scripts sit beside the file they belong to, as `.pre.js` (before the request) and `.post.js` (after the response), and move with it when it's renamed or moved.
+Scripts sit beside the file they belong to, as `.pre.js` (before the request), `.stream.js` (while a stream is open), and `.post.js` (after the response), and move with it when it's renamed or moved.
 
 ## Working with projects
 

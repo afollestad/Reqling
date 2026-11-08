@@ -36,6 +36,27 @@ extension SnapshotTests {
         assertBothAppearances(RequestEditorPane(editor: editor, model: fixture.model), size: CGSize(width: 920, height: 380))
     }
 
+    /// A stream script: the third phase, its handlers checking each event as it arrives.
+    func testEditorStreamScriptsTab() throws {
+        let (project, purgeCache) = try scriptedProject()
+        try fixture.library.mutate(project.id) { document in
+            try document.updateRequest(purgeCache) { request in
+                request.scripts.stream = """
+                // Checks each event as it arrives.
+                rq.onEvent((event) => {
+                  rq.test("is JSON", () => event.json())
+                })
+                """
+            }
+        }
+        fixture.model.selection = .node(project.id, purgeCache)
+        let editor = try XCTUnwrap(fixture.model.editor?.asHTTP)
+        editor.tab = .scripts
+        editor.scriptsEditor.phase = .stream
+
+        assertBothAppearances(RequestEditorPane(editor: editor, model: fixture.model), size: CGSize(width: 920, height: 380))
+    }
+
     /// Requests and folders with scripts of their own are marked; the project's own scripts mark nothing.
     func testSidebarMarksItemsWithScripts() throws {
         _ = try scriptedProject()

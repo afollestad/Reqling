@@ -51,9 +51,17 @@ private struct ScriptResultsList: View {
                         .foregroundStyle(.secondary)
                         .accessibilityAddTraits(.isHeader)
                     if let error = group.error {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .textSelection(.enabled)
+                            if let detail = group.errorDetail {
+                                Text(detail)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     ForEach(group.tests) { test in
                         ScriptTestRow(test: test)
@@ -76,6 +84,12 @@ private struct ScriptTestRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(test.name)
                     .textSelection(.enabled)
+                if let tally = test.tally {
+                    Text(tally)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
                 if let message = test.message {
                     Text(message)
                         .font(.callout)

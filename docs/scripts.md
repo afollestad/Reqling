@@ -1,17 +1,17 @@
 # Scripts
 
-JavaScript that runs before a request is sent and after its response comes back, for HTTP, GraphQL, gRPC, and WebSocket requests alike. Use scripts to compute a signature or timestamp, to save a token from a login's response for the requests after it, and to test what came back.
+JavaScript that runs before a request is sent, as an event stream, WebSocket, or gRPC call delivers each event or message, and after its response comes back, for HTTP, GraphQL, gRPC, and WebSocket requests alike. Use scripts to compute a signature or timestamp, to save a token from a login's response for the requests after it, to test what came back, and to answer a server's messages.
 
 ## Where scripts live
 
-- **Requests.** A request's **Scripts** tab holds its **Pre-request** and **Post-response** scripts.
+- **Requests.** A request's **Scripts** tab holds its **Pre-request**, **Stream**, and **Post-response** scripts.
 - **Folders and the project.** Select a folder or the project to edit scripts that run for every request inside it.
-- **Files.** Each script is a `.js` file beside its owner's JSON, such as `list-users.pre.js`, `_folder.post.js`, or `project.pre.js`, so scripts travel with the project through git. An empty script has no file.
+- **Files.** Each script is a `.js` file beside its owner's JSON, such as `list-users.pre.js`, `list-users.stream.js`, `_folder.post.js`, or `project.pre.js`, so scripts travel with the project through git. An empty script has no file.
 - **Badges.** The sidebar marks requests and folders that have scripts of their own.
 
 ## Order
 
-In each phase, the project's script runs first, then each folder's from the outermost in, then the request's own.
+In each phase, the project's script runs first, then each folder's from the outermost in, then the request's own. Each event or message goes through the stream scripts' handlers in that order too.
 
 - **Runs after** lists the scripts that run before the one you're editing. Click one to open it.
 - **Run inherited scripts**, turned off on a request, runs only that request's own scripts. Turned off on a folder, it stops the scripts above that folder for every request inside it.
@@ -19,7 +19,8 @@ In each phase, the project's script runs first, then each folder's from the oute
 ## When scripts run
 
 - **Pre-request** scripts run before the request is resolved, so they can set the variables and headers it uses. If one throws or runs past its time limit, the request isn't sent.
-- **Post-response** scripts run once the response arrives, or once an event stream, gRPC call, or WebSocket connection ends, including when you stop it. A request that gets no response, such as one that can't connect, runs none.
+- **Stream** scripts run when an event stream opens, a WebSocket connects, or a gRPC call's server first answers, and their handlers take each event or message as it arrives ([Stream scripts](#stream-scripts)). A response that isn't an event stream runs none.
+- **Post-response** scripts run once the response arrives, or once an event stream, gRPC call, or WebSocket connection ends, including when you stop it, after the stream scripts' handlers finish. A request that gets no response, such as one that can't connect, runs none.
 - **Previews.** Copy as cURL, GraphQL introspection, and gRPC reflection run pre-request scripts too, so they send what a run would. Nothing those scripts set is kept, cookies included, and a cached schema runs none.
 
 ## Writing scripts
@@ -47,12 +48,39 @@ rq.test("returns the user", () => {
 
 `{{name}}` inside a script is plain text. Read a variable with `rq.variables.get("name")`, or resolve text the way a request does with `rq.variables.replaceIn("{{baseUrl}}/users")`.
 
+## Stream scripts
+
+A stream script's top level registers handlers, which then take each event or message as it arrives:
+
+```js
+// Stream, on an event stream: test each event.
+rq.onEvent((event) => {
+  rq.test("is JSON", () => event.json())
+})
+
+// Stream, on a WebSocket: answer each ping, and keep the newest token.
+rq.onMessage((message) => {
+  const data = message.json()
+  if (data.type === "ping") rq.send({ type: "pong" })
+  if (data.token) rq.environment.set("token", data.token, { secret: true })
+})
+```
+
+- **Handlers.** `rq.onEvent` takes an event stream's events, and `rq.onMessage` the messages a WebSocket or gRPC call receives, not those it sends or its pings. Register them while the script's top level runs. A handler for the other kind of stream never runs, so one folder script can serve every kind of request.
+- **One at a time.** Each event goes through every handler before the next starts, and a handler's promise is awaited. A handler that throws is reported and still gets the events after. Timers a handler doesn't await are dropped when it finishes.
+- **What the stream opened with.** `rq.response` holds an event stream's status and headers, a WebSocket handshake's code, headers, and subprotocol, or a gRPC call's metadata. The rest is known only once the stream ends, to post-response scripts.
+- **Replies.** `rq.send(message)` sends on an open WebSocket, or on a gRPC call's open request stream: text as it is, an `ArrayBuffer` or typed array as a binary WebSocket message, and anything else as JSON. `{{name}}` in it is plain text, and a secret in it is masked on the timeline. It throws once the connection or request stream has closed.
+- **Keeping up.** The stream never waits for its handlers. When they fall far behind, the oldest events waiting for them are dropped, and the Tests tab counts them.
+- **Stop.** Stopping the stream, or a limit it reaches, lets the handlers finish the event in hand; those still waiting reach no handler. Stop again to stop the handlers too.
+- **Reconnects.** An event stream that reconnects keeps its handlers, and `rq.response` stays what it first opened with.
+
 ## Variables
 
 - **`rq.environment`** is the active environment, **`rq.defaultEnvironment`** the project's Default, and **`rq.globals`** Global. A value set through them is kept on this Mac as a [current value](projects.md#current-values), which overrides the saved one and never goes into the project.
 - **`rq.variables`** reads every variable as `{{name}}` resolves it. A value set through it lasts only for the run, and beats every environment's.
 - **Secrets.** Scripts can read secret values. A value set with `{ secret: true }`, under a secret variable's name, or containing another secret is masked wherever it shows, and an environment's or Global's is kept in the Keychain.
 - **Partial runs.** Values a script sets before it throws or is stopped are kept.
+- **While a stream is open,** a value a handler sets is kept within moments, for the handlers after it, for other requests, and for messages you send while connected, which resolve `{{name}}` with it.
 - **Folder and project runs** carry `rq.variables` values from one request to the next within an iteration, and give scripts `rq.info.iteration` and a data file's row as `rq.iterationData` ([Running folders and projects](running-folders.md)).
 
 ## Cookies
@@ -83,20 +111,21 @@ rq.cookies.for("example.com").clear()
 
 ## Results
 
-- **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON.
-- **Status bar.** **Tests 2/3** counts the tests that passed of those that ran. It's green when all of them passed and no script threw, and red otherwise.
-- **Failures.** A failed test, or a post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
+- **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON. While a stream is open, it updates as its handlers finish each event.
+- **Stream scripts.** A test a handler runs on every event shows once, as **Passed 498 of 500**, with its first failure's message and the event it failed on. A handler that throws shows its first error, the event it threw on, and how many events it threw for. Events that reached no handler are counted, with why, and the console keeps its newest 1,000 entries.
+- **Status bar.** **Tests 2/3** counts the tests that passed of those that ran, a stream script's each once. It's green when all of them passed and no script threw, and red otherwise.
+- **Failures.** A failed test, or a stream or post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
 - **Request tab.** Headers, metadata, and query parameters that a pre-request script added or replaced are marked `{}`.
 - **Skipped.** A pre-request script that calls `rq.execution.skipRequest()` keeps the request from being sent. The rest of the pre-request scripts still run, and the run counts as not sent unless a test failed or a script threw. `rq.execution.setNextRequest()` matters only when a folder or project runs; a request run on its own ignores it.
-- **History.** Each run in the history shows its test counts, and the history keeps the newest 512 KB of a run's console.
+- **History.** Each run in the history shows its test counts, and the history keeps the newest 512 KB of each phase's console.
 
 ## Editor help
 
-- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, and the keys of this request's latest JSON response after `rq.response.json().`. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, the keys of this request's latest JSON response after `rq.response.json().`, and a handler's parameter, as in `rq.onEvent(event => event.`, as the event or message it gets. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
 - **Parameter hints.** Typing `(` or `,` in a call shows the method's parameters above the line, with the one being typed highlighted and described, and what the method does. The highlight follows the cursor from argument to argument, and the hints close when it leaves the call or on Escape. Press ⇧⌘Space or ⌘P, or choose Edit ▸ Show Parameter Hints, to show them again inside a call. A function the script declares shows its parameters as written, with what a `/** … */` comment right above it says: its description, and `@param {type} name description` for each parameter.
 - **Brackets and quotes.** Typing `(`, `[`, `{`, or a quote adds its closer with the cursor between them, unless a name follows it (or, for a quote, comes right before it, as in `don't`). `${` in a template string closes as `${}`. A closer typed before the one already there steps over it, and Backspace between an empty pair removes both. Inside strings and comments, brackets and quotes type as they are.
 - **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
-- **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of the other phase, or one of another protocol. The problems menu above the script lists them.
+- **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of another phase, or one of another protocol. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
 
 ## Scripts from Postman
@@ -118,7 +147,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 - **Built in:** `rq.crypto` for MD5, SHA, and HMAC digests, `btoa` and `atob`, `crypto.getRandomValues` and `crypto.randomUUID`, `console`, `setTimeout`, and `setInterval`.
 - **Libraries:** crypto-js as `CryptoJS` and lodash as `_`, also through `require("crypto-js")` and `require("lodash")`.
 - **Not available:** network calls and files.
-- **Time limit.** Each phase may run for 10 seconds by default; change it in **Settings ▸ Requests**. Scripts run in a separate process, which Reqling stops at the limit.
+- **Time limit.** Each phase may run for 10 seconds by default, and so may a stream script's top level and its handlers on each event; change it in **Settings ▸ Requests**. Scripts run in a separate process, which Reqling stops at the limit. Handlers past it stop the stream scripts there, naming the event, while the stream itself goes on.
 - **Responses** reach scripts whole, up to 64 MB.
 
 ## API reference

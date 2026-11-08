@@ -24,7 +24,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 - [GraphQL](docs/graphql.md): schema-aware queries and the schema browser
 - [gRPC](docs/grpc.md): calls, streams, and schema sources
 - [WebSockets](docs/websockets.md): handshakes, messages, and timelines
-- [Scripts](docs/scripts.md): pre-request and post-response JavaScript
+- [Scripts](docs/scripts.md): pre-request, stream, and post-response JavaScript
 - [Running folders and projects](docs/running-folders.md): every request in order, repeated or once per data row
 - [MCP server](docs/mcp.md): letting AI agents work with your projects
 - [TLS](docs/tls.md): client certificates and extra CAs
@@ -64,7 +64,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
 | `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |
 | `Sources/ReqlingScriptProtocol` | What the app and the script runner exchange: the input, the events, and their framing |
-| `Sources/ReqlingScriptRunner` | A helper that runs pre-request and post-response scripts in JavaScriptCore, killed at its time limit, with its JavaScript runtime and the vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
+| `Sources/ReqlingScriptRunner` | A helper that runs pre-request, stream, and post-response scripts in JavaScriptCore, killed at its time limit, with its JavaScript runtime and the vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
 | `Sources/ReqlingPKCS12Probe` | A helper that opens each PKCS#12 file first, so a file that crashes Apple's importer can't take the app down |
 | `Tools/GraphQLFixtureServer` | A separate package that executes a real schema, for the tests and `graphql-server.sh` |
 | `Tests` | `ReqlingKitTests` and `ReqlingTests`, including snapshots |

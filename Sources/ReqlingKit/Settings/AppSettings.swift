@@ -40,7 +40,8 @@ public struct AppSettings: Hashable, Sendable, Codable {
     public var checksForUpdatesAutomatically = true
     public var historyRetention: HistoryRetention = .month
     public var historySizeLimit: HistorySizeLimit = .megabytes500
-    /// How long each phase of a request's scripts may run, all its levels together.
+    /// How long each phase of a request's scripts may run, all its levels together; a stream phase's top level and each
+    /// of its handler calls get it on their own (`HelperScriptRunner.stream`).
     public var scriptTimeLimitSeconds: Double = 10 {
         didSet { scriptTimeLimitSeconds = Self.clampScriptTimeLimit(scriptTimeLimitSeconds) }
     }

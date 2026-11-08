@@ -5,10 +5,10 @@ Reqling can run a local [MCP](https://modelcontextprotocol.io) server so AI agen
 ## What agents can do
 
 - Create and edit projects, environments, variables, and saved requests, and reset or save the current values scripts set.
-- Write pre-request and post-response scripts, with the [API reference](scripts.md#api-reference) and the problems in what they wrote.
+- Write pre-request, stream, and post-response scripts, with the [API reference](scripts.md#api-reference) and the problems in what they wrote.
 - Compile protos.
 - Read a GraphQL request's schema and check queries against it.
-- Send requests and read their responses, with their scripts' test results, console, and the variables and cookies they changed; one a pre-request script skips comes back not sent. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
+- Send requests and read their responses, with their scripts' test results, console, and the variables and cookies they changed, and what stream scripts handled; one a pre-request script skips comes back not sent. An event stream or WebSocket runs for a bounded time or number of events or received messages, and a WebSocket sends its own on-connect messages or the agent's.
 - Run a folder's or the project's requests in order, a number of times or once per row of data, with the same badges and bar in the sidebar as your own runs, which you can stop ([Running folders and projects](running-folders.md)). One runs at a time, yours or an agent's; an agent's stops after 9.5 minutes and returns what finished.
 - Look back through each request's run history.
 - See, set, and delete each project's cookies ([Cookies](scripts.md#cookies)).

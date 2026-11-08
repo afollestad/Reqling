@@ -8,7 +8,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Methods.** Any, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
 - **Bodies.** Raw with any Content-Type, form-data, x-www-form-urlencoded, binary, and GraphQL (a query and its variables, sent as the JSON body GraphQL servers expect).
 - **Auth.** Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
-- **Scripts.** JavaScript that runs before the request and after its response, in the **Scripts** tab ([Scripts](scripts.md)).
+- **Scripts.** JavaScript that runs before the request, on each event of an event stream, and after its response, in the **Scripts** tab ([Scripts](scripts.md)).
 - **Auto-indent.** JSON and JavaScript editors and the GraphQL query editor indent as you press Return:
   - A new line keeps the indentation above, one level deeper after `{` or `[`.
   - A bracket left open gets its closer on the next line, with the cursor between.
@@ -33,6 +33,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Other methods**, such as a POST to an LLM API, end when the server closes the stream rather than running again.
 - **Stop** (⌘.) ends a stream and keeps its events.
 - **Timeout** is how long a stream may stay silent.
+- **Scripts.** A [stream script](scripts.md#stream-scripts) handles each event as it arrives.
 
 ## Find
 

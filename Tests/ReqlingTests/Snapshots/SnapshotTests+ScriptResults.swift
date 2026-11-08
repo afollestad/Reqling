@@ -52,6 +52,48 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: Self.scriptResultsSize)
     }
 
+    /// A stream script's tests, a row each across every event, with the first failure, a handler's error, and the
+    /// events that reached no handler.
+    func testEventStreamResponseTestsTab() throws {
+        let project = try SnapshotProject.make(in: fixture)
+        let record = HTTPResponseRecord(
+            statusCode: 200,
+            headers: [KeyValuePair(key: "Content-Type", value: "text/event-stream")],
+            body: Data(),
+            url: "https://api.example.com/users/events",
+            startedAt: Self.startedAt,
+            duration: 12.4,
+            eventStream: EventStreamRecord(entries: [], receivedByteCount: 2_048, reconnectCount: 0, lastEventID: nil, end: .stopped)
+        )
+        let report = ScriptReport(phases: [ScriptPhaseReport(
+            phase: .stream,
+            levels: [ScriptLevelReport(
+                kind: .request,
+                name: "List users",
+                tests: [
+                    ScriptTestReport(name: "is JSON", result: .passed, tally: ScriptTestCounts(passed: 120)),
+                    ScriptTestReport(
+                        name: "is quick",
+                        result: .failed,
+                        message: "expected 142 to be below 100",
+                        tally: ScriptTestCounts(passed: 118, failed: 2),
+                        firstFailedItem: 17
+                    )
+                ],
+                error: ScriptError(name: "TypeError", message: "event.json(...).user is undefined", line: 3),
+                failedItem: 42,
+                failedCallCount: 3
+            )],
+            console: [ScriptConsoleEntry(level: 0, severity: .log, text: "Watching 2 users")],
+            stream: ScriptStreamReport(itemKind: .event, handledCount: 120, skippedCount: 4)
+        )])
+        project.cacheExchange(.response(record), for: project.listUsers, scriptReport: report, in: fixture)
+        let editor = try project.editor(project.listUsers, in: fixture)
+        editor.response.tab = .tests
+
+        assertBothAppearances(ResponseView(response: editor.response, model: fixture.model), size: Self.scriptResultsSize)
+    }
+
     func testResponseStatusWithPassingTests() {
         let scripts = ScriptReportPresentation(Self.testsReport(failing: false))
         let exchange = RequestExchange(

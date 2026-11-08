@@ -23,6 +23,10 @@ extension ScriptAnalyzer {
         let token = tokens[index]
         let bindings = expressions.bindings(before: token.range.location)
         if chain.steps.isEmpty {
+            if let parameter = handlerParameter(chain.root, bindings: bindings) {
+                let signature = "\(chain.root): \(parameter.type.description)"
+                return ScriptHover(range: token.range, signature: signature, summary: parameter.summary, note: nil)
+            }
             guard bindings[chain.root] == nil, let global = catalog.globals.first(where: { $0.name == chain.root }) else {
                 return nil
             }
@@ -38,6 +42,16 @@ extension ScriptAnalyzer {
             summary: member.summary,
             note: Self.note(for: member)
         )
+    }
+
+    /// What the API calls a handler's parameter named `name` with, where it's bound to one (`rq.onEvent(event => …)`).
+    private func handlerParameter(_ name: String, bindings: [String: ScriptMemberChain]) -> ScriptParameter? {
+        guard let bound = bindings[name], case .parameter(let argument, let position)? = bound.steps.last else {
+            return nil
+        }
+        let callee = ScriptMemberChain(root: bound.root, rootRange: bound.rootRange, steps: bound.steps.dropLast())
+        let resolved = resolve(callee, bindings: bindings)
+        return callbackParameter(of: resolved.value, receiver: resolved.steps.last?.receiver, argument: argument, position: position)
     }
 
     static func note(for member: ScriptMember) -> String? {

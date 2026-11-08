@@ -18,7 +18,7 @@ struct ScriptsPane: View {
         let diagnostics = scripts.diagnostics
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                SectionPicker("Phase", selection: $scripts.phase, options: [ScriptPhase.preRequest, .postResponse]) { $0.title }
+                SectionPicker("Phase", selection: $scripts.phase, options: ScriptPhase.allCases) { $0.title }
                 Spacer(minLength: 0)
                 if diagnostics.text == scripts.source, !diagnostics.items.isEmpty {
                     CodeProblemsMenu(diagnostics: diagnostics.items, handle: handle, subject: "the script")
@@ -35,7 +35,7 @@ struct ScriptsPane: View {
             CodeEditor(
                 text: $scripts.source,
                 language: .javascript,
-                placeholder: Self.placeholder(for: scripts.phase),
+                placeholder: Self.placeholder(for: scripts.phase, kind: scripts.requestKind),
                 showsTemplateTokens: false,
                 accessibilityLabel: "\(scripts.phase.title) script",
                 handle: handle,
@@ -52,7 +52,8 @@ struct ScriptsPane: View {
         }
     }
 
-    static func placeholder(for phase: ScriptPhase) -> String {
+    /// `kind` is the request's; `nil` for a folder's or the project's scripts, which run for every kind.
+    static func placeholder(for phase: ScriptPhase, kind: RequestKind.Name?) -> String {
         switch phase {
         case .preRequest:
             """
@@ -60,14 +61,37 @@ struct ScriptsPane: View {
             rq.request.headers.upsert("X-Request-Time", new Date().toISOString())
             """
         case .stream:
-            """
-            // Runs when an event stream, WebSocket, or gRPC call opens, after any inherited scripts.
-            rq.onEvent(event => rq.test("is JSON", () => event.json()))
-            """
+            streamPlaceholder(for: kind)
         case .postResponse:
             """
             // Runs once the response is in, after any inherited scripts.
             rq.test("is quick", () => rq.expect(rq.response.responseTime).to.be.below(1000))
+            """
+        }
+    }
+
+    private static func streamPlaceholder(for kind: RequestKind.Name?) -> String {
+        switch kind {
+        case .http:
+            """
+            // Runs when the response is an event stream, after any inherited scripts; handlers take each event.
+            rq.onEvent(event => rq.test("is JSON", () => event.json()))
+            """
+        case .webSocket:
+            """
+            // Runs once the connection opens, after any inherited scripts; handlers take each message received.
+            rq.onMessage(message => rq.test("is JSON", () => message.json()))
+            """
+        case .grpc:
+            """
+            // Runs once the server answers, after any inherited scripts; handlers take each message received.
+            rq.onMessage(message => rq.test("is JSON", () => message.json()))
+            """
+        case nil:
+            """
+            // Runs when an event stream, WebSocket connection, or gRPC call opens, after any inherited scripts.
+            rq.onEvent(event => console.log(event.data))
+            rq.onMessage(message => console.log(message.json()))
             """
         }
     }

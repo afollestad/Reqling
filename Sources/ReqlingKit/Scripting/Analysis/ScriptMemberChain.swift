@@ -7,6 +7,10 @@ struct ScriptMemberChain: Equatable, Sendable {
         case call
         /// `[…]`, with its key when that is one string or number literal.
         case index(String?)
+        /// A parameter of the function passed whole as argument `argument` of the method named so far, at `position`
+        /// in its list: `rq.onEvent(event => …)` binds `event` to `rq.onEvent` and `.parameter(argument: 0,
+        /// position: 0)`. Only a parameter's binding ends with one (`ScriptExpressions.readParameters`).
+        case parameter(argument: Int, position: Int)
     }
 
     var root: String
@@ -22,7 +26,7 @@ struct ScriptMemberChain: Equatable, Sendable {
 /// forwards from a name. Nothing here evaluates: a chain is only what its tokens spell.
 struct ScriptExpressions {
     /// One name a `const`, `let`, or `var` declares, or a function's parameter, and where it holds.
-    private struct Declaration {
+    struct Declaration {
         let location: Int
         let name: String
         let value: ScriptMemberChain
@@ -134,7 +138,7 @@ struct ScriptExpressions {
         return nil
     }
 
-    private enum Parenthesis {
+    enum Parenthesis {
         case call
         case grouping
         /// `if (`, a `function`'s parameters, and the like: no call holds what is inside.
@@ -144,7 +148,7 @@ struct ScriptExpressions {
     private static let controlKeywords: Set<String> = ["if", "for", "while", "switch", "catch", "with", "function"]
 
     /// What the `(` at `index` opens, by the token before it: a call follows a name, `)`, or `]`.
-    private func parenthesis(at index: Int) -> Parenthesis {
+    func parenthesis(at index: Int) -> Parenthesis {
         guard index >= 1 else {
             return .grouping
         }
@@ -234,8 +238,9 @@ struct ScriptExpressions {
     /// rq.request` binds `r`, and `const { headers, query: q } = rq.request` binds `headers` and `q`. A name given
     /// anything but a chain binds to `unknown`, which still hides a global of its name. A later declaration wins.
     ///
-    /// A function's parameters bind to `unknown` within the function only, so `(rq) => rq.x` or `_ => _.id` hides the
-    /// global there and nowhere else.
+    /// A function's parameters bind within the function only, so `(rq) => rq.x` or `_ => _.id` hides the global there
+    /// and nowhere else: to what the API calls them with, for a function passed to a method that takes a callback
+    /// (`rq.onEvent(event => …)`), and to `unknown` otherwise.
     func bindings(before offset: Int) -> [String: ScriptMemberChain] {
         var bindings: [String: ScriptMemberChain] = [:]
         for declaration in declarations where declaration.location < offset && offset <= declaration.scopeEnd ?? .max {
@@ -265,122 +270,6 @@ struct ScriptExpressions {
             declarations += bound.map { Declaration(location: token.range.location, name: $0.key, value: $0.value) }
         }
         return declarations + readParameters()
-    }
-
-    /// The parameters of arrow functions, `function`s, methods, and `catch` clauses, each scoped to its body.
-    private func readParameters() -> [Declaration] {
-        var parameters: [Declaration] = []
-        for index in tokens.indices {
-            let token = tokens[index]
-            let list: (names: [JavaScriptToken], bodyStart: Int)?
-            if token.isPunctuator("=>") {
-                list = arrowParameters(before: index).map { ($0, index + 1) }
-            } else if token.kind == .keyword, ["function", "catch"].contains(token.text) {
-                list = parenthesizedParameters(after: index)
-            } else if token.kind == .identifier, let method = methodParameters(at: index) {
-                list = method
-            } else {
-                list = nil
-            }
-            guard let list, let scopeEnd = bodyEnd(from: list.bodyStart) else {
-                continue
-            }
-            parameters += list.names.map { name in
-                Declaration(location: name.range.location, name: name.text, value: Self.unknown(at: name.range), scopeEnd: scopeEnd)
-            }
-        }
-        return parameters
-    }
-
-    /// `x =>` or `(a, { b }, c = 1) =>`.
-    private func arrowParameters(before arrow: Int) -> [JavaScriptToken]? {
-        guard arrow >= 1 else {
-            return nil
-        }
-        let last = tokens[arrow - 1]
-        if last.kind == .identifier {
-            return [last]
-        }
-        guard last.isPunctuator(")"), let open = opener(of: arrow - 1, open: "(", close: ")") else {
-            return nil
-        }
-        return names(from: open + 1, to: arrow - 1)
-    }
-
-    /// `function name(a, b) {`, `function (a) {`, or `catch (error) {`, and where the body starts.
-    private func parenthesizedParameters(after keyword: Int) -> (names: [JavaScriptToken], bodyStart: Int)? {
-        var open = keyword + 1
-        while open < tokens.count, !tokens[open].isPunctuator("(") {
-            guard tokens[open].kind == .identifier || tokens[open].isPunctuator("*") else {
-                return nil
-            }
-            open += 1
-        }
-        guard open < tokens.count, let close = closer(of: open, open: "(", close: ")") else {
-            return nil
-        }
-        return (names(from: open + 1, to: close), close + 1)
-    }
-
-    /// `name(a, b) {`, a method in an object or class: a call is never followed by a block.
-    private func methodParameters(at name: Int) -> (names: [JavaScriptToken], bodyStart: Int)? {
-        guard name + 1 < tokens.count, tokens[name + 1].isPunctuator("("), name == 0 || !Self.isDot(tokens[name - 1]),
-              let close = closer(of: name + 1, open: "(", close: ")"),
-              close + 1 < tokens.count, tokens[close + 1].isPunctuator("{") else {
-            return nil
-        }
-        return (names(from: name + 2, to: close), close + 1)
-    }
-
-    /// The names a parameter list binds: each identifier but a destructured key (`{ key: name }`) and those of a
-    /// default value.
-    private func names(from start: Int, to end: Int) -> [JavaScriptToken] {
-        var names: [JavaScriptToken] = []
-        var depth = 0
-        var isInDefault = false
-        for index in start..<end {
-            let token = tokens[index]
-            if token.isPunctuator("(") || token.isPunctuator("[") || token.isPunctuator("{") {
-                depth += 1
-            } else if token.isPunctuator(")") || token.isPunctuator("]") || token.isPunctuator("}") {
-                depth -= 1
-            } else if token.isPunctuator("=") {
-                isInDefault = true
-            } else if token.isPunctuator(","), depth <= 1 {
-                isInDefault = false
-            } else if token.kind == .identifier, !isInDefault, !(index + 1 < end && tokens[index + 1].isPunctuator(":")) {
-                names.append(token)
-            }
-        }
-        return names
-    }
-
-    /// Where a body starting at `start` ends: a `{ … }` block's closing brace, or an arrow's expression up to the
-    /// first `,`, `;`, or closing bracket outside it.
-    private func bodyEnd(from start: Int) -> Int? {
-        guard start < tokens.count else {
-            return nil
-        }
-        if tokens[start].isPunctuator("{") {
-            return closer(of: start, open: "{", close: "}").map { tokens[$0].end }
-        }
-        var depth = 0
-        var last = start
-        for index in start..<tokens.count {
-            let token = tokens[index]
-            if token.isPunctuator("(") || token.isPunctuator("[") || token.isPunctuator("{") {
-                depth += 1
-            } else if token.isPunctuator(")") || token.isPunctuator("]") || token.isPunctuator("}") {
-                guard depth > 0 else {
-                    break
-                }
-                depth -= 1
-            } else if depth == 0, token.isPunctuator(",") || token.isPunctuator(";") {
-                break
-            }
-            last = index
-        }
-        return tokens[last].end
     }
 
     /// A chain no global or binding starts, which resolves to `unknown`.
@@ -450,7 +339,7 @@ struct ScriptExpressions {
         }
     }
 
-    private func opener(of index: Int, open: String, close: String) -> Int? {
+    func opener(of index: Int, open: String, close: String) -> Int? {
         var depth = 0
         var cursor = index
         while cursor >= 0 {

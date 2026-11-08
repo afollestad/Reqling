@@ -15,6 +15,7 @@ Switch a request to WebSocket from the protocol menu in its header, and **Connec
 - **On connect.** Checked messages go out in order as soon as the connection opens, which replays a conversation.
 - **While connected**, each has a **Send** button, beside a composer for messages you don't want to keep; **Save** adds one to the list. Messages sent while connected resolve against the environment you connected with.
 - **Ping** measures a round trip. A keepalive in **Options** pings after a quiet stretch, ending the connection when a ping goes unanswered. Changing it applies to an open connection at once.
+- **Scripts.** A [stream script](scripts.md#stream-scripts) handles each message received, and can answer with `rq.send`. Messages you send while connected also resolve what its handlers set.
 
 ## Responses
 

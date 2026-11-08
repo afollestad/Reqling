@@ -64,6 +64,69 @@ final class ScriptReportPresentationTests: XCTestCase {
         XCTAssertNil(scripts.console)
     }
 
+    func testAStreamScriptsResultsReadAsOneRowPerTestWithTheItemTheyFailedOn() throws {
+        let stream = ScriptPhaseReport(
+            phase: .stream,
+            levels: [ScriptLevelReport(
+                kind: .request,
+                name: "Feed",
+                tests: [
+                    ScriptTestReport(
+                        name: "is JSON",
+                        result: .failed,
+                        message: "bad",
+                        tally: ScriptTestCounts(passed: 498, failed: 2),
+                        firstFailedItem: 17
+                    ),
+                    ScriptTestReport(name: "once", result: .passed, tally: ScriptTestCounts(passed: 1)),
+                    ScriptTestReport(name: "quiet", result: .failed, tally: ScriptTestCounts(failed: 1), firstFailedItem: 3)
+                ],
+                error: ScriptError(name: "TypeError", message: "x is undefined", line: 4),
+                failedItem: 2,
+                failedCallCount: 3
+            )],
+            stream: ScriptStreamReport(itemKind: .message, skippedCount: 12, droppedCount: 1, failedItem: 40)
+        )
+
+        let scripts = ScriptReportPresentation(ScriptReport(phases: [stream]))
+
+        let group = try XCTUnwrap(scripts.groups.first)
+        XCTAssertEqual(group.title, "Stream · Request")
+        XCTAssertEqual(group.tests.map(\.tally), ["Passed 498 of 500", nil, nil], "Only a test run more than once")
+        XCTAssertEqual(group.tests.map(\.message), ["Message 17: bad", nil, "Failed first at message 3"])
+        XCTAssertEqual(group.error, "Message 2: TypeError: x is undefined (line 4)")
+        XCTAssertEqual(group.errorDetail, "Threw for 3 messages")
+        XCTAssertEqual(scripts.tabTitle, "Tests 1/3", "Each row counts once")
+        XCTAssertEqual(scripts.notes, [
+            "Stream scripts fell behind, so 1 message reached no handler.",
+            "The stream scripts stopped at message 40, so 12 later messages reached no handler."
+        ])
+        let ended = ScriptStreamReport(itemKind: .event, skippedCount: 1)
+        XCTAssertEqual(ScriptReportPresentation(ScriptReport(phases: [ScriptPhaseReport(phase: .stream, stream: ended)])).notes, [
+            "The stream ended before its handlers caught up, so 1 event reached no handler."
+        ])
+    }
+
+    /// A live stream's report changes with each call; its console, laid out once, stays while it stays the same.
+    func testTheCacheKeepsTheConsoleWhileOnlyResultsChange() throws {
+        var cache = ScriptReportCache()
+        var report = ScriptReport(phases: [ScriptPhaseReport(
+            phase: .stream,
+            levels: [ScriptLevelReport(kind: .request, name: "Feed")],
+            console: [ScriptConsoleEntry(level: 0, severity: .log, text: "open")],
+            stream: ScriptStreamReport(itemKind: .event)
+        )])
+
+        let first = try XCTUnwrap(cache.presentation(of: report)?.console)
+        report.phases[0].stream?.handledCount = 1
+        let second = try XCTUnwrap(cache.presentation(of: report)?.console)
+        report.phases[0].console.append(ScriptConsoleEntry(level: 0, severity: .log, text: "event"))
+        let third = try XCTUnwrap(cache.presentation(of: report)?.console)
+
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertNotEqual(second.id, third.id)
+    }
+
     func testTheTestsTabShowsOnlyForARunWithScripts() throws {
         let fixture = AppFixture()
         defer { fixture.tearDown() }
