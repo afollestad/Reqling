@@ -85,6 +85,7 @@ private struct SidebarFilterMenu: View {
             .disabled(!isActive)
         } label: {
             Image(systemName: isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .accessibilityLabel("Filters")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

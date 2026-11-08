@@ -91,6 +91,7 @@ struct RequestEditorURLBar: View {
                 }
             } label: {
                 MethodBadge(method: editor.spec.method)
+                    .accessibilityLabel("HTTP method, \(editor.spec.method.rawValue)")
             }
             .menuStyle(.borderlessButton)
             .fixedSize()

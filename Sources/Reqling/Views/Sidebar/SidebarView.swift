@@ -160,6 +160,7 @@ private struct SidebarFooter: View {
                 Button("Add Project Folder…") { model.openProjectFolder() }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel("More ways to add")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

@@ -68,6 +68,7 @@ private struct RunHistoryFooter: View {
                 Button("Clear History…", role: .destructive) { history.requestClear() }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .accessibilityLabel("More history actions")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
