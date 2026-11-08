@@ -1,5 +1,6 @@
 import Foundation
 import ReqlingKit
+import ReqlingTemplating
 import XCTest
 
 @testable import Reqling
@@ -327,6 +328,15 @@ final class AppModelTests: XCTestCase {
         let context = model.tokenContext(for: project)
         XCTAssertEqual(context.entries["region"], TemplateTokenContext.Entry(displayValue: "eu", sourceName: "Global"))
         XCTAssertEqual(context.entries["host"]?.displayValue, "project")
+    }
+
+    /// Postman's names for `$uuid` read as built-ins, not red, yet completion offers only Reqling's own.
+    func testPostmansUUIDNamesReadAsBuiltInsWithoutBeingOffered() throws {
+        let context = model.tokenContext(for: try makeProject())
+        let tokens = TemplateParser.tokens(in: "{{$guid}} {{$randomUUID}} {{$randomNope}}")
+
+        XCTAssertEqual(tokens.map(context.state(for:)), [.dynamic, .dynamic, .unresolved])
+        XCTAssertEqual(context.completions(matching: "$"), DynamicVariables.names)
     }
 
     // MARK: - Proto workspaces

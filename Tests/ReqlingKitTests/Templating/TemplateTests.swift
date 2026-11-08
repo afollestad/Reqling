@@ -169,6 +169,16 @@ final class TemplateResolverTests: XCTestCase {
         )
     }
 
+    /// Postman's names for a UUID resolve as `$uuid`, so requests brought from Postman send what they did there.
+    func testPostmansUUIDNamesResolveAsUUIDs() {
+        let resolver = TemplateResolver(scope: VariableScope(), dynamic: fixedDynamic)
+
+        let resolution = resolver.resolve("{{$guid}} {{$randomUUID}}")
+
+        XCTAssertEqual(resolution.value, "00000000-0000-0000-0000-000000000001 00000000-0000-0000-0000-000000000001")
+        XCTAssertTrue(resolution.unresolved.isEmpty)
+    }
+
     func testPlainAndMaskedTextComeFromOnePass() {
         let counter = Counter()
         let dynamic = DynamicVariables(now: { Date() }, uuid: { UUID() }, randomInt: { counter.next() })

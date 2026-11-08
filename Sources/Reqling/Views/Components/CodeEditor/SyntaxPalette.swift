@@ -111,7 +111,7 @@ struct TemplateTokenContext: Equatable {
     func state(for token: TemplateToken) -> TemplateTokenState {
         switch token.kind {
         case .dynamic:
-            DynamicVariables.names.contains(token.name) ? .dynamic : .unresolved
+            DynamicVariables.isKnown(token.name) ? .dynamic : .unresolved
         case .variable:
             entries[token.name] == nil ? .unresolved : .resolved
         }
@@ -120,7 +120,7 @@ struct TemplateTokenContext: Equatable {
     func tooltip(for token: TemplateToken) -> String {
         switch token.kind {
         case .dynamic:
-            return DynamicVariables.names.contains(token.name) ? "Generated each time the request is sent" : "Unknown built-in variable"
+            return DynamicVariables.isKnown(token.name) ? "Generated each time the request is sent" : "Unknown built-in variable"
         case .variable:
             guard let entry = entries[token.name] else {
                 return "“\(token.name)” is not defined in this environment"
