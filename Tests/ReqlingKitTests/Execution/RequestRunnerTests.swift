@@ -30,8 +30,13 @@ final class RequestRunnerTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    /// Scripts run in the real helper, whose time limit passes only when `scriptDeadline.wake()` is called.
-    func makeRunner(library: ProjectLibrary? = nil, sleep: TestSleeper = TestSleeper(returnsAtOnce: true)) -> RequestRunner {
+    /// Scripts run in the real helper, whose time limit passes only when `scriptDeadline.wake()` is called, unless the
+    /// test hands in `scripts` of its own.
+    func makeRunner(
+        library: ProjectLibrary? = nil,
+        sleep: TestSleeper = TestSleeper(returnsAtOnce: true),
+        scripts: (any ScriptRunning)? = nil
+    ) -> RequestRunner {
         RequestRunner(
             library: library ?? fixture.library,
             workspace: workspace,
@@ -40,7 +45,8 @@ final class RequestRunnerTests: XCTestCase {
             pkcs12Probe: TLSFixtures.probe,
             history: RunHistory(directory: fixture.directory.file("Support/History"), settings: settings),
             userAgent: "Reqling/1.0",
-            scripts: HelperScriptRunner(executable: ScriptFixtures.helper, runtimeDirectory: ScriptFixtures.runtime, sleep: scriptDeadline.sleep),
+            scripts: scripts
+                ?? HelperScriptRunner(executable: ScriptFixtures.helper, runtimeDirectory: ScriptFixtures.runtime, sleep: scriptDeadline.sleep),
             sleep: sleep.sleep
         )
     }

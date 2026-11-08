@@ -1,7 +1,9 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// One open WebSocket connection as `RequestRunner` sees it: the record it grows from `WebSocketExecutor`'s events, the
-/// outbox the editor sends into, and what a message sent later needs to resolve the way the on-connect ones did.
+/// outbox the editor sends into, and what a message sent later needs to resolve the way the on-connect ones did, with
+/// what stream scripts have set since (`refresh`).
 ///
 /// Entries take their sequences from one counter, which skips ahead by each drop the executor reports, so gaps show
 /// where messages were left out (as `EventStreamLive` numbers a stream). Main-actor isolated like the runner, so each
@@ -17,15 +19,16 @@ final class WebSocketLive: LiveRun {
         /// The handshake as sent, masked.
         let request: ResolvedHTTPRequest
         let unresolvedVariables: [String]
-        let resolver: TemplateResolver
-        let redaction: SecretRedaction
+        var resolver: TemplateResolver
+        var redaction: SecretRedaction
         let allowUnresolved: Bool
         let limit: StreamLimit?
-        /// The pre-request phase's masked report, which every partial exchange carries until post-response scripts run.
-        var scriptReport: ScriptReport?
+        /// The run's scripts, whose masked report every partial exchange carries: the pre-request phase's, and the
+        /// stream phase's as it goes.
+        var scripts: ScriptSession?
     }
 
-    let context: Context
+    private(set) var context: Context
     let outbox: WebSocketOutbox
     /// Every message queued so far, masked, with its size on the wire; a `sent` event's index points into it.
     private var queued: [EncodedWebSocketMessage]
@@ -71,6 +74,36 @@ final class WebSocketLive: LiveRun {
         appliedReceived + droppedReceived
     }
 
+    /// Whether a stream script's `rq.send` can still go out.
+    var canSendScripted: Bool {
+        isOpen && !isStopping && !reachedLimit
+    }
+
+    /// Resolves later sends with what stream scripts have set since the connection opened.
+    func refresh(resolver: TemplateResolver, redaction: SecretRedaction) {
+        context.resolver = resolver
+        context.redaction = redaction
+    }
+
+    /// Queues what a stream script's `rq.send` sent, as it gave it: `{{name}}` in it is plain text, as in scripts.
+    func send(scripted message: ScriptOutgoingMessage) -> ScriptSendFailure? {
+        guard canSendScripted else {
+            return .closed("The connection is closed, so the message wasn't sent.")
+        }
+        let encoded: EncodedWebSocketMessage = switch message {
+        case .text(let text):
+            EncodedWebSocketMessage(format: .text, bytes: Array(text.utf8), shown: context.redaction.apply(text))
+        case .binary(let bytes):
+            EncodedWebSocketMessage(format: .binary, bytes: [UInt8](bytes), shown: context.redaction.apply(bytes.base64EncodedString()))
+        }
+        queued.append(encoded)
+        guard outbox.send(.message(encoded.format, encoded.bytes)) else {
+            queued.removeLast()
+            return .closed("The connection is closed, so the message wasn't sent.")
+        }
+        return nil
+    }
+
     /// Resolves and encodes `message` like an on-connect one, then queues it on the open connection.
     func send(_ message: WebSocketMessage) throws(RunFailure) {
         var templates = RunTemplates(resolver: context.resolver)
@@ -112,7 +145,9 @@ final class WebSocketLive: LiveRun {
         outbox.send(.close(code: 1000, reason: ""))
     }
 
-    func apply(_ event: WebSocketEvent) {
+    /// The message received, if `event` is one, as stream scripts' `rq.onMessage` handlers get it.
+    @discardableResult
+    func apply(_ event: WebSocketEvent) -> ScriptSocketMessage? {
         switch event {
         case .opened(let head, let subprotocol, let timestamp):
             self.head = head
@@ -121,7 +156,7 @@ final class WebSocketLive: LiveRun {
             activity = offset(at: timestamp)
         case .sent(let index, let timestamp):
             guard queued.indices.contains(index) else {
-                return
+                return nil
             }
             let message = queued[index]
             appliedSent += 1
@@ -131,7 +166,9 @@ final class WebSocketLive: LiveRun {
         case .received(let format, let bytes, let timestamp):
             appliedReceived += 1
             receivedBytes += bytes.count
-            append(.message(Self.received(format, bytes)), byteCount: bytes.count, at: timestamp)
+            let message = Self.received(format, bytes)
+            append(.message(message), byteCount: bytes.count, at: timestamp)
+            return ScriptInputBuilder.socketMessage(message)
         case .control(let control, let timestamp):
             apply(control, at: timestamp)
         case .omitted(let sent, let received):
@@ -140,6 +177,7 @@ final class WebSocketLive: LiveRun {
             droppedSent = sent
             droppedReceived = received
         }
+        return nil
     }
 
     var exchange: RequestExchange {
@@ -259,7 +297,7 @@ final class WebSocketLive: LiveRun {
             request: context.request,
             outcome: outcome,
             unresolvedVariables: context.unresolvedVariables,
-            scriptReport: context.scriptReport
+            scriptReport: context.scripts?.shownReport
         )
     }
 }

@@ -8,8 +8,9 @@ import ReqlingTemplating
 ///
 /// Values scripts set for an environment or Global, and the cookies they set or remove, are committed after each phase
 /// (to `CurrentValueStore` and the project's jar), whatever its outcome, so what a script set before it threw, timed
-/// out, or was stopped still lands. Pre-request cookies so land before the request is prepared, and URLSession sends
-/// them. A preview, which only shows what a request would send, commits nothing.
+/// out, or was stopped still lands; a stream phase commits as its calls finish (`ScriptSession+Stream.swift`).
+/// Pre-request cookies so land before the request is prepared, and URLSession sends them. A preview, which only shows
+/// what a request would send, commits nothing.
 @MainActor
 final class ScriptSession {
     enum Mode {
@@ -42,14 +43,30 @@ final class ScriptSession {
     /// What a folder or project run runs next, as a script last named it (`rq.execution.setNextRequest`); a run of the
     /// request on its own ignores it.
     private(set) var nextRequest: ScriptNextRequest?
-    private(set) var layers: VariableLayers
+    private(set) var layers: VariableLayers {
+        didSet {
+            layersRevision += 1
+            shownCache = nil
+        }
+    }
+    /// Bumps with every change to `layers`, so what resolves against them (a live connection's sends) knows to refresh.
+    private(set) var layersRevision = 0
     private(set) var changes: [ScriptRequestChange] = []
-    private(set) var report = ScriptReport()
+    private(set) var report = ScriptReport() {
+        didSet { shownCache = nil }
+    }
     /// Every value a script made secret this run, or an earlier step of its folder or project run made secret for that
     /// run, which masking covers even after a later `unset` hides it from the layers.
-    private(set) var secretValues: Set<String> = []
+    private(set) var secretValues: Set<String> = [] {
+        didSet { shownCache = nil }
+    }
+    /// `shownReport` as last masked: an open stream's partial exchange reads it on every publish, and masking the whole
+    /// report each time would grow with its console.
+    private var shownCache: ScriptReport??
     private var pendingWrites: [VariableWrite] = []
     private var pendingCookieWrites: [ScriptCookieWrite] = []
+    /// The stream phase, once the run's stream has opened.
+    var stream: ScriptStreamRun?
     /// The project's jar, through `RequestRunner.cookieJar(for:creating:)`; `creating` only to commit.
     private let cookieJar: @MainActor (_ creating: Bool) -> ProjectCookieJar?
 
@@ -196,7 +213,12 @@ final class ScriptSession {
 
     /// `maskedReport()`, or `nil` while no phase has anything to say.
     var shownReport: ScriptReport? {
-        report.isEmpty ? nil : maskedReport()
+        if let shownCache {
+            return shownCache
+        }
+        let shown = report.isEmpty ? nil : maskedReport()
+        shownCache = .some(shown)
+        return shown
     }
 
     /// The report with every secret the run touched masked in what scripts printed, named, or threw.
@@ -204,14 +226,16 @@ final class ScriptSession {
         let redaction = SecretRedaction(secrets: allSecretValues)
         var masked = report
         for phase in masked.phases.indices {
-            masked.phases[phase].console = masked.phases[phase].console.map { entry in
-                ScriptConsoleEntry(level: entry.level, severity: entry.severity, text: redaction.apply(entry.text))
+            for entry in masked.phases[phase].console.indices {
+                masked.phases[phase].console[entry].text = redaction.apply(masked.phases[phase].console[entry].text)
             }
             masked.phases[phase].error = masked.phases[phase].error.map { Self.masked($0, redaction) }
             for level in masked.phases[phase].levels.indices {
                 masked.phases[phase].levels[level].error = masked.phases[phase].levels[level].error.map { Self.masked($0, redaction) }
-                masked.phases[phase].levels[level].tests = masked.phases[phase].levels[level].tests.map { test in
-                    ScriptTestReport(name: redaction.apply(test.name), result: test.result, message: test.message.map(redaction.apply))
+                for test in masked.phases[phase].levels[level].tests.indices {
+                    masked.phases[phase].levels[level].tests[test].name = redaction.apply(masked.phases[phase].levels[level].tests[test].name)
+                    masked.phases[phase].levels[level].tests[test].message = masked.phases[phase].levels[level].tests[test].message
+                        .map(redaction.apply)
                 }
             }
         }
@@ -219,7 +243,12 @@ final class ScriptSession {
     }
 
     /// What the helper runs for `phase`, as the session stands now.
-    private func input(_ phase: ScriptPhase, levels: [ScriptLevelSource], response: ScriptResponseSnapshot?) -> ScriptRunnerInput {
+    func input(
+        _ phase: ScriptPhase,
+        levels: [ScriptLevelSource],
+        response: ScriptResponseSnapshot?,
+        stream: ScriptStreamSetup? = nil
+    ) -> ScriptRunnerInput {
         ScriptRunnerInput(
             phase: phase,
             levels: levels,
@@ -235,6 +264,7 @@ final class ScriptSession {
             ),
             request: ScriptInputBuilder.request(kind),
             response: response,
+            stream: stream,
             // Taken now: after the request, the jar already holds its response's `Set-Cookie`s.
             cookies: cookieJar(false)?.cookies(in: nil) ?? [],
             runtimeDirectory: ""
@@ -244,30 +274,11 @@ final class ScriptSession {
     private func apply(_ event: ScriptRunnerEvent, in phase: ScriptPhase, to phaseReport: inout ScriptPhaseReport) {
         switch event {
         case .variable(let write):
-            let applied = layers.apply(write)
-            if applied.isSecret, let value = applied.value {
-                secretValues.insert(value)
-            }
-            if applied.scope != .local {
-                pendingWrites.append(applied)
-            }
-            phaseReport.variableChanges.append(ScriptVariableChange(
-                scope: applied.scope,
-                key: applied.key,
-                isUnset: applied.value == nil,
-                isSecret: applied.isSecret
-            ))
+            phaseReport.variableChanges.append(absorb(write))
         case .request(let change) where phase == .preRequest:
             changes.append(change)
         case .cookie(let write) where phaseReport.cookieChanges.count < ScriptLimits.standard.cookieWrites:
-            pendingCookieWrites.append(write)
-            let identity = write.identity
-            phaseReport.cookieChanges.append(ScriptCookieChange(
-                name: identity.name,
-                domain: identity.domain,
-                path: identity.path,
-                isRemoved: write.isRemoval
-            ))
+            phaseReport.cookieChanges.append(absorb(write))
         case .console(let level, let severity, let text) where phaseReport.console.count <= ScriptLimits.standard.consoleEntries:
             phaseReport.console.append(ScriptConsoleEntry(level: level, severity: severity, text: text))
         case .test(let level, let name, let result, let message) where phaseReport.levels.indices.contains(level):
@@ -277,13 +288,48 @@ final class ScriptSession {
         case .flow(.skipRequest) where phase == .preRequest:
             isSkipRequested = true
         case .flow(.setNextRequest(let request)):
-            nextRequest = request.map(ScriptNextRequest.request) ?? .stop
+            setNextRequest(request)
         default:
             break
         }
     }
 
-    private func levelReports(_ phase: ScriptPhase) -> [ScriptLevelReport] {
+    /// Applies a value a script set: to the layers later phases see, to what masking covers, and, for an environment
+    /// or Global, to what `commit` stores. What the report lists of it, without its value.
+    func absorb(_ write: VariableWrite) -> ScriptVariableChange {
+        let applied = layers.apply(write)
+        if applied.isSecret, let value = applied.value {
+            secretValues.insert(value)
+        }
+        if applied.scope != .local {
+            pendingWrites.append(applied)
+        }
+        return ScriptVariableChange(scope: applied.scope, key: applied.key, isUnset: applied.value == nil, isSecret: applied.isSecret)
+    }
+
+    /// Queues a cookie a script set or removed for `commit`. What the report lists of it, without its value.
+    func absorb(_ write: ScriptCookieWrite) -> ScriptCookieChange {
+        pendingCookieWrites.append(write)
+        let identity = write.identity
+        return ScriptCookieChange(name: identity.name, domain: identity.domain, path: identity.path, isRemoved: write.isRemoval)
+    }
+
+    func setNextRequest(_ request: String?) {
+        nextRequest = request.map(ScriptNextRequest.request) ?? .stop
+    }
+
+    /// Changes the report of the phase at `index`.
+    func updatePhase(at index: Int, _ change: (inout ScriptPhaseReport) -> Void) {
+        change(&report.phases[index])
+    }
+
+    /// Adds a phase's report as it starts, for a phase that reports as it runs; its index for `updatePhase`.
+    func beginPhase(_ phase: ScriptPhaseReport) -> Int {
+        report.phases.append(phase)
+        return report.phases.count - 1
+    }
+
+    func levelReports(_ phase: ScriptPhase) -> [ScriptLevelReport] {
         (levels[phase] ?? []).map { ScriptLevelReport(kind: $0.kind, name: $0.name) }
     }
 

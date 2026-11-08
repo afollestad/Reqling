@@ -258,6 +258,9 @@ public final class RequestRunner {
         batchSteps[key]?.wasCancelled = true
         tasks[key]?.cancel()
         scriptTasks[key]?.cancel()
+        // The stream scripts outlive the stream, finishing the call in hand before post-response scripts run.
+        scriptSessions[key]?.closeStreamSending()
+        scriptSessions[key]?.stopStream()
         liveSockets[key]?.isStopping = true
         openSockets.remove(key)
     }
@@ -293,7 +296,7 @@ public final class RequestRunner {
             task?.cancel()
         }
         scriptTasks.removeValue(forKey: key)?.cancel()
-        scriptSessions[key] = nil
+        scriptSessions.removeValue(forKey: key)?.cancelStream()
         pendingPostExchanges[key] = nil
         scriptPhases[key] = nil
         inFlight.remove(key)
@@ -360,8 +363,7 @@ public final class RequestRunner {
             if let session {
                 item.kind = session.kind
             }
-            let scoped = scope.entries.values.filter(\.isSecret).flatMap { [$0.value, resolver.resolve($0.value).value] }
-            redaction = SecretRedaction(secrets: carried.union(scoped))
+            redaction = Self.redaction(scope: scope, resolver: resolver, carried: carried)
         }
         return RunContext(
             item: item,

@@ -94,7 +94,7 @@ struct MCPAppTools {
                 "verifyTLS": MCPSchema.boolean("Whether requests verify servers' TLS certificates by default."),
                 "grpcDeadlineSeconds": MCPSchema.number("The default gRPC deadline.", minimum: 1, maximum: 600),
                 "scriptTimeLimitSeconds": MCPSchema.number(
-                    "How long each phase of a request's scripts may run before it's stopped.",
+                    "How long each phase of a request's scripts, and each call of a stream script's handlers, may run before it's stopped.",
                     minimum: AppSettings.scriptTimeLimitRange.lowerBound,
                     maximum: AppSettings.scriptTimeLimitRange.upperBound
                 ),

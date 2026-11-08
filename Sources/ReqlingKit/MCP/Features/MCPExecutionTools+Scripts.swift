@@ -2,8 +2,9 @@ import MCP
 import ReqlingScriptProtocol
 
 /// What a run's scripts did, as the execution and history tools return it: test results, the console, errors, the
-/// variables and cookies they changed (never with values), and why scripts didn't run, each naming its phase and
-/// script. The report is already masked; `mask` covers what the run couldn't know, as everywhere else in the output.
+/// variables and cookies they changed (never with values), what stream scripts handled, and why scripts didn't run,
+/// each naming its phase and script. A stream phase's test is one entry with its `counts` across calls. The report is
+/// already masked; `mask` covers what the run couldn't know, as everywhere else in the output.
 extension MCPExecutionTools {
     /// Console text kept in tool output: the newest entries within this many bytes.
     static let consoleLimit = 64 * 1_024
@@ -23,6 +24,8 @@ extension MCPExecutionTools {
                             "result": .string(test.result.rawValue)
                         ]
                         described["message"] = test.message.map { .string(mask($0)) }
+                        described["counts"] = test.tally.map(testSummary)
+                        described["firstFailedAt"] = test.firstFailedItem.map(Value.int)
                         return .object(described)
                     }
                 }
@@ -35,17 +38,20 @@ extension MCPExecutionTools {
         if isCut {
             description["consoleTruncated"] = true
         }
-        let errors = report.phases.flatMap { phase in
-            phase.levels.compactMap { level in level.error.map { error(error: $0, phase: phase.phase, script: level.title, mask: mask) } }
-                + (phase.error.map { [error(error: $0, phase: phase.phase, script: nil, mask: mask)] } ?? [])
-        }
+        let errors = errors(report, mask: mask)
         if !errors.isEmpty {
             description["scriptErrors"] = .array(errors)
+        }
+        if let stream = report.phase(.stream)?.stream {
+            description["streamScripts"] = streamScripts(stream)
         }
         description.merge(changes(report, mask: mask)) { $1 }
         var notes: [String] = []
         for reason in report.phases.compactMap(\.skipReason) where !notes.contains(note(reason)) {
             notes.append(note(reason))
+        }
+        if report.phase(.stream)?.stream?.isInterrupted == true {
+            notes.append("Reqling quit before the stream scripts finished.")
         }
         if !notes.isEmpty {
             description["scriptNotes"] = .array(notes.map(Value.string))
@@ -91,6 +97,16 @@ extension MCPExecutionTools {
         ["passed": .int(counts.passed), "failed": .int(counts.failed), "skipped": .int(counts.skipped)]
     }
 
+    /// How many events or messages the stream scripts' handlers got, and how many reached none: `skipped` when the
+    /// stream ended or the scripts stopped (`stoppedAt`) first, `dropped` when the handlers fell behind.
+    private static func streamScripts(_ stream: ScriptStreamReport) -> Value {
+        var described: [String: Value] = ["items": .string("\(stream.itemKind.rawValue)s"), "handled": .int(stream.handledCount)]
+        described["skipped"] = stream.skippedCount > 0 ? .int(stream.skippedCount) : nil
+        described["dropped"] = stream.droppedCount > 0 ? .int(stream.droppedCount) : nil
+        described["stoppedAt"] = stream.failedItem.map(Value.int)
+        return .object(described)
+    }
+
     /// The newest entries within `consoleLimit`, oldest first, and whether any were left out here or by the history.
     private static func console(_ report: ScriptReport, mask: (String) -> String) -> (entries: [Value], isCut: Bool) {
         var kept: [Value] = []
@@ -117,13 +133,33 @@ extension MCPExecutionTools {
         return (kept.reversed(), isCut)
     }
 
-    private static func error(error: ScriptError, phase: ScriptPhase, script: String?, mask: (String) -> String) -> Value {
+    /// Each level's error, then the phase's own, with the stream item it happened on and how many calls threw.
+    private static func errors(_ report: ScriptReport, mask: (String) -> String) -> [Value] {
+        report.phases.flatMap { phase in
+            let levels = phase.levels.compactMap { level in
+                level.error.map { error in
+                    var described = self.error(error: error, phase: phase.phase, script: level.title, mask: mask)
+                    described["item"] = level.failedItem.map(Value.int)
+                    described["count"] = level.failedCallCount.map(Value.int)
+                    return Value.object(described)
+                }
+            }
+            let own = phase.error.map { error in
+                var described = self.error(error: error, phase: phase.phase, script: nil, mask: mask)
+                described["item"] = phase.stream?.failedItem.map(Value.int)
+                return Value.object(described)
+            }
+            return levels + (own.map { [$0] } ?? [])
+        }
+    }
+
+    private static func error(error: ScriptError, phase: ScriptPhase, script: String?, mask: (String) -> String) -> [String: Value] {
         var described: [String: Value] = ["phase": .string(phase.rawValue), "message": .string(mask(error.message))]
         described["script"] = script.map(Value.string)
         described["name"] = error.name.map(Value.string)
         described["line"] = error.line.map(Value.int)
         described["column"] = error.column.map(Value.int)
-        return .object(described)
+        return described
     }
 
     /// Why scripts didn't run, worded for an agent, who can't change the project's trust.

@@ -13,16 +13,17 @@ final class GRPCLiveCall: LiveRun {
         let startedAt: Date
         let environmentName: String
         let unresolvedVariables: [String]
-        let resolver: TemplateResolver
-        let redaction: SecretRedaction
+        var resolver: TemplateResolver
+        var redaction: SecretRedaction
         let allowUnresolved: Bool
-        /// The pre-request phase's masked report, which every partial exchange carries until post-response scripts run.
-        var scriptReport: ScriptReport?
+        /// The run's scripts, whose masked report every partial exchange carries: the pre-request phase's, and the
+        /// stream phase's as it goes.
+        var scripts: ScriptSession?
     }
 
     let outbox: GRPCOutbox
     let method: GRPCMethodDescriptor
-    private let context: Context
+    private var context: Context
     private let endpoint: GRPCEndpoint
     private let codec: ProtobufJSONCodec
     /// The request's own messages, encoded; a unary-style call sends the first.
@@ -85,6 +86,44 @@ final class GRPCLiveCall: LiveRun {
         )
     }
 
+    /// Every message received so far, dropped ones included, which numbers the one just received for stream scripts.
+    var receivedCount: Int {
+        appliedReceived + droppedReceived
+    }
+
+    /// What the server answered with before any message; empty until it has.
+    var initialMetadata: [KeyValuePair] {
+        base.initialMetadata
+    }
+
+    /// Resolves later sends with what stream scripts have set since the call began.
+    func refresh(resolver: TemplateResolver, redaction: SecretRedaction) {
+        context.resolver = resolver
+        context.redaction = redaction
+    }
+
+    /// Encodes what a stream script's `rq.send` sent, as it gave it (`{{name}}` in it is plain text, as in scripts),
+    /// then queues it on the open request stream.
+    func send(scriptedJSON json: String) -> ScriptSendFailure? {
+        let message: EncodedMessage
+        do {
+            message = try Self.encode(
+                ResolvedTemplate(sent: json, shown: context.redaction.apply(json)),
+                as: method.inputType,
+                codec: codec,
+                label: "The message"
+            )
+        } catch {
+            return .invalid(error.redacting(context.redaction).message)
+        }
+        queued.append((message.shown, message.bytes.count))
+        guard outbox.send(message.bytes) else {
+            queued.removeLast()
+            return .closed("The call's request stream is closed, so the message wasn't sent.")
+        }
+        return nil
+    }
+
     /// Resolves and encodes `json` like a seeded message, then queues it on the open request stream.
     func send(_ json: String) throws(RunFailure) {
         var templates = RunTemplates(resolver: context.resolver)
@@ -105,7 +144,10 @@ final class GRPCLiveCall: LiveRun {
         }
     }
 
-    func apply(_ event: GRPCCallEvent) {
+    /// The message received, if `event` is one, as JSON text: what stream scripts' `rq.onMessage` handlers get, and
+    /// for a message that couldn't be decoded, why, as `rq.response.messages` gives it.
+    @discardableResult
+    func apply(_ event: GRPCCallEvent) -> String? {
         isEstablished = true
         switch event {
         case .opened(let timestamp):
@@ -143,7 +185,9 @@ final class GRPCLiveCall: LiveRun {
                 sequence: sequence,
                 unknownFieldCount: decoded.unknownFieldCount
             ))
+            return decoded.json
         }
+        return nil
     }
 
     /// The call so far, its newest `GRPCCallRecord.eventLimit` events included; the status stays `nil` until
@@ -217,7 +261,7 @@ final class GRPCLiveCall: LiveRun {
             request: nil,
             outcome: outcome,
             unresolvedVariables: context.unresolvedVariables,
-            scriptReport: context.scriptReport
+            scriptReport: context.scripts?.shownReport
         )
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import MCP
 @testable import ReqlingKit
+import ReqlingScriptProtocol
 import XCTest
 
 /// Script results in the execution and history tools, with what scripts made secret masked.
@@ -107,5 +108,41 @@ extension MCPExecutionToolsTests {
         XCTAssertNil(withheld["response"]?["headers"], "The server echoed it in a header too")
         XCTAssertEqual(withheld["response"]?["status"], 200)
         XCTAssertNotNil(withheld["withheld"])
+    }
+}
+
+/// A stream phase's results as agents read them.
+extension MCPExecutionToolsTests {
+    func testAStreamPhaseReportsItsTalliesItemsAndWhatReachedNoHandler() throws {
+        let report = ScriptReport(phases: [ScriptPhaseReport(
+            phase: .stream,
+            levels: [ScriptLevelReport(
+                kind: .request,
+                name: "Feed",
+                tests: [ScriptTestReport(
+                    name: "is JSON",
+                    result: .failed,
+                    message: "bad",
+                    tally: ScriptTestCounts(passed: 3, failed: 1),
+                    firstFailedItem: 4
+                )],
+                error: ScriptError(name: "TypeError", message: "x is undefined"),
+                failedItem: 2,
+                failedCallCount: 3
+            )],
+            stream: ScriptStreamReport(itemKind: .event, handledCount: 4, skippedCount: 2, failedItem: 9, isInterrupted: true)
+        )])
+
+        let described = MCPExecutionTools.scripts(report) { $0 }
+
+        let test = try XCTUnwrap(described["tests"]?.arrayValue?.first)
+        XCTAssertEqual(test["counts"], ["passed": 3, "failed": 1, "skipped": 0] as Value)
+        XCTAssertEqual(test["firstFailedAt"], 4)
+        XCTAssertEqual(described["testSummary"], ["passed": 0, "failed": 1, "skipped": 0] as Value, "A test counts once")
+        let error = try XCTUnwrap(described["scriptErrors"]?.arrayValue?.first)
+        XCTAssertEqual(error["item"], 2)
+        XCTAssertEqual(error["count"], 3)
+        XCTAssertEqual(described["streamScripts"], ["items": .string("events"), "handled": 4, "skipped": 2, "stoppedAt": 9] as Value)
+        XCTAssertEqual(described["scriptNotes"], ["Reqling quit before the stream scripts finished."])
     }
 }

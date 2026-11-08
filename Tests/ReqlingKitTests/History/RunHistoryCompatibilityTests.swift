@@ -40,6 +40,33 @@ final class RunHistoryCompatibilityTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ScriptPhaseReport.self, from: JSONEncoder().encode(report)), report)
     }
 
+    func testAStreamPhasesResultsRoundTripAndOtherPhasesWriteNoneOfTheirFields() throws {
+        let test = ScriptTestReport(
+            name: "is JSON",
+            result: .failed,
+            message: "bad",
+            tally: ScriptTestCounts(passed: 3, failed: 1),
+            firstFailedItem: 4
+        )
+        let error = ScriptError(message: "x")
+        let level = ScriptLevelReport(kind: .request, name: "Feed", tests: [test], error: error, failedItem: 2, failedCallCount: 5)
+        let stream = ScriptPhaseReport(
+            phase: .stream,
+            levels: [level],
+            stream: ScriptStreamReport(itemKind: .event, handledCount: 4, skippedCount: 1, droppedCount: 2, failedItem: 9, isInterrupted: true)
+        )
+        let other = ScriptPhaseReport(
+            phase: .postResponse,
+            levels: [ScriptLevelReport(kind: .request, name: "Feed", tests: [ScriptTestReport(name: "ok", result: .passed)])]
+        )
+        let otherJSON = try XCTUnwrap(String(bytes: try JSONEncoder().encode(other), encoding: .utf8))
+
+        XCTAssertEqual(try JSONDecoder().decode(ScriptPhaseReport.self, from: JSONEncoder().encode(stream)), stream)
+        for key in ["stream", "tally", "firstFailedItem", "failedItem", "failedCallCount"] {
+            XCTAssertFalse(otherJSON.contains("\"\(key)\""), "\(key) is written only when set")
+        }
+    }
+
     func testTheHistoryKeepsOnlyTheNewestConsoleOfARun() throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }

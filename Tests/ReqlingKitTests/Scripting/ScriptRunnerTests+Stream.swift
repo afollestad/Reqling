@@ -193,7 +193,7 @@ extension ScriptRunnerTests {
             _ = execution.deliver(ScriptFixtures.event(data, number + 1))
         }
         for await event in execution.events where event == .callStarted(item: 2) {
-            await fixtures.deadline.waitForWaiting(1)
+            await waitForDeadline(fixtures.deadline)
             fixtures.deadline.wake()
         }
 
@@ -208,7 +208,7 @@ extension ScriptRunnerTests {
         _ = execution.deliver(ScriptFixtures.event("waiting", 1))
         for await event in execution.events {
             if case .console = event {
-                await fixtures.deadline.waitForWaiting(1)
+                await waitForDeadline(fixtures.deadline)
                 fixtures.deadline.wake()
             }
         }

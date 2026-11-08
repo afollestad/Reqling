@@ -65,7 +65,7 @@ enum ScriptInputBuilder {
         let headers = scriptRows(response.headers)
         let time = response.duration * 1_000
         if let stream = response.eventStream {
-            let events = stream.events.map { ScriptStreamEvent(id: $0.id, event: $0.type, data: $0.data, retry: nil) }
+            let events = stream.events.map(event)
             return (.eventStream(ScriptEventStreamResponse(
                 code: response.statusCode,
                 status: response.reasonPhrase,
@@ -89,12 +89,7 @@ enum ScriptInputBuilder {
     }
 
     private static func webSocket(_ record: WebSocketRecord) -> ScriptWebSocketResponse {
-        let messages = record.entries.compactMap(\.message).map { message in
-            let direction = message.direction == .sent ? "sent" : "received"
-            return message.isBase64
-                ? ScriptSocketMessage(direction: direction, text: nil, base64: message.text)
-                : ScriptSocketMessage(direction: direction, text: message.text, base64: nil)
-        }
+        let messages = record.entries.compactMap(\.message).map(socketMessage)
         let end: String = switch record.end {
         case .closed?: "closed"
         case .stopped?: "stopped"
@@ -112,6 +107,35 @@ enum ScriptInputBuilder {
             end: end,
             responseTime: record.duration * 1_000
         )
+    }
+
+    /// What a stream script reads as `rq.response`: the head an event stream opened with.
+    static func opening(eventStream head: HTTPResponseRecord) -> ScriptStreamOpening {
+        .eventStream(code: head.statusCode, status: head.reasonPhrase, headers: scriptRows(head.headers))
+    }
+
+    /// The handshake a WebSocket connection opened with, and the subprotocol the server chose.
+    static func opening(webSocket head: HTTPResponseRecord?, subprotocol: String?) -> ScriptStreamOpening {
+        .webSocket(code: head?.statusCode, headers: scriptRows(head?.headers ?? []), subprotocol: subprotocol)
+    }
+
+    /// The metadata a gRPC call's server answered with.
+    static func opening(grpcMetadata metadata: [KeyValuePair]) -> ScriptStreamOpening {
+        .grpc(metadata: scriptRows(metadata))
+    }
+
+    /// An event as `rq.onEvent` and `rq.response.events` give it. The parser reports `retry:` apart from events, so
+    /// none carries one.
+    static func event(_ event: ServerSentEvent) -> ScriptStreamEvent {
+        ScriptStreamEvent(id: event.id, event: event.type, data: event.data, retry: nil)
+    }
+
+    /// A message as `rq.onMessage` and `rq.response.messages` give it, its bytes base64 when they aren't text.
+    static func socketMessage(_ message: WebSocketMessageRecord) -> ScriptSocketMessage {
+        let direction = message.direction == .sent ? "sent" : "received"
+        return message.isBase64
+            ? ScriptSocketMessage(direction: direction, text: nil, base64: message.text)
+            : ScriptSocketMessage(direction: direction, text: message.text, base64: nil)
     }
 
     private static func endName(_ end: EventStreamRecord.End?) -> String {

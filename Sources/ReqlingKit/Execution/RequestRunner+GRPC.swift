@@ -21,6 +21,7 @@ extension RequestRunner {
         let key = RunKey(request, in: project)
         liveCalls[key]?.outbox.finish()
         openStreams.remove(key)
+        scriptSessions[key]?.closeStreamSending()
     }
 
     /// The schema a gRPC request would use, resolved as a run would resolve it (target, auth, TLS), for the editor's
@@ -96,25 +97,56 @@ extension RequestRunner {
             latest[key] = live.exchange
         }
         let outcome = await GRPCExecutor().execute(call) { event in
-            await self.receive(event, on: live, key: key, publishes: publishes)
+            await self.receive(event, on: live, key: key, publishes: publishes, session: session)
         }
         if liveCalls[key] === live {
             liveCalls[key] = nil
             openStreams.remove(key)
         }
+        session?.closeStreamSending()
         return live.finished(outcome)
     }
 
     /// `publishes` is false for an unsaved run, which records its events without showing them.
-    private func receive(_ event: GRPCCallEvent, on live: GRPCLiveCall, key: RunKey, publishes: Bool) {
+    private func receive(_ event: GRPCCallEvent, on live: GRPCLiveCall, key: RunKey, publishes: Bool, session: ScriptSession?) {
         // A replaced or forgotten run keeps streaming until its cancellation lands; it must not publish.
         guard liveCalls[key] === live else {
             return
         }
-        live.apply(event)
+        let received = live.apply(event)
+        // Stream scripts start once the server answers: with its metadata, which comes before any message.
+        if case .initialMetadata = event {
+            startStreamScripts(session, on: live, key: key, publishes: publishes)
+        }
+        if let received {
+            startStreamScripts(session, on: live, key: key, publishes: publishes)
+            session?.deliver(.grpcMessage(received), number: live.receivedCount)
+        }
         if publishes {
             publishThrottled(live, key: key) { [weak self] in self?.liveCalls[key] === live }
         }
+    }
+
+    /// Once: every message received asks, in case the server sent none of its metadata first.
+    private func startStreamScripts(_ session: ScriptSession?, on live: GRPCLiveCall, key: RunKey, publishes: Bool) {
+        guard let session, session.stream == nil else {
+            return
+        }
+        startStreamScripts(session, key: key, live: live, publishes: publishes, transport: StreamScriptsTransport(
+            opening: ScriptInputBuilder.opening(grpcMetadata: live.initialMetadata),
+            canSend: openStreams.contains(key),
+            isCurrent: { [weak self, weak live] in live != nil && self?.liveCalls[key] === live },
+            refresh: { [weak live] resolver, redaction in live?.refresh(resolver: resolver, redaction: redaction) },
+            send: { [weak self, weak live] message in
+                guard let self, let live, liveCalls[key] === live, openStreams.contains(key) else {
+                    return .closed("The call's request stream is closed, so the message wasn't sent.")
+                }
+                guard case .text(let json) = message else {
+                    return .invalid("A gRPC message is JSON, not bytes.")
+                }
+                return live.send(scriptedJSON: json)
+            }
+        ))
     }
 
     private func prepareGRPC(
@@ -157,7 +189,7 @@ extension RequestRunner {
                     resolver: context.resolver,
                     redaction: context.redaction,
                     allowUnresolved: options.allowUnresolved,
-                    scriptReport: session?.shownReport
+                    scripts: session
                 ),
                 method: method,
                 endpoint: endpoint.resolved,

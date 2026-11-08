@@ -17,8 +17,9 @@ final class EventStreamLive: LiveRun {
         let request: ResolvedHTTPRequest
         let unresolvedVariables: [String]
         let limit: StreamLimit?
-        /// The pre-request phase's masked report, which every partial exchange carries until post-response scripts run.
-        var scriptReport: ScriptReport?
+        /// The run's scripts, whose masked report every partial exchange carries: the pre-request phase's, and the
+        /// stream phase's as it goes.
+        var scripts: ScriptSession?
     }
 
     let context: Context
@@ -169,7 +170,7 @@ final class EventStreamLive: LiveRun {
             request: context.request,
             outcome: .response(response),
             unresolvedVariables: context.unresolvedVariables,
-            scriptReport: context.scriptReport
+            scriptReport: context.scripts?.shownReport
         )
     }
 

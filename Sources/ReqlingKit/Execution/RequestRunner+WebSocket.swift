@@ -1,4 +1,5 @@
 import Foundation
+import ReqlingScriptProtocol
 
 /// WebSocket runs: the same entry points, history, and outcome tracking as the other kinds (`run`, `cancel`, `forget`),
 /// plus sending and pinging while a connection is open. The handshake is built as an HTTP GET (`preparedHTTP`), so
@@ -38,7 +39,6 @@ extension RequestRunner {
         let environmentName: String
         let resolver: TemplateResolver
         let redaction: SecretRedaction
-        let scriptReport: ScriptReport?
     }
 
     /// The whole of a WebSocket run, inside the run's task so `cancel` and `forget` reach every await: its pre-request
@@ -59,7 +59,7 @@ extension RequestRunner {
         } catch {
             return failedExchange(request, in: project, startedAt: stamp.startedAt, error)
         }
-        return await connectWebSocket(preparation, key: key, options: options, stamp: stamp)
+        return await connectWebSocket(preparation, key: key, options: options, stamp: stamp, session: session)
     }
 
     /// Resolves the handshake and the on-connect messages, failing before any network use on unresolved names, a URL
@@ -112,8 +112,7 @@ extension RequestRunner {
                 unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) },
                 environmentName: context.environmentName,
                 resolver: context.resolver,
-                redaction: context.redaction,
-                scriptReport: session?.shownReport
+                redaction: context.redaction
             )
         } catch {
             throw error.redacting(context.redaction)
@@ -128,7 +127,13 @@ extension RequestRunner {
             .filter { !$0.isEmpty }
     }
 
-    private func connectWebSocket(_ preparation: PreparedWebSocket, key: RunKey, options: RunOptions, stamp: RunStamp) async -> RequestExchange {
+    private func connectWebSocket(
+        _ preparation: PreparedWebSocket,
+        key: RunKey,
+        options: RunOptions,
+        stamp: RunStamp,
+        session: ScriptSession?
+    ) async -> RequestExchange {
         let live = WebSocketLive(
             context: WebSocketLive.Context(
                 runID: stamp.id,
@@ -142,7 +147,7 @@ extension RequestRunner {
                 redaction: preparation.redaction,
                 allowUnresolved: options.allowUnresolved,
                 limit: options.streamLimit,
-                scriptReport: preparation.scriptReport
+                scripts: session
             ),
             seeds: preparation.seeds
         )
@@ -153,26 +158,32 @@ extension RequestRunner {
             followSavedKeepalive(key, on: live)
         }
         let outcome = await WebSocketExecutor(sleep: sleep).execute(preparation.connect, outbox: live.outbox) { event in
-            await self.receive(event, on: live, key: key, publishes: publishes)
+            await self.receive(event, on: live, key: key, publishes: publishes, session: session)
         }
         if liveSockets[key] === live {
             liveSockets[key] = nil
             openSockets.remove(key)
         }
+        session?.closeStreamSending()
         return live.finished(outcome, stopped: Task.isCancelled)
     }
 
     /// `publishes` is false for an unsaved run, which records its events without showing them.
-    private func receive(_ event: WebSocketEvent, on live: WebSocketLive, key: RunKey, publishes: Bool) {
+    private func receive(_ event: WebSocketEvent, on live: WebSocketLive, key: RunKey, publishes: Bool, session: ScriptSession?) {
         // A replaced or forgotten run keeps going until its cancellation lands; it must not publish.
         guard liveSockets[key] === live else {
             return
         }
         let wasOpen = live.isOpen
-        live.apply(event)
+        let wasAtLimit = live.reachedLimit
+        let received = live.apply(event)
         if !wasOpen, live.isOpen {
             if publishes, !live.isStopping {
                 openSockets.insert(key)
+            }
+            if case .opened(let head, let subprotocol, _) = event {
+                let opening = ScriptInputBuilder.opening(webSocket: head, subprotocol: subprotocol)
+                startStreamScripts(session, on: live, key: key, publishes: publishes, opening: opening)
             }
             if let maxDuration = live.context.limit?.maxDuration {
                 let sleep = self.sleep
@@ -184,6 +195,9 @@ extension RequestRunner {
                 }
             }
         }
+        if let session {
+            feedStreamScripts(session, received, from: live, wasAtLimit: wasAtLimit)
+        }
         if let maxEvents = live.context.limit?.maxEvents, live.receivedCount >= maxEvents {
             live.stopAtLimit()
         }
@@ -192,6 +206,32 @@ extension RequestRunner {
         }
         if publishes {
             publishThrottled(live, key: key) { [weak self] in self?.liveSockets[key] === live }
+        }
+    }
+
+    private func startStreamScripts(_ session: ScriptSession?, on live: WebSocketLive, key: RunKey, publishes: Bool, opening: ScriptStreamOpening) {
+        startStreamScripts(session, key: key, live: live, publishes: publishes, transport: StreamScriptsTransport(
+            opening: opening,
+            canSend: live.canSendScripted,
+            isCurrent: { [weak self, weak live] in live != nil && self?.liveSockets[key] === live },
+            refresh: { [weak live] resolver, redaction in live?.refresh(resolver: resolver, redaction: redaction) },
+            send: { [weak self, weak live] message in
+                guard let self, let live, liveSockets[key] === live else {
+                    return .closed("The connection is closed, so the message wasn't sent.")
+                }
+                return live.send(scripted: message)
+            }
+        ))
+    }
+
+    /// Hands the stream scripts a message received before any reached limit, which ends them as Stop does, and tells
+    /// them once the connection takes no more of what they send.
+    private func feedStreamScripts(_ session: ScriptSession, _ received: ScriptSocketMessage?, from live: WebSocketLive, wasAtLimit: Bool) {
+        if let received, !wasAtLimit {
+            session.deliver(.socketMessage(received), number: live.receivedCount)
+        }
+        if !live.canSendScripted {
+            session.closeStreamSending()
         }
     }
 

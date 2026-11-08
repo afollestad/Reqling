@@ -8,7 +8,7 @@ extension MCPRequestToolsTests {
         let created = try await fixture.success("create_request", [
             "project": projectArgument,
             "name": "Login",
-            "scripts": ["preRequest": "pre();", "postResponse": "post();"],
+            "scripts": ["preRequest": "pre();", "stream": "rq.onEvent(() => {})", "postResponse": "post();"],
             "inheritScripts": false
         ])
         let id = try XCTUnwrap(created["request"]?["id"]?.stringValue)
@@ -21,13 +21,14 @@ extension MCPRequestToolsTests {
             "scripts": ["tests": "x"]
         ])
 
-        XCTAssertEqual(fetched["request"]?["scripts"], ["preRequest": "pre();", "postResponse": "post();"])
+        XCTAssertEqual(fetched["request"]?["scripts"], ["preRequest": "pre();", "stream": "rq.onEvent(() => {})", "postResponse": "post();"])
         XCTAssertEqual(fetched["request"]?["inheritScripts"], false)
         let request = try XCTUnwrap(try fixture.document(project).request(XCTUnwrap(RequestNodeID(string: id))))
-        XCTAssertEqual(request.scripts, ScriptSet(preRequest: "", postResponse: "post();"))
+        XCTAssertEqual(request.scripts, ScriptSet(preRequest: "", stream: "rq.onEvent(() => {})", postResponse: "post();"))
         XCTAssertFalse(request.runsInheritedScripts)
         XCTAssertFalse(fixture.storage.exists("requests/login.pre.js", in: project))
         XCTAssertEqual(try fixture.storage.contents("requests/login.post.js", in: project), "post();")
+        XCTAssertEqual(try fixture.storage.contents("requests/login.stream.js", in: project), "rq.onEvent(() => {})")
         XCTAssertTrue(unknown.contains("tests"), unknown)
     }
 
@@ -43,9 +44,9 @@ extension MCPRequestToolsTests {
 
         let fetched = try await fixture.success("get_project", ["project": projectArgument])
 
-        XCTAssertEqual(fetched["scripts"], ["preRequest": "", "postResponse": "check();"])
+        XCTAssertEqual(fetched["scripts"], ["preRequest": "", "stream": "", "postResponse": "check();"])
         let tree = try XCTUnwrap(fetched["items"]?.arrayValue?.first)
-        XCTAssertEqual(tree["scripts"], ["preRequest": "sign();", "postResponse": ""])
+        XCTAssertEqual(tree["scripts"], ["preRequest": "sign();", "stream": "", "postResponse": ""])
         XCTAssertEqual(tree["inheritScripts"], false)
         XCTAssertEqual(try fixture.storage.contents("requests/users/_folder.pre.js", in: project), "sign();")
         XCTAssertEqual(try fixture.storage.contents("project.post.js", in: project), "check();")
@@ -73,7 +74,11 @@ extension MCPRequestToolsTests {
             "project": .string(project.description),
             "name": "Scripted",
             "http": ["url": "https://api.test"],
-            "scripts": ["preRequest": "rq.response.code\nrq.request.metadata", "postResponse": "rq.test('ok', () => {"]
+            "scripts": [
+                "preRequest": "rq.response.code\nrq.request.metadata",
+                "stream": "rq.onMessage(() => {})",
+                "postResponse": "rq.test('ok', () => {"
+            ]
         ])
         let clean = try await fixture.success("create_folder", [
             "project": .string(project.description),
@@ -89,6 +94,7 @@ extension MCPRequestToolsTests {
         ])
         XCTAssertEqual(problems["preRequest"]?.arrayValue?.last?["line"], 2)
         XCTAssertEqual(problems["postResponse"]?.arrayValue?.first?["severity"], "error")
+        XCTAssertEqual(problems["stream"]?.arrayValue?.map { $0["message"] }, ["rq.onMessage applies only to gRPC and WebSocket requests."])
         XCTAssertNil(clean["scriptProblems"], "A folder's script runs for every protocol")
         XCTAssertTrue(reference["reference"]?.stringValue?.contains("### `Reqling`") ?? false)
     }

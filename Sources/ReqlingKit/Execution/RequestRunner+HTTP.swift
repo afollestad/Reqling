@@ -31,6 +31,7 @@ extension RequestRunner {
         let key: RunKey
         /// False for an unsaved run, which records its events without showing them.
         let publishes: Bool
+        let session: ScriptSession?
 
         var reconnects: Bool {
             preparation.prepared.summary.method.uppercased() == "GET"
@@ -66,10 +67,10 @@ extension RequestRunner {
             request: preparation.prepared.summary,
             unresolvedVariables: preparation.prepared.unresolvedVariables,
             limit: options.streamLimit,
-            scriptReport: session?.shownReport
+            scripts: session
         ))
         liveStreams[key] = live
-        let run = HTTPRun(preparation: preparation, live: live, key: key, publishes: options.unsaved == nil)
+        let run = HTTPRun(preparation: preparation, live: live, key: key, publishes: options.unsaved == nil, session: session)
         let exchange = await runHTTP(run, executor: executor)
         if liveStreams[key] === live {
             liveStreams[key] = nil
@@ -156,10 +157,20 @@ extension RequestRunner {
             return
         }
         let wasOpened = live.hasOpened
+        let eventsBefore = live.eventCount
         live.apply(event)
         if !wasOpened, live.hasOpened {
             if run.publishes {
                 eventStreams.insert(run.key)
+            }
+            if case .opened(let head, _) = event {
+                startStreamScripts(run.session, key: run.key, live: live, publishes: run.publishes, transport: StreamScriptsTransport(
+                    opening: ScriptInputBuilder.opening(eventStream: head),
+                    canSend: false,
+                    isCurrent: { [weak self, weak live, key = run.key] in live != nil && self?.liveStreams[key] === live },
+                    refresh: nil,
+                    send: { _ in .invalid("An event stream only receives.") }
+                ))
             }
             if let maxDuration = live.context.limit?.maxDuration {
                 let sleep = self.sleep
@@ -170,6 +181,10 @@ extension RequestRunner {
                     live?.stopAtLimit()
                 }
             }
+        }
+        // Only an event the stream took: none past a reached limit.
+        if case .event(let received, _, _, _) = event, live.eventCount > eventsBefore {
+            run.session?.deliver(.event(ScriptInputBuilder.event(received)), number: live.eventCount)
         }
         if let maxEvents = live.context.limit?.maxEvents, live.eventCount >= maxEvents {
             live.stopAtLimit()

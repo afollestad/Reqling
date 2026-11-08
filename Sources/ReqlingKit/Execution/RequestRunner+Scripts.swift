@@ -159,10 +159,19 @@ extension RequestRunner {
         }
     }
 
-    /// Runs the post-response phase on a finished exchange, when trusted and there is a response, then attaches the
-    /// masked report. The phase runs in its own task (`scriptTasks`), so it outlives the Stop that ended a stream.
+    /// Ends the stream phase, if one started, then runs the post-response phase on a finished exchange, when trusted
+    /// and there is a response, then attaches the masked report. The post-response phase runs in its own task
+    /// (`scriptTasks`), so it outlives the Stop that ended a stream.
     func finishScripts(_ exchange: RequestExchange, key: RunKey, session: ScriptSession) async -> RequestExchange {
         var finished = exchange
+        if session.stream != nil {
+            await finishStreamScripts(exchange, key: key, session: session)
+            // Replaced or forgotten while its handlers caught up: nothing more runs for it.
+            guard scriptSessions[key] === session else {
+                finished.scriptReport = session.shownReport
+                return finished
+            }
+        }
         if session.isTrusted == true, session.hasScripts(.postResponse) {
             if let response = ScriptInputBuilder.response(exchange.outcome) {
                 let runner = scripts
@@ -191,15 +200,41 @@ extension RequestRunner {
                 session.skip(.postResponse, reason: .requestFailed)
             }
         }
+        if pendingPostExchanges[key]?.id == exchange.id {
+            pendingPostExchanges[key] = nil
+        }
         finished.scriptReport = session.shownReport
         return finished
     }
 
-    /// The report for a run Reqling quits on: its post-response phase didn't run, or didn't finish.
+    /// Lets the handlers finish with what waits for them, or, at Stop or a reached bound, with the call in hand, then
+    /// commits what they set.
+    private func finishStreamScripts(_ exchange: RequestExchange, key: RunKey, session: ScriptSession) async {
+        if exchange.endedAtLimit {
+            session.stopStream()
+        } else {
+            session.endStream()
+        }
+        // Set before waiting, so a quit while the handlers catch up still records the run.
+        pendingPostExchanges[key] = exchange
+        let cancel = session.stream?.execution.cancel
+        _ = await withTaskCancellationHandler {
+            await session.finishStream()
+        } onCancel: {
+            cancel?()
+        }
+        if scriptPhases[key] == .stream {
+            scriptPhases[key] = nil
+        }
+        session.commit(to: library)
+    }
+
+    /// The report for a run Reqling quits on: its stream or post-response phase didn't finish, or didn't run.
     func quitReport(for key: RunKey) -> ScriptReport? {
         guard let session = scriptSessions[key], session.isTrusted == true else {
             return nil
         }
+        session.interruptStream()
         session.skip(.postResponse, reason: .quit)
         return session.shownReport
     }
