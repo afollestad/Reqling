@@ -20,12 +20,12 @@ final class PostmanImporterTests: XCTestCase {
         return try XCTUnwrap(nil, "not a collection")
     }
 
-    func petstore(files: [PostmanFile] = []) throws -> PostmanImport {
+    func petstore(files: [PostmanFile] = []) throws -> ProjectImport {
         PostmanImporter.plan(try Self.collection(Self.file("petstore.postman_collection")), files: files, collectionDirectory: nil)
     }
 
     /// A v2.1 collection holding `items`, with any other top-level fields `extra` writes.
-    func plan(items: String, extra: String = "", files: [PostmanFile] = [], directory: URL? = nil) throws -> PostmanImport {
+    func plan(items: String, extra: String = "", files: [PostmanFile] = [], directory: URL? = nil) throws -> ProjectImport {
         let json = """
         {"info": {"name": "Test", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}, \
         \(extra.isEmpty ? "" : extra + ",") "item": \(items)}
@@ -35,7 +35,7 @@ final class PostmanImporterTests: XCTestCase {
     }
 
     /// The node at the names of its folders and its own.
-    func node(_ plan: PostmanImport, _ path: String...) -> RequestNode? {
+    func node(_ plan: ProjectImport, _ path: String...) -> RequestNode? {
         var nodes = plan.items
         var found: RequestNode?
         for name in path {
@@ -49,7 +49,7 @@ final class PostmanImporterTests: XCTestCase {
         return found
     }
 
-    func spec(_ plan: PostmanImport, _ path: String...) throws -> HTTPRequestSpec {
+    func spec(_ plan: ProjectImport, _ path: String...) throws -> HTTPRequestSpec {
         var nodes = plan.items
         var found: RequestNode?
         for name in path {
@@ -64,7 +64,7 @@ final class PostmanImporterTests: XCTestCase {
         return try XCTUnwrap(request.kind.httpSpec)
     }
 
-    func messages(_ plan: PostmanImport, _ path: String...) -> [String] {
+    func messages(_ plan: ProjectImport, _ path: String...) -> [String] {
         plan.notes.filter { $0.owner == (path.isEmpty ? .project : .node(path)) }.map(\.message)
     }
 
@@ -107,8 +107,8 @@ final class PostmanImporterTests: XCTestCase {
         XCTAssertEqual(pets.children.map(\.name), ["Get pet", "Upload photo", "Update pet", "Search", "Health"])
         XCTAssertEqual(plan.counts.requests, 6)
         XCTAssertEqual(plan.counts.folders, 2)
-        XCTAssertEqual(plan.counts.descriptions, 3, "the collection's, the Auth folder's, and Login's request's")
-        XCTAssertEqual(plan.counts.savedResponses, 1)
+        // The descriptions are the collection's, the Auth folder's, and Login's request's.
+        XCTAssertEqual(plan.counts.omitted, [.descriptions: 3, .savedResponses: 1])
         XCTAssertEqual(try spec(plan, "Pets", "Update pet").method, .patch)
         XCTAssertEqual(try spec(plan, "Pets", "Health").method, .get, "a request given as its URL alone is a GET")
     }

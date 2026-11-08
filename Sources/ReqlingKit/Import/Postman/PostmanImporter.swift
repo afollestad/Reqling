@@ -4,10 +4,10 @@ import ReqlingScriptProtocol
 /// Maps a Postman collection, and the environment and globals files chosen with it, to a project: folders and requests
 /// in order, their bodies and auth, the scripts at every level, and the variables. What doesn't carry over as it was
 /// becomes a note for the person, never a silent loss. It only reads, so it runs off the main actor; writing is
-/// `ProjectLifecycle.importPostman`'s.
+/// `ProjectLifecycle.importProject`'s.
 public enum PostmanImporter {
     /// `collectionDirectory` is where the collection file is, where a body's relative `src` is looked for.
-    public static func plan(_ collection: PostmanCollection, files: [PostmanFile], collectionDirectory: URL?) -> PostmanImport {
+    public static func plan(_ collection: PostmanCollection, files: [PostmanFile], collectionDirectory: URL?) -> ProjectImport {
         var planner = PostmanPlanner(root: collection.root, collectionDirectory: collectionDirectory)
         return planner.plan(name: collection.name, files: files)
     }
@@ -17,14 +17,14 @@ public enum PostmanImporter {
 struct PostmanPlanner {
     let root: PostmanJSON
     let collectionDirectory: URL?
-    var notes: [PostmanImportNote] = []
-    var counts = PostmanImportCounts()
-    var files: [PostmanFileSlot] = []
-    var credentials = PostmanCredentials(reserved: [])
+    var notes: [ImportNote] = []
+    var counts = ImportCounts()
+    var files: [ImportFileSlot] = []
+    var credentials = ImportCredentials(reserved: [])
     var hasScripts = false
     /// The globals each enclosing folder's and the project's scripts define without declaring, outermost first, while
     /// the walk is inside them (`PostmanImporter+Scripts.swift`).
-    var enclosingGlobals: [(owner: PostmanImportNote.Owner, shared: [ScriptPhase: Set<String>])] = []
+    var enclosingGlobals: [(owner: ImportNote.Owner, shared: [ScriptPhase: Set<String>])] = []
     /// How many scripts below read each of those globals, noted once on the script that defines it.
     var sharedGlobalUses: [SharedGlobalUse] = []
 
@@ -33,7 +33,7 @@ struct PostmanPlanner {
         self.collectionDirectory = collectionDirectory
     }
 
-    mutating func plan(name: String, files chosen: [PostmanFile]) -> PostmanImport {
+    mutating func plan(name: String, files chosen: [PostmanFile]) -> ProjectImport {
         let collectionVariables = Self.variables(root["variable"])
         var targets = PostmanEnvironmentMerge.Targets(
             global: .global(),
@@ -43,7 +43,7 @@ struct PostmanPlanner {
         let merged = PostmanEnvironmentMerge.merge(chosen, into: &targets)
         counts.environments = chosen.filter { if case .environment = $0 { true } else { false } }.count
         let reserved = targets.global.variables + targets.defaultEnvironment.variables + targets.environments.flatMap(\.variables)
-        credentials = PostmanCredentials(reserved: Set(reserved.map(\.key)).union(Self.scriptSetNames(in: root)))
+        credentials = ImportCredentials(reserved: Set(reserved.map(\.key)).union(Self.scriptSetNames(in: root)))
         noteRenamedEnvironments(chosen, into: targets)
 
         countDescription(root["info"])
@@ -58,7 +58,7 @@ struct PostmanPlanner {
         defaultEnvironment.variables += credentials.variables
         counts.credentials = credentials.variables.map(\.key)
         let defaultChange = merged.changes.filter { $0.environment != RequestEnvironment.globalName }
-        return PostmanImport(
+        return ProjectImport(
             name: name,
             auth: auth,
             scripts: scripts,
@@ -129,7 +129,7 @@ struct PostmanPlanner {
     }
 
     /// A folder's or request's own variables have nowhere to go: Reqling keeps variables in environments.
-    private mutating func noteVariables(_ list: PostmanJSON?, owner: PostmanImportNote.Owner) {
+    private mutating func noteVariables(_ list: PostmanJSON?, owner: ImportNote.Owner) {
         let keys = Self.variables(list).map(\.key)
         guard !keys.isEmpty else {
             return
@@ -151,13 +151,13 @@ struct PostmanPlanner {
 
     // MARK: - Notes
 
-    mutating func note(_ owner: PostmanImportNote.Owner, _ topic: PostmanImportNote.Topic, _ message: String) {
-        notes.append(PostmanImportNote(owner: owner, topic: topic, message: message))
+    mutating func note(_ owner: ImportNote.Owner, _ topic: ImportNote.Topic, _ message: String) {
+        notes.append(ImportNote(owner: owner, topic: topic, message: message))
     }
 
     private mutating func countDescription(_ value: PostmanJSON?) {
         if let description = value?["description"], !description.text.isEmpty, description != .null {
-            counts.descriptions += 1
+            counts.omitted[.descriptions, default: 0] += 1
         }
     }
 }

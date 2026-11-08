@@ -21,8 +21,8 @@ public enum PostmanEnvironmentMerge {
     /// others. One named like Global, a name a project's environment can't take, is added as "Global (Postman)".
     ///
     /// Returns what changed in each environment, and the ID of each the files named, in order, for the sheet to select.
-    public static func merge(_ files: [PostmanFile], into targets: inout Targets) -> (changes: [PostmanEnvironmentChange], touched: [EnvironmentID]) {
-        var changes: [PostmanEnvironmentChange] = []
+    public static func merge(_ files: [PostmanFile], into targets: inout Targets) -> (changes: [ImportEnvironmentChange], touched: [EnvironmentID]) {
+        var changes: [ImportEnvironmentChange] = []
         var touched: [EnvironmentID] = []
         for file in files {
             switch file {
@@ -30,7 +30,7 @@ public enum PostmanEnvironmentMerge {
                 continue
             case .globals(let globals):
                 let (added, updated) = merge(globals.variables, into: &targets.global)
-                changes.append(PostmanEnvironmentChange(environment: RequestEnvironment.globalName, isNew: false, added: added, updated: updated))
+                changes.append(ImportEnvironmentChange(environment: RequestEnvironment.globalName, isNew: false, added: added, updated: updated))
                 touched.append(targets.global.id)
             case .environment(let environment):
                 let (change, id) = merge(environment, into: &targets)
@@ -73,11 +73,11 @@ public enum PostmanEnvironmentMerge {
         return (added, updated)
     }
 
-    private static func merge(_ file: PostmanVariableFile, into targets: inout Targets) -> (PostmanEnvironmentChange, EnvironmentID) {
+    private static func merge(_ file: PostmanVariableFile, into targets: inout Targets) -> (ImportEnvironmentChange, EnvironmentID) {
         let name = file.name.isEmpty ? "Postman" : file.name
         if name.caseInsensitiveCompare(RequestEnvironment.defaultName) == .orderedSame {
             let (added, updated) = merge(file.variables, into: &targets.defaultEnvironment)
-            let change = PostmanEnvironmentChange(environment: RequestEnvironment.defaultName, isNew: false, added: added, updated: updated)
+            let change = ImportEnvironmentChange(environment: RequestEnvironment.defaultName, isNew: false, added: added, updated: updated)
             return (change, targets.defaultEnvironment.id)
         }
         let wanted = RequestEnvironment.isGlobalName(name) ? "\(RequestEnvironment.globalName) (Postman)" : name
@@ -85,12 +85,12 @@ public enum PostmanEnvironmentMerge {
             ?? targets.environments.firstIndex { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }
         if let index {
             let (added, updated) = merge(file.variables, into: &targets.environments[index])
-            let change = PostmanEnvironmentChange(environment: targets.environments[index].name, isNew: false, added: added, updated: updated)
+            let change = ImportEnvironmentChange(environment: targets.environments[index].name, isNew: false, added: added, updated: updated)
             return (change, targets.environments[index].id)
         }
         var environment = RequestEnvironment(name: wanted)
         let (added, _) = merge(file.variables, into: &environment)
         targets.environments.append(environment)
-        return (PostmanEnvironmentChange(environment: wanted, isNew: true, added: added, updated: []), environment.id)
+        return (ImportEnvironmentChange(environment: wanted, isNew: true, added: added, updated: []), environment.id)
     }
 }

@@ -5,9 +5,11 @@ import ReqlingScriptProtocol
 extension PostmanPlanner {
     mutating func request(_ item: PostmanJSON, name: String, path: [String], profile: [String: PostmanJSON]) -> RequestItem {
         counts.requests += 1
-        counts.savedResponses += item["response"]?.array?.count ?? 0
+        if let responses = item["response"]?.array, !responses.isEmpty {
+            counts.omitted[.savedResponses, default: 0] += responses.count
+        }
         let id = RequestNodeID()
-        let owner = PostmanImportNote.Owner.node(path)
+        let owner = ImportNote.Owner.node(path)
         var spec = HTTPRequestSpec()
         let request = item["request"]
         if let url = request?.string {

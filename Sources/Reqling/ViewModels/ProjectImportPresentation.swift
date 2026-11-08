@@ -1,9 +1,9 @@
 import Foundation
 import ReqlingKit
 
-/// What a Postman import's summary says: what came over, what needs changes grouped by where it is, and what was left
+/// What an import's summary says: what came over, what needs changes grouped by where it is, and what was left
 /// out, worded for the import sheet and tested as text, since prose reflows across macOS versions.
-struct PostmanImportPresentation: Equatable {
+struct ProjectImportPresentation: Equatable {
     /// One folder's, request's, environment's, or the project's notes.
     struct Group: Equatable, Identifiable {
         let title: String
@@ -23,7 +23,7 @@ struct PostmanImportPresentation: Equatable {
     let trust: String?
     let globalProblem: String?
 
-    init(name: String, plan: PostmanImport, result: ProjectLifecycle.PostmanProjectImport) {
+    init(name: String, plan: ProjectImport, result: ProjectLifecycle.ProjectImportResult) {
         title = "Imported “\(name)”"
         let counts = plan.counts
         var parts = [Self.count(counts.requests, "request")]
@@ -39,12 +39,8 @@ struct PostmanImportPresentation: Equatable {
                 + Self.listed(counts.credentials) + "."
         environments = (plan.environmentChanges + [result.globalChange].compactMap(\.self)).compactMap(Self.line)
         groups = Self.groups(plan.notes)
-        var omitted: [String] = []
-        if counts.descriptions > 0 {
-            omitted.append(Self.count(counts.descriptions, "description"))
-        }
-        if counts.savedResponses > 0 {
-            omitted.append(Self.count(counts.savedResponses, "saved response"))
+        let omitted = ImportOmission.allCases.compactMap { kind in
+            counts.omitted[kind].map { Self.count($0, Self.noun(kind)) }
         }
         notImported = omitted.isEmpty ? nil : "Not imported: \(Self.listed(omitted)), which Reqling has nowhere to keep."
         trust = plan.hasScripts ? "Its scripts run once you trust them: the first request you send with scripts asks." : nil
@@ -53,7 +49,7 @@ struct PostmanImportPresentation: Equatable {
 
     /// What an import did to one environment: `Staging: new, with 3 variables.`, or `Default: 2 updated, 1 added.`; `nil`
     /// when it changed nothing.
-    static func line(_ change: PostmanEnvironmentChange) -> String? {
+    static func line(_ change: ImportEnvironmentChange) -> String? {
         if change.isNew {
             return "\(change.environment): new, with \(count(change.added.count, "variable"))."
         }
@@ -69,9 +65,9 @@ struct PostmanImportPresentation: Equatable {
 
     /// The project's notes first, then each folder's and request's in the order the tree has them, then each
     /// environment's.
-    private static func groups(_ notes: [PostmanImportNote]) -> [Group] {
-        var order: [PostmanImportNote.Owner] = []
-        var lines: [PostmanImportNote.Owner: [String]] = [:]
+    private static func groups(_ notes: [ImportNote]) -> [Group] {
+        var order: [ImportNote.Owner] = []
+        var lines: [ImportNote.Owner: [String]] = [:]
         for note in notes {
             if lines[note.owner] == nil {
                 order.append(note.owner)
@@ -82,18 +78,25 @@ struct PostmanImportPresentation: Equatable {
         return sorted.map { Group(title: title(of: $0), lines: lines[$0] ?? []) }
     }
 
-    private static func line(_ note: PostmanImportNote) -> String {
+    private static func line(_ note: ImportNote) -> String {
         if case .script(let phase, let line?) = note.topic {
             return "\(phase.title) script, line \(line): \(note.message)"
         }
         return note.message
     }
 
-    private static func title(of owner: PostmanImportNote.Owner) -> String {
+    private static func title(of owner: ImportNote.Owner) -> String {
         switch owner {
         case .project: "Project"
         case .node(let path): path.joined(separator: " ▸ ")
         case .environment(let name): "\(name) environment"
+        }
+    }
+
+    private static func noun(_ kind: ImportOmission) -> String {
+        switch kind {
+        case .descriptions: "description"
+        case .savedResponses: "saved response"
         }
     }
 
@@ -111,7 +114,7 @@ struct PostmanImportPresentation: Equatable {
     }
 }
 
-private extension PostmanImportNote.Owner {
+private extension ImportNote.Owner {
     var isNode: Bool {
         if case .node = self {
             return true

@@ -8,7 +8,7 @@ extension PostmanPlanner {
         _ body: PostmanJSON?,
         into spec: inout HTTPRequestSpec,
         request: RequestNodeID,
-        owner: PostmanImportNote.Owner,
+        owner: ImportNote.Owner,
         sendsDespiteMethod: Bool
     ) {
         guard let body, let mode = body["mode"]?.string else {
@@ -30,7 +30,7 @@ extension PostmanPlanner {
         case "file":
             result.binary.contentType = Self.takeContentType(from: &spec.headers)
             if let url = file(body["file"]?["src"]?.string, part: nil, owner: owner) {
-                files.append(PostmanFileSlot(request: request, target: .binary, url: url))
+                files.append(ImportFileSlot(request: request, target: .binary, url: url))
             }
             result.mode = .binary
         case "graphql":
@@ -52,7 +52,7 @@ extension PostmanPlanner {
 
     /// Form parts: text as typed, and a file part for each file a `src` names, its file found on this Mac or left to
     /// choose.
-    private mutating func formFields(_ list: PostmanJSON?, request: RequestNodeID, owner: PostmanImportNote.Owner) -> [MultipartField] {
+    private mutating func formFields(_ list: PostmanJSON?, request: RequestNodeID, owner: ImportNote.Owner) -> [MultipartField] {
         (list?.array ?? []).flatMap { entry -> [MultipartField] in
             let key = entry["key"]?.text ?? ""
             let isEnabled = !(entry["disabled"]?.bool ?? false)
@@ -64,7 +64,7 @@ extension PostmanPlanner {
             return (sources.isEmpty ? [nil] : sources.map(Optional.some)).map { source in
                 let field = MultipartField(key: key, kind: .file, contentType: contentType, isEnabled: isEnabled)
                 if let url = file(source, part: key, owner: owner) {
-                    files.append(PostmanFileSlot(request: request, target: .formField(field.id), url: url))
+                    files.append(ImportFileSlot(request: request, target: .formField(field.id), url: url))
                 }
                 return field
             }
@@ -73,7 +73,7 @@ extension PostmanPlanner {
 
     /// The file a `src` names on this Mac: as written (`~` expanded), then beside the collection, then in Postman's
     /// own files folder. `nil`, with a note asking to choose it, when it isn't found.
-    private mutating func file(_ source: String?, part: String?, owner: PostmanImportNote.Owner) -> URL? {
+    private mutating func file(_ source: String?, part: String?, owner: ImportNote.Owner) -> URL? {
         let source = source?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let what = part.map { "the file for “\($0)”" } ?? "its body's file"
         guard !source.isEmpty else {

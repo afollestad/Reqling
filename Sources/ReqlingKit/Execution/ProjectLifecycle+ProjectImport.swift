@@ -1,11 +1,11 @@
 import Foundation
 
-/// Writing a Postman import (`PostmanImporter.plan`) as a new project, for the window's import sheet.
+/// Writing an import (`ProjectImport`, from `PostmanImporter.plan`) as a new project, for the window's import sheet.
 extension ProjectLifecycle {
-    /// What `importPostman` made: the project, and what it did to the Global environment every project shares.
-    public struct PostmanProjectImport: Sendable {
+    /// What `importProject` made: the project, and what it did to the Global environment every project shares.
+    public struct ProjectImportResult: Sendable {
         public let project: ProjectID
-        public let globalChange: PostmanEnvironmentChange?
+        public let globalChange: ImportEnvironmentChange?
         /// Why the globals couldn't be merged, when they couldn't; the project is written either way.
         public let globalProblem: String?
     }
@@ -14,17 +14,17 @@ extension ProjectLifecycle {
     /// globals into Global. A failed save moves the half-made project to the Trash; should that fail too, it stays in
     /// the library, empty, for the person to delete.
     ///
-    /// Unlike `createProject`, the project trusts its scripts only when the import brought none: someone else wrote a
-    /// collection's scripts, and they can read every variable, so the first Send asks first, as for a project added
-    /// from a folder.
+    /// Unlike `createProject`, the project trusts its scripts only when the import brought none: someone else wrote an
+    /// imported project's scripts, and they can read every variable, so the first Send asks first, as for a project
+    /// added from a folder.
     @discardableResult
-    public func importPostman(_ plan: PostmanImport, named name: String, in directory: URL? = nil) throws -> PostmanProjectImport {
+    public func importProject(_ plan: ProjectImport, named name: String, in directory: URL? = nil) throws -> ProjectImportResult {
         let id = try library.createProject(named: name, in: directory)
         do {
             guard let root = library.project(id)?.url else {
                 throw ProjectStorageError.projectNotFound
             }
-            var references: [PostmanFileSlot: ProjectPathReference] = [:]
+            var references: [ImportFileSlot: ProjectPathReference] = [:]
             for slot in plan.files {
                 references[slot] = ProjectPathResolver.sharesLocation(slot.url, with: root)
                     ? .relative(ProjectPathResolver.relativePath(from: root, to: slot.url))
@@ -44,23 +44,23 @@ extension ProjectLifecycle {
         }
         workspace.updateProject(id) { $0.scriptTrust = plan.hasScripts ? .unknown : .trusted }
         guard !plan.globals.isEmpty else {
-            return PostmanProjectImport(project: id, globalChange: nil, globalProblem: nil)
+            return ProjectImportResult(project: id, globalChange: nil, globalProblem: nil)
         }
         do {
             // Merged inside the mutation, which rereads Global's secrets first, so blanks a failed read left never
             // overwrite stored values.
             let change = try library.mutateGlobalEnvironment { global in
                 let (added, updated) = PostmanEnvironmentMerge.merge(plan.globals, into: &global)
-                return PostmanEnvironmentChange(environment: RequestEnvironment.globalName, isNew: false, added: added, updated: updated)
+                return ImportEnvironmentChange(environment: RequestEnvironment.globalName, isNew: false, added: added, updated: updated)
             }
-            return PostmanProjectImport(project: id, globalChange: change, globalProblem: nil)
+            return ProjectImportResult(project: id, globalChange: change, globalProblem: nil)
         } catch {
-            return PostmanProjectImport(project: id, globalChange: nil, globalProblem: error.localizedDescription)
+            return ProjectImportResult(project: id, globalChange: nil, globalProblem: error.localizedDescription)
         }
     }
 
     /// `node` with each body file the import found pointed at.
-    private static func pointing(_ node: RequestNode, at references: [PostmanFileSlot: ProjectPathReference]) -> RequestNode {
+    private static func pointing(_ node: RequestNode, at references: [ImportFileSlot: ProjectPathReference]) -> RequestNode {
         switch node {
         case .folder(var folder):
             folder.children = folder.children.map { pointing($0, at: references) }

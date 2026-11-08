@@ -3,7 +3,7 @@ import SwiftUI
 /// What a Postman import made: its counts, the environments it changed, and what needs changes, grouped by where it is,
 /// as selectable text so it copies out.
 struct PostmanImportSummary: View {
-    let summary: PostmanImportPresentation
+    let summary: ProjectImportPresentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -36,7 +36,7 @@ struct PostmanImportSummary: View {
 /// The notes, by folder, request, environment, or the project, in a scroll that keeps a long list from growing the
 /// sheet past the window.
 private struct PostmanImportNotes: View {
-    let groups: [PostmanImportPresentation.Group]
+    let groups: [ProjectImportPresentation.Group]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

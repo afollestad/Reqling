@@ -29,7 +29,7 @@ final class PostmanImportModel {
     enum Phase {
         case choosing
         case importing
-        case finished(PostmanImportPresentation)
+        case finished(ProjectImportPresentation)
     }
 
     private(set) var collection: ChosenFile?
@@ -104,12 +104,12 @@ final class PostmanImportModel {
         let (name, location, files) = (trimmedName, self.location, variableFiles.map(\.file))
         let directory = collection.url.deletingLastPathComponent()
         let plan = await Task.detached { PostmanImporter.plan(postman, files: files, collectionDirectory: directory) }.value
-        guard let result = app.perform("Couldn't Import the Collection", { try app.lifecycle.importPostman(plan, named: name, in: location) }) else {
+        guard let result = app.perform("Couldn't Import the Collection", { try app.lifecycle.importProject(plan, named: name, in: location) }) else {
             phase = .choosing
             return
         }
         app.selection = .project(result.project)
-        phase = .finished(PostmanImportPresentation(name: name, plan: plan, result: result))
+        phase = .finished(ProjectImportPresentation(name: name, plan: plan, result: result))
     }
 
     /// Each file read off the main actor; one that can't be read sets `problem` and is left out.

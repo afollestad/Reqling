@@ -39,7 +39,7 @@ extension EnvironmentEditorModel {
         if let first = touched.first {
             selectedID = first
         }
-        let lines = changes.compactMap(PostmanImportPresentation.line)
+        let lines = changes.compactMap(ProjectImportPresentation.line)
         postmanImportNote = lines.isEmpty ? "The Postman files changed nothing." : lines.joined(separator: " ") + " Done saves them."
     }
 }

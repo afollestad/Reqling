@@ -4,7 +4,7 @@ import XCTest
 
 /// A Postman import written as a new project: its files, its secrets kept apart, its trust, and its body files.
 @MainActor
-final class ProjectLifecyclePostmanImportTests: XCTestCase {
+final class ProjectLifecycleProjectImportTests: XCTestCase {
     private var fixture: LibraryFixture!
     private var workspace: WorkspaceStateStore!
     private var suiteName: String!
@@ -38,13 +38,13 @@ final class ProjectLifecyclePostmanImportTests: XCTestCase {
         fixture.directory.remove()
     }
 
-    private func petstore(files: [String] = []) throws -> PostmanImport {
+    private func petstore(files: [String] = []) throws -> ProjectImport {
         let collection = try PostmanImporterTests.collection(PostmanImporterTests.file("petstore.postman_collection"))
         return PostmanImporter.plan(collection, files: try files.map(PostmanImporterTests.file), collectionDirectory: nil)
     }
 
     func testAnImportIsWrittenWithItsScriptsBesideItsFilesAndItsSecretsInTheKeychain() throws {
-        let result = try lifecycle.importPostman(try petstore(files: ["staging.postman_environment", "workspace.postman_globals"]), named: "Petstore")
+        let result = try lifecycle.importProject(try petstore(files: ["staging.postman_environment", "workspace.postman_globals"]), named: "Petstore")
         let id = result.project
         let document = try XCTUnwrap(fixture.library.document(id))
 
@@ -60,7 +60,7 @@ final class ProjectLifecyclePostmanImportTests: XCTestCase {
         let stored = try fixture.secrets.secrets(for: .project(id)).values
         XCTAssertEqual(Set(stored), ["hunter2", "abc123", "k-123", "s3cr3t"])
         XCTAssertEqual(fixture.library.globalEnvironment.variables.map(\.value), ["eu"])
-        XCTAssertEqual(result.globalChange, PostmanEnvironmentChange(environment: "Global", isNew: false, added: ["region"], updated: []))
+        XCTAssertEqual(result.globalChange, ImportEnvironmentChange(environment: "Global", isNew: false, added: ["region"], updated: []))
         XCTAssertEqual(workspace.projectState(id).scriptTrust, .unknown, "someone else wrote its scripts")
     }
 
@@ -71,7 +71,7 @@ final class ProjectLifecyclePostmanImportTests: XCTestCase {
             collectionDirectory: nil
         )
 
-        let id = try lifecycle.importPostman(plan, named: "Plain").project
+        let id = try lifecycle.importProject(plan, named: "Plain").project
 
         XCTAssertEqual(workspace.projectState(id).scriptTrust, .trusted)
     }
@@ -93,7 +93,7 @@ final class ProjectLifecyclePostmanImportTests: XCTestCase {
         let plan = PostmanImporter.plan(try PostmanImporterTests.collection(PostmanFile.read(Data(json.utf8), named: "files.json")),
                                         files: [], collectionDirectory: nil)
 
-        let id = try lifecycle.importPostman(plan, named: "Files", in: repository).project
+        let id = try lifecycle.importProject(plan, named: "Files", in: repository).project
 
         let files = try XCTUnwrap(fixture.library.document(id)).items.compactMap { node -> ProjectPathReference? in
             guard case .request(let request) = node else {
@@ -112,7 +112,7 @@ final class ProjectLifecyclePostmanImportTests: XCTestCase {
         let plan = try petstore()
         fixture.secrets.isFailingReads = true
 
-        XCTAssertThrowsError(try lifecycle.importPostman(plan, named: "Petstore"))
+        XCTAssertThrowsError(try lifecycle.importProject(plan, named: "Petstore"))
 
         XCTAssertTrue(fixture.library.projects.isEmpty)
         XCTAssertEqual(fixture.trashedNames(), ["Petstore.reqling"])

@@ -6,7 +6,7 @@ import ReqlingTemplating
 /// editor checks it (`ScriptProblem.find`), plus what only a whole collection shows: a global an enclosing level's script
 /// defines for the scripts below it, which Reqling, running each script on its own, never shares.
 extension PostmanPlanner {
-    mutating func scripts(_ events: PostmanJSON?, owner: PostmanImportNote.Owner, protocols: ScriptProtocols?) -> ScriptSet {
+    mutating func scripts(_ events: PostmanJSON?, owner: ImportNote.Owner, protocols: ScriptProtocols?) -> ScriptSet {
         var scripts = ScriptSet()
         for event in events?.array ?? [] {
             guard let phase = Self.phase(event["listen"]?.string) else {
@@ -81,7 +81,7 @@ extension PostmanPlanner {
     }
 
     /// What a folder's or the project's script adds to `Object.prototype` never reaches another script in Reqling.
-    private mutating func noteSharedPrototypes(in source: String, phase: ScriptPhase, owner: PostmanImportNote.Owner) {
+    private mutating func noteSharedPrototypes(in source: String, phase: ScriptPhase, owner: ImportNote.Owner) {
         let tokens = ScriptExpressions(text: source).tokens
         for index in tokens.indices.dropLast(4) where tokens[index].text == "Object" && tokens[index + 2].text == "prototype"
             && ScriptExpressions.isDot(tokens[index + 1]) && ScriptExpressions.isDot(tokens[index + 3]) {
@@ -126,7 +126,7 @@ extension PostmanPlanner {
     // MARK: - Built-in variables
 
     /// Notes the built-ins a request names that Reqling doesn't generate, such as most of Postman's fake data.
-    mutating func noteUnknownDynamicVariables(in spec: HTTPRequestSpec, owner: PostmanImportNote.Owner) {
+    mutating func noteUnknownDynamicVariables(in spec: HTTPRequestSpec, owner: ImportNote.Owner) {
         let rows = spec.queryParameters + spec.pathVariables + spec.headers + spec.body.urlEncoded
         var texts = [spec.url] + rows.flatMap { [$0.key, $0.value] }
         texts += [spec.body.raw.text, spec.body.graphQL.query, spec.body.graphQL.variables] + spec.body.formData.map(\.value)
@@ -146,7 +146,7 @@ extension PostmanPlanner {
         }
     }
 
-    private mutating func noteUnknownDynamicVariables(in texts: [String], owner: PostmanImportNote.Owner) {
+    private mutating func noteUnknownDynamicVariables(in texts: [String], owner: ImportNote.Owner) {
         var unknown: [String] = []
         for text in texts where text.contains("{{") {
             for token in TemplateParser.tokens(in: text) where token.kind == .dynamic && !DynamicVariables.isKnown(token.name) {
@@ -166,7 +166,7 @@ extension PostmanPlanner {
 
 /// A global an enclosing level's script defines (`utils = { … }`), and how many scripts below it read it.
 struct SharedGlobalUse {
-    let owner: PostmanImportNote.Owner
+    let owner: ImportNote.Owner
     let phase: ScriptPhase
     let name: String
     var users: Int

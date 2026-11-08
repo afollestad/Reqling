@@ -45,9 +45,9 @@ final class PostmanEnvironmentMergeTests: XCTestCase {
         XCTAssertEqual(targets.environments.map { $0.variables.first?.value }, ["new", "prod"])
         XCTAssertEqual(targets.global.variables.map(\.value), ["eu"])
         XCTAssertEqual(changes, [
-            PostmanEnvironmentChange(environment: "Staging", isNew: false, added: [], updated: ["host"]),
-            PostmanEnvironmentChange(environment: "Production", isNew: true, added: ["host"], updated: []),
-            PostmanEnvironmentChange(environment: "Global", isNew: false, added: [], updated: ["region"])
+            ImportEnvironmentChange(environment: "Staging", isNew: false, added: [], updated: ["host"]),
+            ImportEnvironmentChange(environment: "Production", isNew: true, added: ["host"], updated: []),
+            ImportEnvironmentChange(environment: "Global", isNew: false, added: [], updated: ["region"])
         ])
         XCTAssertEqual(touched, [staging.id, targets.environments[1].id, RequestEnvironment.globalID])
     }

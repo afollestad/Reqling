@@ -17,7 +17,7 @@ extension PostmanImporterTests {
         XCTAssertEqual(plan.globals.map(\.key), ["region"])
         XCTAssertEqual(plan.counts.environments, 1)
         XCTAssertEqual(plan.environmentChanges, [
-            PostmanEnvironmentChange(environment: "Staging", isNew: true, added: ["baseUrl", "apiSecret", "retries"], updated: [])
+            ImportEnvironmentChange(environment: "Staging", isNew: true, added: ["baseUrl", "apiSecret", "retries"], updated: [])
         ])
     }
 
@@ -43,7 +43,7 @@ extension PostmanImporterTests {
             "Its variables “local” aren't imported, since Reqling keeps variables in environments; add them to one.",
             "It uses {{$randomBankAccount}} and {{$randomCatchPhrase}}, which Reqling doesn't generate."
         ])
-        XCTAssertTrue(try petstore().notes.contains(PostmanImportNote(
+        XCTAssertTrue(try petstore().notes.contains(ImportNote(
             owner: .node(["Pets", "Get pet"]), topic: .variable, message: "It uses {{$randomBankAccount}}, which Reqling doesn't generate."
         )), "a turned-off row's value counts too")
     }
