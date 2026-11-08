@@ -125,6 +125,26 @@ extension RequestRunnerTests {
         XCTAssertEqual(server.requests.map(\.uri), ["/me"], "Only the request itself went out")
     }
 
+    func testARequestsOwnTimeoutRejectsItWhenTheServerIsSlow() async throws {
+        let server = try await fetchServer()
+        let project = try scriptedProject(base: server.baseURL)
+        try setScripts(project, request: project.profile.id, ScriptSet(preRequest: """
+        try {
+          await rq.sendRequest({ url: rq.variables.replaceIn("{{base}}/slow"), timeout: 50 })
+        } catch (error) {
+          console.log(error.message)
+        }
+        """))
+
+        let exchange = await makeRunner().run(project.profile.id, in: project.id)
+
+        XCTAssertEqual(preRequestConsole(exchange).map(\.text), [
+            "→ GET \(server.baseURL)/slow failed: The request timed out.",
+            "The request timed out."
+        ])
+        XCTAssertEqual(body(exchange), "- cookie=-", "The request itself still went out")
+    }
+
     func testTheTimeLimitCancelsARequestStillOutNotingItInTheConsole() async throws {
         let (arrivals, arrived) = AsyncStream<Void>.makeStream()
         let server = try await fetchServer(slow: arrived)

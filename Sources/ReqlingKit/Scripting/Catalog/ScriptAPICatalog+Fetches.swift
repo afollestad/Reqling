@@ -9,7 +9,9 @@ extension ScriptAPICatalog {
             .property("url", .string, "The URL, as given; `rq.variables.replaceIn` resolves `{{variables}}` first."),
             .property("headers", .object, "An object of names and values, or `[name, value]` pairs."),
             .property("body", .any, "Text, an `ArrayBuffer` or typed array, or any other value as JSON, which adds a JSON "
-                + "`Content-Type` unless `headers` name one.")
+                + "`Content-Type` unless `headers` name one."),
+            .property("timeout", .number, "How long to wait for the response, in milliseconds; as long as Settings ▸ Requests says "
+                + "when left out. The script's own time limit still applies.")
         ]),
         ScriptType("RunRequestOptions", "How `rq.runRequest` sends a saved request.", members: [
             .property("variables", .object, "Values that beat every other for this request, by name.")

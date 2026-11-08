@@ -16,7 +16,7 @@ extension ScriptRunnerTests {
         console.log(res.base64(), Object.isFrozen(res))
         console.log((await rq.sendRequest("https://example.test/health")).code)
         await rq.sendRequest({ url: "https://example.test/bytes", method: "PUT", headers: [["X-A", "1"]], body: new Uint8Array([1, 2, 3]) })
-        await rq.sendRequest({ url: "https://example.test/text", method: "Mkcol-ish", body: "plain" })
+        await rq.sendRequest({ url: "https://example.test/text", method: "Mkcol-ish", body: "plain", timeout: 2500 })
         console.log((await rq.runRequest("Login", { variables: { user: "ada", n: 2 } })).json().ok)
         """]))
 
@@ -36,7 +36,7 @@ extension ScriptRunnerTests {
             .send(ScriptFetchRequest(method: "GET", url: "https://example.test/health")),
             .send(ScriptFetchRequest(method: "PUT", url: "https://example.test/bytes", headers: [ScriptRow(name: "X-A", value: "1")],
                                      body: Data([1, 2, 3]))),
-            .send(ScriptFetchRequest(method: "Mkcol-ish", url: "https://example.test/text", body: Data("plain".utf8))),
+            .send(ScriptFetchRequest(method: "Mkcol-ish", url: "https://example.test/text", body: Data("plain".utf8), timeoutSeconds: 2.5)),
             .run(request: "Login", variables: ["user": "ada", "n": "2"])
         ])
     }
@@ -44,7 +44,7 @@ extension ScriptRunnerTests {
     func testAFailedRequestRejectsWhereItsAwaitedWhileAnyStatusResolvesAndBadArgumentsThrowAtTheCall() async {
         let run = await fixtures.run(ScriptFixtures.input(.preRequest, ["""
         const bad = [undefined, 7, { url: "" }, { url: "x", headers: 5 }, { url: "x", method: "BAD METHOD" }, { url: "x", nope: 1 },
-                     { url: "x", body: () => 1 }]
+                     { url: "x", body: () => 1 }, { url: "x", timeout: -1 }]
         for (const request of bad) {
           try { rq.sendRequest(request) } catch (error) { console.log(error.message) }
         }
@@ -69,8 +69,9 @@ extension ScriptRunnerTests {
             #"rq.sendRequest needs a URL, such as "https://api.example.com/token"."#,
             "rq.sendRequest's headers are an object of names and values, or [name, value] pairs.",
             #"rq.sendRequest: "BAD METHOD" isn't an HTTP method."#,
-            #"rq.sendRequest takes method, url, headers, body, not "nope"."#,
+            #"rq.sendRequest takes method, url, headers, body, timeout, not "nope"."#,
             "rq.sendRequest sends text, bytes, or a value JSON can hold as a body, not [Function body].",
+            "rq.sendRequest's timeout is a number of milliseconds above 0, not -1.",
             "rq.runRequest needs a saved request's name or ID.",
             #"rq.runRequest takes { variables }, not "vars"."#,
             "rq.runRequest's variables are an object of names and values.",

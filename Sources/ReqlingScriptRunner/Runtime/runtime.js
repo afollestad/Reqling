@@ -488,7 +488,7 @@
   /// Written in any case, these go out in upper case, as `fetch` sends them; any other method keeps its case, since
   /// HTTP methods are case-sensitive.
   const standardMethods = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'];
-  const requestKeys = ['method', 'url', 'headers', 'body'];
+  const requestKeys = ['method', 'url', 'headers', 'body', 'timeout'];
 
   /// `[name, value]` rows from an object of names and values, or from a list of `[name, value]` pairs.
   function requestHeaders(headers, name) {
@@ -529,7 +529,7 @@
     return { text, binary: null };
   }
 
-  /// Sends a URL, or `{ method, url, headers, body }`, as given: `{{name}}` in it is plain text.
+  /// Sends a URL, or `{ method, url, headers, body, timeout }`, as given: `{{name}}` in it is plain text.
   function startSend(request, name, settle) {
     const fields = typeof request === 'string' ? { url: request } : request;
     if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) {
@@ -550,9 +550,13 @@
     if (!methodToken.test(method)) {
       fail(`${name}: "${method}" isn't an HTTP method.`);
     }
+    const timeout = fields.timeout === undefined || fields.timeout === null ? null : fields.timeout;
+    if (timeout !== null && !(typeof timeout === 'number' && Number.isFinite(timeout) && timeout > 0)) {
+      fail(`${name}'s timeout is a number of milliseconds above 0, not ${describe(timeout)}.`);
+    }
     const rows = requestHeaders(fields.headers, name);
     const body = requestBody(fields.body, rows, name);
-    pendingFetches.set(native.fetchSend(method, fields.url, rows, body.text, body.binary), settle);
+    pendingFetches.set(native.fetchSend(method, fields.url, rows, body.text, body.binary, timeout), settle);
   }
 
   /// Sends a saved request by name or ID, with `{ variables }` beating every other value.

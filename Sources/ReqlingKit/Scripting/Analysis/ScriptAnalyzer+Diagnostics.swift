@@ -25,8 +25,8 @@ public struct ScriptDeclaredVariable: Hashable, Sendable {
 }
 
 /// Warnings for names the catalog knows don't work where the script runs: a member a closed type lacks, one of another
-/// phase or protocol, and a Postman name Reqling refuses. Open types (assertion chains, libraries) and locals are never
-/// warned about: the catalog lists only part of them.
+/// phase or protocol, a Postman name Reqling refuses, and a key an options literal's type lacks. Open types (assertion
+/// chains, libraries) and locals are never warned about: the catalog lists only part of them.
 extension ScriptAnalyzer {
     public func diagnostics() -> [ScriptDiagnostic] {
         let tokens = expressions.tokens
@@ -42,7 +42,7 @@ extension ScriptAnalyzer {
                 found.append(ScriptDiagnostic(range: step.range, message: message(for: problem, at: step), severity: .warning))
             }
         }
-        return found
+        return (found + optionDiagnostics()).sorted { $0.range.location < $1.range.location }
     }
 
     /// Every variable the script sets with a literal name through an accessor the catalog knows, `pm`'s included.

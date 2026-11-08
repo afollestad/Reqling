@@ -180,7 +180,8 @@ extension ScriptLevelHost {
     /// `rq.sendRequest` and `rq.runRequest`; the runtime normalizes their arguments to text first, and keeps the
     /// promise each settles (`finishFetch`). Each returns the fetch's ID, or `undefined` after throwing.
     private func installFetch(on native: JSValue) {
-        let send: @convention(block) (String, String, JSValue, JSValue, JSValue) -> JSValue = { [unowned self] method, url, headers, text, binary in
+        typealias Send = @convention(block) (String, String, JSValue, JSValue, JSValue, JSValue) -> JSValue
+        let send: Send = { [unowned self] method, url, headers, text, binary, timeout in
             var body: Data?
             if !binary.isNull, !binary.isUndefined {
                 guard let bytes = arrayBufferBytes(binary) else {
@@ -197,7 +198,8 @@ extension ScriptLevelHost {
                 }
                 return ScriptRow(name: String(describing: pair[0]), value: String(describing: pair[1]))
             }
-            return startFetch(.send(ScriptFetchRequest(method: method, url: url, headers: rows, body: body)))
+            let seconds = timeout.isNumber ? timeout.toDouble() / 1_000 : nil
+            return startFetch(.send(ScriptFetchRequest(method: method, url: url, headers: rows, body: body, timeoutSeconds: seconds)))
         }
         let run: @convention(block) (String, JSValue) -> JSValue = { [unowned self] request, variables in
             var values: [String: String] = [:]

@@ -93,7 +93,7 @@ extension ScriptAPICatalog {
                 returns: .void, "Sends a message on the call's open request stream, as given: `{{variables}}` in it aren't resolved.",
                 phases: .stream, protocols: [.grpc]),
         .method("sendRequest", [ScriptParameter("request", .oneOf([.string, .named("OutgoingRequest")]),
-                                                "A URL to GET, or the request to send: `{ method, url, headers, body }`.")],
+                                                "A URL to GET, or the request to send: `{ method, url, headers, body, timeout }`.")],
                 returns: .promise(.named("IncomingResponse")),
                 "Sends a request from Reqling, as given: `{{variables}}` in it aren't resolved. Resolves with the response, "
                     + "whatever its status, and rejects when none comes back."),

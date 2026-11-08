@@ -3,8 +3,9 @@ import ReqlingScriptProtocol
 
 /// A request built as given, for one a script sends (`rq.sendRequest`): its text is never resolved, since scripts
 /// treat `{{name}}` as plain text, and no auth or file goes into it. What every request gets still applies: the
-/// method's `bodyPolicy`, Settings' defaults for timeouts, redirects, and TLS, the automatic `Accept` and `User-Agent`
-/// unless the script names them, and a summary with `redaction`'s secrets masked, as a script may have put one in.
+/// method's `bodyPolicy`; Settings' defaults for redirects and TLS, and for the timeout unless the script gives one; the
+/// automatic `Accept` and `User-Agent` unless the script names them; and a summary with `redaction`'s secrets masked, as
+/// a script may have put one in.
 extension HTTPRequestBuilder {
     static func prepareLiteral(
         _ request: ScriptFetchRequest,
@@ -29,7 +30,7 @@ extension HTTPRequestBuilder {
         }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = name
-        urlRequest.timeoutInterval = defaults.timeoutSeconds
+        urlRequest.timeoutInterval = request.timeoutSeconds ?? defaults.timeoutSeconds
         urlRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let named = Set(request.headers.map { $0.name.lowercased() })
         var sent = request.headers

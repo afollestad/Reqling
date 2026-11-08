@@ -4,8 +4,8 @@ import ReqlingScriptProtocol
 /// Object literals a script passes where a parameter takes an options type, as `rq.sendRequest({ method, url })` and
 /// `rq.cookies.set(name, value, { secure: true })` do: completion offers the type's keys not yet written, and in a
 /// string written as a key's value, the values its property names (`ScriptArgumentCompletion.choices`); hover describes
-/// a key. Only a literal passed whole as the argument counts, so one nested in it (`headers: { … }`) offers nothing of
-/// its parent's.
+/// a key, and diagnostics warn of one the type lacks. Only a literal passed whole as the argument counts, so one nested
+/// in it (`headers: { … }`) offers nothing of its parent's.
 ///
 /// Keys are found from the tokens alone, so they complete wherever the editor's pairs and indentation leave the
 /// cursor: between `({` and `})`, on a line Return indented, or before a `}` moved back to its opener's line.
@@ -14,10 +14,10 @@ extension ScriptAnalyzer {
     /// name being typed there, if any, whose own text isn't a key written already.
     func optionKeys(after index: Int, typing: Int?, prefix: String, replacement: NSRange) -> ScriptCompletionList? {
         let tokens = expressions.tokens
-        guard let brace = literalOpening(at: index), let type = optionsType(ofLiteralAt: brace) else {
+        guard let brace = literalOpening(at: index), let type = optionsType(ofLiteralAt: brace)?.type else {
             return nil
         }
-        let written = writtenKeys(inLiteralAt: brace, except: typing)
+        let written = Set(writtenKeys(inLiteralAt: brace).filter { $0.index != typing }.map(\.name))
         // A name already followed by its `:` is being renamed, so accepting replaces just the name.
         let colonFollows = typing.map { $0 + 1 < tokens.count && tokens[$0 + 1].isPunctuator(":") } ?? false
         let items = type.members.filter { !$0.isMethod && $0.availability == .supported && !written.contains($0.name) }.map { member in
@@ -37,7 +37,7 @@ extension ScriptAnalyzer {
     func optionChoices(inString index: Int, cursor: Int) -> ScriptCompletionList? {
         let tokens = expressions.tokens
         guard index >= 3, tokens[index - 1].isPunctuator(":"), let key = keyName(tokens[index - 2]),
-              let brace = literalOpening(at: index - 3), let type = optionsType(ofLiteralAt: brace),
+              let brace = literalOpening(at: index - 3), let type = optionsType(ofLiteralAt: brace)?.type,
               let member = type.members.first(where: { !$0.isMethod && $0.name == key }),
               case .choices(let values)? = member.completion else {
             return nil
@@ -56,11 +56,29 @@ extension ScriptAnalyzer {
     func optionKeyHover(at index: Int) -> ScriptHover? {
         let tokens = expressions.tokens
         guard index >= 1, let key = keyName(tokens[index]), let brace = literalOpening(at: index - 1),
-              let type = optionsType(ofLiteralAt: brace),
+              let type = optionsType(ofLiteralAt: brace)?.type,
               let member = type.members.first(where: { !$0.isMethod && $0.name == key }) else {
             return nil
         }
         return ScriptHover(range: tokens[index].range, signature: "\(type.name).\(member.signature)", summary: member.summary, note: nil)
+    }
+
+    /// A warning for each key an options literal's type lacks: a typo the runtime refuses when the script runs, or for
+    /// a variable's `{ secrets: true }`, ignores.
+    func optionDiagnostics() -> [ScriptDiagnostic] {
+        let tokens = expressions.tokens
+        var found: [ScriptDiagnostic] = []
+        for brace in tokens.indices where tokens[brace].isPunctuator("{") {
+            guard let (type, callee) = optionsType(ofLiteralAt: brace) else {
+                continue
+            }
+            let names = Set(type.members.filter { !$0.isMethod }.map(\.name))
+            for key in writtenKeys(inLiteralAt: brace) where !names.contains(key.name) {
+                let message = "\(callee)'s options have no “\(key.name)”."
+                found.append(ScriptDiagnostic(range: tokens[key.index].range, message: message, severity: .warning))
+            }
+        }
+        return found
     }
 
     /// The `{` of the literal a key after `index` belongs to, when `index` is that `{` or a `,` at its own depth; `nil`
@@ -87,25 +105,27 @@ extension ScriptAnalyzer {
         return nil
     }
 
-    /// The options type the literal opening at `brace` is passed as: the named type of the parameter it's the whole
-    /// argument for.
-    private func optionsType(ofLiteralAt brace: Int) -> ScriptType? {
+    /// The options type the literal opening at `brace` is passed as, the named type of the parameter it's the whole
+    /// argument for, and the method's name as messages give it: `rq.sendRequest`.
+    private func optionsType(ofLiteralAt brace: Int) -> (type: ScriptType, callee: String)? {
         let tokens = expressions.tokens
         guard brace >= 1, tokens[brace - 1].isPunctuator("(") || tokens[brace - 1].isPunctuator(","),
               let (open, argument) = expressions.call(enclosing: brace), open >= 1,
-              let callee = expressions.chain(endingAt: open - 1),
-              case .method(let method) = resolve(callee, bindings: expressions.bindings(before: tokens[open].range.location)).value,
-              argument < method.parameters.count,
-              let name = Self.optionsName(method.parameters[argument].type) else {
+              let callee = expressions.chain(endingAt: open - 1) else {
             return nil
         }
-        return catalog.type(name)
+        let resolved = resolve(callee, bindings: expressions.bindings(before: tokens[open].range.location))
+        guard case .method(let method) = resolved.value, argument < method.parameters.count,
+              let name = Self.optionsName(method.parameters[argument].type), let type = catalog.type(name) else {
+            return nil
+        }
+        return (type, resolved.steps.last.map { "\($0.receiverText).\($0.name)" } ?? callee.root)
     }
 
-    /// The keys written at the literal's own depth, the name at `except` aside.
-    private func writtenKeys(inLiteralAt brace: Int, except: Int?) -> Set<String> {
+    /// The keys written at the literal's own depth, each with its token's index.
+    private func writtenKeys(inLiteralAt brace: Int) -> [(name: String, index: Int)] {
         let tokens = expressions.tokens
-        var keys: Set<String> = []
+        var keys: [(name: String, index: Int)] = []
         var depth = 0
         var expectsKey = true
         for index in (brace + 1)..<tokens.count {
@@ -129,8 +149,8 @@ extension ScriptAnalyzer {
                 expectsKey = true
                 continue
             }
-            if expectsKey, index != except, let key = keyName(token) {
-                keys.insert(key)
+            if expectsKey, let key = keyName(token) {
+                keys.append((key, index))
             }
             expectsKey = false
         }

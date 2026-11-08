@@ -19,12 +19,12 @@ extension ScriptAnalyzerTests {
 
     /// The editor pairs `({` with `})` and indents on Return, so the cursor lands in each of these as keys are typed.
     func testAnOptionsLiteralCompletesItsKeysWhereverPairsAndIndentationLeaveTheCursor() throws {
-        let request = ["method", "url", "headers", "body"]
+        let request = ["method", "url", "headers", "body", "timeout"]
         XCTAssertEqual(keys("rq.sendRequest({|})"), request)
         XCTAssertEqual(keys("rq.sendRequest({\n  |\n})"), request, "Return moved the closers down a line")
-        XCTAssertEqual(keys("rq.sendRequest({\n  url: \"x\",\n  |\n})"), ["method", "headers", "body"], "after `,` and Return")
+        XCTAssertEqual(keys("rq.sendRequest({\n  url: \"x\",\n  |\n})"), ["method", "headers", "body", "timeout"], "after `,` and Return")
         XCTAssertEqual(keys("rq.sendRequest({\n  url,\n  he|\n})"), ["headers"], "a shorthand key is written too")
-        XCTAssertEqual(keys("const r = rq.sendRequest({\n  url: \"x\",\n  |\n}"), ["method", "headers", "body"], "before a moved-back `}`")
+        XCTAssertEqual(keys("const r = rq.sendRequest({\n  url: \"x\",\n  |\n}"), ["method", "headers", "body", "timeout"], "before a moved-back `}`")
         XCTAssertEqual(keys("rq.runRequest(\"Login\", {|})"), ["variables"])
         XCTAssertEqual(keys("rq.cookies.set(\"a\", \"b\", {|})"), ["path", "domain", "expires", "secure", "httpOnly", "sameSite"])
         XCTAssertEqual(keys("rq.environment.set(\"k\", \"v\", { se|})"), ["secret"])
@@ -67,6 +67,51 @@ extension ScriptAnalyzerTests {
 
         XCTAssertTrue(awaited.contains("code") && awaited.contains("json"), "\(awaited)")
         XCTAssertTrue(destructured.contains("get"), "\(destructured)")
-        XCTAssertEqual(keys("const pending = rq.sendRequest(\"https://x\")\npending.|"), [], "A promise has none of the response's members")
+        XCTAssertEqual(keys("const pending = rq.sendRequest(\"https://x\")\npending.|"), ["then", "catch", "finally"],
+                       "A promise has its own members, not the response's")
+    }
+
+    func testThenGivesItsCallbackWhatThePromiseSettlesWith() throws {
+        let then = try XCTUnwrap(keys("rq.sendRequest(\"https://x\").then((res) => res.|)"))
+        let chained = try XCTUnwrap(keys("rq.runRequest(\"Login\").then(res => res.|"))
+        let hover = try XCTUnwrap(ScriptAnalyzer(
+            text: "rq.sendRequest(\"https://x\").then(r => r)",
+            context: ScriptAnalysisContext(phase: .preRequest, protocols: nil)
+        ).hover(at: 29))
+
+        XCTAssertTrue(then.contains("code") && then.contains("json"), "\(then)")
+        XCTAssertTrue(chained.contains("status"), "\(chained)")
+        XCTAssertEqual(hover.signature,
+                       "Promise.then(onFulfilled: (value: IncomingResponse) => void, onRejected?: (error: any) => void): Promise<any>")
+        XCTAssertEqual(keys("rq.sendRequest(\"https://x\").catch((error) => error.|)") ?? [], [], "an error is untyped")
+    }
+
+    /// The latest response's keys describe this request's response alone, never one a script's request got.
+    func testOnlyThisRequestsResponseCompletesItsJSONKeys() throws {
+        let shape = try XCTUnwrap(ScriptJSONShape(json: Data(#"{"user": {"id": 1}}"#.utf8)))
+        let context = ScriptAnalysisContext(phase: .postResponse, protocols: [.http], responseShape: shape)
+        func keys(_ text: String) -> [String] {
+            ScriptAnalyzer(text: text, context: context).completions(at: (text as NSString).length)?.items.map(\.label) ?? []
+        }
+
+        XCTAssertEqual(keys("pm.response.json()."), ["user"])
+        XCTAssertEqual(keys("pm.sendRequest('x', (err, res) => res.json()."), [])
+        XCTAssertEqual(keys("const res = await rq.sendRequest('x')\nres.json()."), [])
+    }
+
+    func testAKeyAnOptionsTypeLacksIsWarnedAbout() {
+        let context = ScriptAnalysisContext(phase: .preRequest, protocols: ScriptAnalysisContext.protocols(for: .http))
+        let text = "rq.sendRequest({ url: \"x\", hedaers: {}, \"tiemout\": 1, headers: { anything: 1 } })\n"
+            + "rq.cookies.set(\"a\", \"b\", { secure: true, ttl: 1 })"
+        let warnings = ScriptAnalyzer(text: text, context: context).diagnostics()
+
+        XCTAssertEqual(warnings.map(\.message), [
+            "rq.sendRequest's options have no “hedaers”.",
+            "rq.sendRequest's options have no “tiemout”.",
+            "rq.cookies.set's options have no “ttl”."
+        ])
+        XCTAssertEqual(warnings.first?.range, NSRange(location: 27, length: 7))
+        XCTAssertTrue(ScriptAnalyzer(text: "if (x) { nope: 1 }\nfoo({ nope: 1 })", context: context).diagnostics().isEmpty,
+                      "a block or a call the catalog doesn't know has no options")
     }
 }

@@ -182,7 +182,7 @@ extension ScriptAnalyzer {
         case .json(let path):
             return MemberLookup(value: .json(path + [name]))
         case .typed(let type):
-            guard let found = type.namedType.flatMap(catalog.type) else {
+            guard let found = receiverType(of: type) else {
                 return MemberLookup()
             }
             receiver = found
@@ -207,6 +207,14 @@ extension ScriptAnalyzer {
             value = .unknown
         }
         return MemberLookup(value: value, receiver: receiver, member: member, problem: problem(with: member, among: candidates))
+    }
+
+    /// The type whose members a value of `type` has: its named type's, or a promise's own for what it settles with.
+    func receiverType(of type: ScriptValueType) -> ScriptType? {
+        if case .promise(let settled) = type {
+            return ScriptAPICatalog.promiseType(settlingWith: settled)
+        }
+        return type.namedType.flatMap(catalog.type)
     }
 
     private func problem(with member: ScriptMember, among candidates: [ScriptMember]) -> ScriptStepProblem? {

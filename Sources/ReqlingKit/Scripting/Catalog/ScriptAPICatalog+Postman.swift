@@ -29,7 +29,7 @@ extension ScriptAPICatalog {
             .method("runRequest", [ScriptParameter("request", .string, "The saved request's ID or name."),
                                    ScriptParameter("options", .named("RunRequestOptions"),
                                                    "`{ variables }`: values that beat every other for this request.", isOptional: true)],
-                    returns: .promise(.named("PostmanResponse")), "Sends a saved request.").postman("rq.runRequest")
+                    returns: .promise(.named("PostmanSentResponse")), "Sends a saved request.").postman("rq.runRequest")
         ]),
         postmanVariables("PostmanEnvironment", equivalent: "rq.environment", source: .environment, extra: [
             .property("name", .string, "The environment's name.").postman("rq.environment.name")
@@ -66,7 +66,10 @@ extension ScriptAPICatalog {
             .property("mode", .string, "The body's mode.").postman("rq.request.body.mode"),
             .property("raw", .optional(.string), "The raw body's text.").postman("rq.request.body.raw")
         ]),
-        ScriptType("PostmanResponse", "The HTTP response.", members: postmanResponseMembers),
+        ScriptType("PostmanResponse", "The HTTP response.", members: postmanResponseMembers(json: .responseJSON, equivalent: "rq.response")),
+        // Its JSON isn't this request's response's, whose keys `.responseJSON` would complete.
+        ScriptType("PostmanSentResponse", "What a request `pm.sendRequest` sent got back.",
+                   members: postmanResponseMembers(json: .any, equivalent: "IncomingResponse")),
         ScriptType("PostmanAssertion", "Assertions about the response.", members: [
             .property("have", .named("PostmanHave"), "Asserts what the response has."),
             .property("be", .named("PostmanBe"), "Asserts what the response is."),
@@ -110,9 +113,9 @@ extension ScriptAPICatalog {
             ScriptParameter("request", .any, "A URL, or a Postman request: `{ url, method, header, body }`."),
             ScriptParameter("callback", .callback([
                 ScriptParameter("error", .optional(.object), "Why the request failed, or `null`."),
-                ScriptParameter("response", .named("PostmanResponse"), "What came back.")
+                ScriptParameter("response", .named("PostmanSentResponse"), "What came back.")
             ]), "Called with `(error, response)` once it's answered; without it, the call returns a promise.", isOptional: true)
-        ], returns: .promise(.named("PostmanResponse")), "Sends a request.").postman("rq.sendRequest"),
+        ], returns: .promise(.named("PostmanSentResponse")), "Sends a request.").postman("rq.sendRequest"),
         .property("cookies", .named("PostmanCookies"), "The cookies for the request's URL.").postman("rq.cookies"),
         .unsupported("vault", "Reqling keeps secrets as secret variables"),
         .property("iterationData", .named("PostmanIterationData"), "This iteration's data row.").postman("rq.iterationData"),
@@ -171,14 +174,17 @@ extension ScriptAPICatalog {
         ]
     }()
 
-    private static let postmanResponseMembers: [ScriptMember] = [
-        .property("code", .number, "The status code.").postman("rq.response.code"),
-        .property("status", .string, "The reason phrase.").postman("rq.response.status"),
-        .property("responseTime", .number, "How long it took, in milliseconds.").postman("rq.response.responseTime"),
-        .property("headers", .named("PostmanList"), "The headers.").postman("rq.response.headers"),
-        .method("size", returns: .number, "The body's size in bytes.").postman("rq.response.size"),
-        .method("text", returns: .string, "The body as text.").postman("rq.response.text"),
-        .method("json", returns: .responseJSON, "The body, parsed as JSON.").postman("rq.response.json"),
-        .property("to", .named("PostmanAssertion"), "Assertions about the response.").postman("rq.expect")
-    ]
+    /// A Postman response's members, `json` returning `json`, each named after `equivalent`'s.
+    private static func postmanResponseMembers(json: ScriptValueType, equivalent: String) -> [ScriptMember] {
+        [
+            .property("code", .number, "The status code.").postman("\(equivalent).code"),
+            .property("status", .string, "The reason phrase.").postman("\(equivalent).status"),
+            .property("responseTime", .number, "How long it took, in milliseconds.").postman("\(equivalent).responseTime"),
+            .property("headers", .named("PostmanList"), "The headers.").postman("\(equivalent).headers"),
+            .method("size", returns: .number, "The body's size in bytes.").postman("\(equivalent).size"),
+            .method("text", returns: .string, "The body as text.").postman("\(equivalent).text"),
+            .method("json", returns: json, "The body, parsed as JSON.").postman("\(equivalent).json"),
+            .property("to", .named("PostmanAssertion"), "Assertions about the response.").postman("rq.expect")
+        ]
+    }
 }

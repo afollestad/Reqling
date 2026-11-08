@@ -131,7 +131,7 @@ const login = await rq.runRequest("Login", { variables: { user: "ada" } })
 rq.test("logged in", () => rq.expect(login.code).to.equal(200))
 ```
 
-- **`rq.sendRequest`** takes a URL, or `{ method, url, headers, body }`, and sends it as given: `{{name}}` in it is plain text, so resolve one with `rq.variables.replaceIn`, and no auth is added. A body that isn't text, an `ArrayBuffer`, or a typed array goes as JSON.
+- **`rq.sendRequest`** takes a URL, or `{ method, url, headers, body, timeout }`, and sends it as given: `{{name}}` in it is plain text, so resolve one with `rq.variables.replaceIn`, and no auth is added. A body that isn't text, an `ArrayBuffer`, or a typed array goes as JSON. `timeout` is in milliseconds; left out, the request waits as long as **Settings ▸ Requests** says.
 - **`rq.runRequest`** sends a saved HTTP or GraphQL request, by name or ID, as a run would: with its auth, and with the variables scripts have set so far, which `{ variables }` beat. Its own scripts don't run, and it isn't kept in its history. A name more than one request has, or a gRPC or WebSocket request, is refused.
 - **Responses.** Both resolve with the response, whatever its status: `code`, `status`, `headers`, `text()`, `json()`, and `base64()`. They reject when no response comes back. An event stream is read until it ends.
 - **Console.** Each request is listed in the Tests tab's console with its method, URL, status, and time, secrets masked, as agents see it too. One that failed or didn't finish says so.
@@ -152,11 +152,11 @@ rq.test("logged in", () => rq.expect(login.code).to.equal(200))
 
 ## Editor help
 
-- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, the keys of this request's latest JSON response after `rq.response.json().`, an options object's keys and values, as in `rq.sendRequest({ method: "`, a request's response after `await`, and a handler's parameter, as in `rq.onEvent(event => event.`, as the event or message it gets. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, the keys of this request's latest JSON response after `rq.response.json().`, an options object's keys and values, as in `rq.sendRequest({ method: "`, a request's response after `await` or in `.then(res => res.`, and a handler's parameter, as in `rq.onEvent(event => event.`, as the event or message it gets. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
 - **Parameter hints.** Typing `(` or `,` in a call shows the method's parameters above the line, with the one being typed highlighted and described, and what the method does. The highlight follows the cursor from argument to argument, and the hints close when it leaves the call or on Escape. Press ⇧⌘Space or ⌘P, or choose Edit ▸ Show Parameter Hints, to show them again inside a call. A function the script declares shows its parameters as written, with what a `/** … */` comment right above it says: its description, and `@param {type} name description` for each parameter.
 - **Brackets and quotes.** Typing `(`, `[`, `{`, or a quote adds its closer with the cursor between them, unless a name follows it (or, for a quote, comes right before it, as in `don't`). `${` in a template string closes as `${}`. A closer typed before the one already there steps over it, and Backspace between an empty pair removes both. Inside strings and comments, brackets and quotes type as they are.
 - **Hover.** Pointing at a name, or an options object's key, shows what it is. A Postman `pm` name also shows its Reqling equivalent.
-- **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of another phase, or one of another protocol. The problems menu above the script lists them.
+- **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of another phase, one of another protocol, or a key an options object doesn't take. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
 
 ## Scripts from Postman
@@ -455,6 +455,7 @@ A request for `rq.sendRequest` to send, as given.
 - `url: string`: The URL, as given; `rq.variables.replaceIn` resolves `{{variables}}` first.
 - `headers: object`: An object of names and values, or `[name, value]` pairs.
 - `body: any`: Text, an `ArrayBuffer` or typed array, or any other value as JSON, which adds a JSON `Content-Type` unless `headers` name one.
+- `timeout: number`: How long to wait for the response, in milliseconds; as long as Settings ▸ Requests says when left out. The script's own time limit still applies.
 
 ### `RunRequestOptions`
 

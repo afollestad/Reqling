@@ -19,12 +19,15 @@ public struct ScriptFetchRequest: Hashable, Sendable, Codable {
     public var headers: [ScriptRow]
     /// `nil` sends none.
     public var body: Data?
+    /// How long to wait for the response; `nil` waits as long as Settings' request timeout says.
+    public var timeoutSeconds: Double?
 
-    public init(method: String, url: String, headers: [ScriptRow] = [], body: Data? = nil) {
+    public init(method: String, url: String, headers: [ScriptRow] = [], body: Data? = nil, timeoutSeconds: Double? = nil) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
+        self.timeoutSeconds = timeoutSeconds
     }
 }
 

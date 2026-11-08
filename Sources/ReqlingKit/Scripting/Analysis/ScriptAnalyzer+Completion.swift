@@ -111,7 +111,7 @@ extension ScriptAnalyzer {
         case .json(let path):
             items = jsonKeys(at: path)
         case .typed(let type):
-            items = type.namedType.flatMap(catalog.type).map(memberItems) ?? []
+            items = receiverType(of: type).map(memberItems) ?? []
         case .method(let method):
             items = method.functionType.flatMap(catalog.type).map(memberItems) ?? []
         case .unknown:

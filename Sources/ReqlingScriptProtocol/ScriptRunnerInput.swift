@@ -7,7 +7,7 @@ import ReqlingTemplating
 /// the helper runs: a stream's items, and what each request a script sent got back.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 5
+    public static let currentProtocolVersion = 6
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
