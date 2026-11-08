@@ -44,9 +44,11 @@ struct ScriptExpressions {
     let nonCode: [JavaScriptToken]
     /// Read once, so looking bindings up for each name a script uses stays linear.
     private var declarations: [Declaration] = []
-    /// Every name the script defines anywhere, whatever its scope: what `const`, `let`, and `var` declare, parameters,
-    /// `function` and `class` names, and names a bare `name =` assigns. A name the catalog doesn't know but the script
-    /// defines is the script's own, so warnings about missing globals skip it.
+    /// Every name the script declares anywhere, whatever its scope: what `const`, `let`, and `var` declare, parameters,
+    /// and `function` and `class` names.
+    private(set) var boundNames: Set<String> = []
+    /// `boundNames`, and the names a bare `name =` assigns, which in a script that isn't strict defines a global. A name
+    /// the catalog doesn't know but the script defines is the script's own, so warnings about missing globals skip it.
     private(set) var declaredNames: Set<String> = []
 
     init(text: String) {
@@ -68,23 +70,29 @@ struct ScriptExpressions {
         self.tokens = tokens
         self.nonCode = nonCode
         declarations = readDeclarations()
-        declaredNames = Set(declarations.map(\.name)).union(readDefinedNames())
+        boundNames = Set(declarations.map(\.name)).union(readNamedDeclarations())
+        declaredNames = boundNames.union(assignedGlobals)
     }
 
-    /// `function name`, `class name`, and a bare `name =`, which in a script that isn't strict defines a global.
-    private func readDefinedNames() -> [String] {
+    /// The names bare `name =` assignments give, which don't declare them: in a script that isn't strict, each defines
+    /// a global.
+    var assignedGlobals: [String] {
         tokens.indices.compactMap { index in
             let token = tokens[index]
-            guard token.kind == .identifier else {
+            let isMember = index >= 1 && Self.isDot(tokens[index - 1])
+            let isAssigned = index + 1 < tokens.count && tokens[index + 1].isPunctuator("=")
+            return token.kind == .identifier && !isMember && isAssigned && !boundNames.contains(token.text) ? token.text : nil
+        }
+    }
+
+    /// `function name` and `class name`.
+    private func readNamedDeclarations() -> [String] {
+        tokens.indices.compactMap { index in
+            guard index >= 1, tokens[index].kind == .identifier, tokens[index - 1].kind == .keyword,
+                  tokens[index - 1].text == "function" || tokens[index - 1].text == "class" else {
                 return nil
             }
-            let previous = index >= 1 ? tokens[index - 1] : nil
-            if let previous, previous.kind == .keyword, previous.text == "function" || previous.text == "class" {
-                return token.text
-            }
-            let isMember = previous.map(Self.isDot) ?? false
-            let isAssigned = index + 1 < tokens.count && tokens[index + 1].isPunctuator("=")
-            return !isMember && isAssigned ? token.text : nil
+            return tokens[index].text
         }
     }
 

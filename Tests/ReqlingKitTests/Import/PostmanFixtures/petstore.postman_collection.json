@@ -1,0 +1,290 @@
+{
+	"info": {
+		"_postman_id": "4f1d2c3b-9a8e-4b7c-8d6e-5f4a3b2c1d0e",
+		"name": "Petstore",
+		"description": "The pet store's API.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "1234567"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"description": "Logging in.",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.environment.set(\"token\", body.token);",
+									"postman.setEnvironmentVariable(\"legacy\", responseBody);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user\": \"{{user}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Logs in."
+					},
+					"response": [
+						{
+							"name": "OK",
+							"status": "OK",
+							"code": 200,
+							"body": "{\"token\": \"t\"}"
+						}
+					]
+				}
+			],
+			"auth": {
+				"type": "basic",
+				"basic": [
+					{
+						"key": "password",
+						"value": "hunter2",
+						"type": "string"
+					},
+					{
+						"key": "username",
+						"value": "admin",
+						"type": "string"
+					}
+				]
+			}
+		},
+		{
+			"name": "Pets",
+			"item": [
+				{
+					"name": "Get pet",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.variables.set(\"stamp\", utils.stamp());"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"protocolProfileBehavior": {
+						"disabledSystemHeaders": {
+							"user-agent": true,
+							"connection": true
+						}
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "X-Debug",
+								"value": "1",
+								"disabled": true
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/pets/:petId?expand=owner",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"pets",
+								":petId"
+							],
+							"query": [
+								{
+									"key": "expand",
+									"value": "owner"
+								},
+								{
+									"key": "trace",
+									"value": "{{$randomBankAccount}}",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "petId",
+									"value": "42"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload photo",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Rex",
+									"type": "text"
+								},
+								{
+									"key": "photo",
+									"type": "file",
+									"src": "/nonexistent/rex.png"
+								}
+							]
+						},
+						"url": "{{baseUrl}}/pets/photo"
+					}
+				},
+				{
+					"name": "Update pet",
+					"request": {
+						"auth": {
+							"type": "oauth2",
+							"oauth2": [
+								{
+									"key": "accessToken",
+									"value": "abc",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "name",
+									"value": "Rex",
+									"type": "text"
+								},
+								{
+									"key": "age",
+									"value": "3",
+									"type": "text",
+									"disabled": true
+								}
+							]
+						},
+						"url": {
+							"raw": "https://api.example.com/pets/1"
+						}
+					}
+				},
+				{
+					"name": "Search",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "abc123",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "graphql",
+							"graphql": {
+								"query": "query { pets { id } }",
+								"variables": "{\"first\": 2}"
+							}
+						},
+						"url": "{{baseUrl}}/graphql"
+					}
+				},
+				{
+					"name": "Health",
+					"request": "https://api.example.com/health"
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "k-123",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "X-API-Key",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"utils = { stamp: () => Date.now() }"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"pm.test(\"is ok\", () => pm.response.to.be.ok)"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://api.example.com"
+		},
+		{
+			"key": "user",
+			"value": "ada"
+		}
+	],
+	"protocolProfileBehavior": {
+		"followRedirects": false
+	}
+}
