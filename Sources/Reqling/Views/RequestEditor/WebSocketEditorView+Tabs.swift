@@ -13,7 +13,12 @@ struct WebSocketEditorTabContent: View {
             WebSocketMessagesTab(editor: editor)
         case .params:
             ScrollView {
-                KeyValueTable(rows: $editor.spec.queryParameters, rowName: "parameter", tokenContext: editor.tokenContext)
+                VStack(alignment: .leading, spacing: 16) {
+                    KeyValueTable(rows: $editor.spec.queryParameters, rowName: "parameter", tokenContext: editor.tokenContext)
+                    if !editor.spec.pathVariables.isEmpty {
+                        PathVariableTable(rows: $editor.spec.pathVariables, tokenContext: editor.tokenContext)
+                    }
+                }
             }
             .detailPaneScrollMargins()
             .disabled(editor.isReadOnly)

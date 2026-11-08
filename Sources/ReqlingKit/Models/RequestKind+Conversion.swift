@@ -1,7 +1,8 @@
 /// Switching a saved request between HTTP, gRPC, and WebSocket in place. Only what both protocols share carries over:
 /// auth, headers (as gRPC's metadata), TLS verification, and the timeout (as gRPC's deadline). HTTP and WebSocket also
-/// share the URL (`http`↔`ws`, `https`↔`wss`) and its query; gRPC's target maps to a scheme-and-host URL (`https`
-/// meaning TLS). Everything else resets to the new kind's defaults, and gRPC and WebSocket convert through HTTP.
+/// share the URL (`http`↔`ws`, `https`↔`wss`), its query, and its path variables; gRPC's target maps to a
+/// scheme-and-host URL (`https` meaning TLS). Everything else resets to the new kind's defaults, and gRPC and WebSocket
+/// convert through HTTP.
 extension RequestKind {
     public func converted(to name: Name) -> RequestKind {
         switch (self, name) {
@@ -11,6 +12,7 @@ extension RequestKind {
             return .webSocket(WebSocketRequestSpec(
                 url: Self.swappingScheme(of: spec.url, [("https://", "wss://"), ("http://", "ws://")]),
                 queryParameters: spec.queryParameters,
+                pathVariables: spec.pathVariables,
                 headers: spec.headers,
                 disabledAutoHeaders: spec.disabledAutoHeaders,
                 auth: spec.auth,
@@ -20,6 +22,7 @@ extension RequestKind {
             return .http(HTTPRequestSpec(
                 url: Self.swappingScheme(of: spec.url, [("wss://", "https://"), ("ws://", "http://")]),
                 queryParameters: spec.queryParameters,
+                pathVariables: spec.pathVariables,
                 headers: spec.headers,
                 disabledAutoHeaders: spec.disabledAutoHeaders,
                 auth: spec.auth,

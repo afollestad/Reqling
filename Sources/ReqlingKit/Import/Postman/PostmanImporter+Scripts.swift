@@ -127,7 +127,8 @@ extension PostmanPlanner {
 
     /// Notes the built-ins a request names that Reqling doesn't generate, such as most of Postman's fake data.
     mutating func noteUnknownDynamicVariables(in spec: HTTPRequestSpec, owner: PostmanImportNote.Owner) {
-        var texts = [spec.url] + (spec.queryParameters + spec.headers + spec.body.urlEncoded).flatMap { [$0.key, $0.value] }
+        let rows = spec.queryParameters + spec.pathVariables + spec.headers + spec.body.urlEncoded
+        var texts = [spec.url] + rows.flatMap { [$0.key, $0.value] }
         texts += [spec.body.raw.text, spec.body.graphQL.query, spec.body.graphQL.variables] + spec.body.formData.map(\.value)
         switch spec.auth {
         case .basic(let username, let password): texts += [username, password]

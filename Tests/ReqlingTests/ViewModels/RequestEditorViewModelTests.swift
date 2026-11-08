@@ -172,6 +172,25 @@ final class RequestEditorViewModelTests: XCTestCase {
         XCTAssertEqual(editor.urlText, "https://x/a?page=12&size=50")
     }
 
+    /// Path variable rows follow the bar's `:name`s, and a value set elsewhere merges like a query row's.
+    func testTypingAPathVariableAddsItsRowAndAValueSetElsewhereMerges() async throws {
+        editor.urlText = "https://x/users/:id/posts/:post"
+        XCTAssertEqual(editor.spec.pathVariables.map(\.key), ["id", "post"])
+        editor.flush()
+
+        editor.spec.pathVariables[0].value = "7"
+        var external = try XCTUnwrap(savedSpec)
+        external.pathVariables[1].value = "9"
+        try changeExternally(external)
+        await releaseAutosave()
+        await waitUntil("the merged save") { savedSpec?.pathVariables.first?.value == "7" }
+
+        XCTAssertEqual(savedSpec?.pathVariables.map(\.value), ["7", "9"])
+        XCTAssertEqual(editor.urlText, "https://x/users/:id/posts/:post", "Values never show in the bar")
+        editor.urlText = "https://x/users/:id"
+        XCTAssertEqual(editor.spec.pathVariables.map(\.key), ["id"])
+    }
+
     func testAnUndoneEditStillAdoptsAnExternalChangeThatArrivedMeanwhile() async throws {
         editor.spec.method = .post
         try changeExternally(HTTPRequestSpec(url: "https://external"))

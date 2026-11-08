@@ -4,7 +4,7 @@ Switch a request to WebSocket from the protocol menu in its header, and **Connec
 
 ## Handshake
 
-- **Like an HTTP request**, with its query, headers, auth (inherited from folders, API keys in the query included), and `{{variables}}`.
+- **Like an HTTP request**, with its query, [path variables](requests.md#building-a-request), headers, auth (inherited from folders, API keys in the query included), and `{{variables}}`.
 - **Cookies and certificates.** It uses the project's cookies, so a session from an earlier login carries over, and its client certificates and CAs.
 - **Options** holds subprotocols, the handshake's timeout, and Verify TLS.
 - **`Origin`** is an automatic header you can turn on in **Headers** when a server checks it.

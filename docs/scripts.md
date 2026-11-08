@@ -356,11 +356,12 @@ What happens to this request, and what a folder or project run runs next.
 The request as typed, `{{variables}}` unresolved.
 
 - `protocol: string`: `http`, `grpc`, or `websocket`.
-- `url: string`: The URL without its query, or a gRPC call's target.
+- `url: string`: The URL without its query, its `:name` path variables as written, or a gRPC call's target.
 - `method: string`: The HTTP method. *(HTTP only)*
 - `body: RequestBody | null`: The body as typed. *(HTTP only)*
 - `headers: Rows`: The headers, or a gRPC call's metadata.
 - `query: Rows`: The query parameters. *(HTTP and WebSocket only)*
+- `pathVariables: Rows`: The path variables: one per `:name` in the URL, with its value. *(HTTP and WebSocket only)*
 - `metadata: Rows`: The call's metadata. *(gRPC only)*
 - `service: string`: The call's service. *(gRPC only)*
 - `rpc: string`: The call's method. *(gRPC only)*
@@ -544,7 +545,7 @@ An HTTP request's body as typed.
 
 ### `Rows`
 
-Headers, query parameters, or metadata. Pre-request scripts can change them for this run.
+Headers, query parameters, path variables, or metadata. Pre-request scripts can change them for this run.
 
 - `get(name: string): string | null`: The first value with the name, or `undefined`; header names ignore case.
 - `has(name: string): boolean`: Whether an entry has the name.

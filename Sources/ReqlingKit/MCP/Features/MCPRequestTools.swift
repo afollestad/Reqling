@@ -128,7 +128,7 @@ struct MCPRequestTools {
             title: "Update request",
             description: "Changes a saved request. `spec` is a JSON merge patch on the spec get_request returns: objects merge, "
                 + "`null` resets a field to its default, and a list given replaces the list. In row lists (headers, query "
-                + "parameters, form fields, metadata, WebSocket messages) a row with an existing `id` keeps it and merges the "
+                + "parameters, path variables, form fields, metadata, WebSocket messages) a row with an existing `id` keeps it and merges the "
                 + "fields given, so "
                 + #"{"id": "…", "value": "new"} changes one value; a row without `id` is new; a row left out is removed. "#
                 + "Its protocol can't change.",

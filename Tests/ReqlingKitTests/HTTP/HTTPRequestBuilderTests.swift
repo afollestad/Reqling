@@ -15,7 +15,7 @@ final class HTTPRequestBuilderTests: XCTestCase {
         directory.remove()
     }
 
-    private func context(
+    func context(
         variables: [String: (String, Bool)] = [:],
         authChain: [HTTPAuth] = [.none],
         dynamic: DynamicVariables = .live

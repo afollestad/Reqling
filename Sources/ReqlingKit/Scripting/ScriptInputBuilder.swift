@@ -13,6 +13,7 @@ enum ScriptInputBuilder {
                 url: spec.url,
                 headers: rows(spec.headers),
                 query: rows(spec.queryParameters),
+                pathVariables: rows(spec.pathVariables),
                 body: body(spec.body)
             )
         case .grpc(let spec):
@@ -30,6 +31,7 @@ enum ScriptInputBuilder {
                 url: spec.url,
                 headers: rows(spec.headers),
                 query: rows(spec.queryParameters),
+                pathVariables: rows(spec.pathVariables),
                 messages: spec.messages.map(\.text)
             )
         }

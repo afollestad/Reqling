@@ -281,9 +281,10 @@ final class WebSocketEditorViewModel {
 
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. Each list
-    /// (query rows, headers, messages) merges row by row by ID (`ListMerge`), so a message an agent added survives an
-    /// edit to another. A field added to `WebSocketRequestSpec` or `WebSocketRequestOptions` must be listed here, or the
-    /// draft wins it unconditionally.
+    /// (query rows, path variables, headers, messages) merges row by row by ID (`ListMerge`), so a message an agent
+    /// added survives an edit to another; the result is normalized, since the URL and the path variable rows can come
+    /// from different sides. A field added to `WebSocketRequestSpec` or `WebSocketRequestOptions` must be listed here,
+    /// or the draft wins it unconditionally.
     private nonisolated static func merge(
         base: WebSocketRequestSpec,
         draft: WebSocketRequestSpec,
@@ -300,6 +301,7 @@ final class WebSocketEditorViewModel {
         }
         takeStored(\.url)
         mergeRows(\.queryParameters)
+        mergeRows(\.pathVariables)
         mergeRows(\.headers)
         takeStored(\.disabledAutoHeaders)
         takeStored(\.enabledAutoHeaders)
@@ -309,7 +311,7 @@ final class WebSocketEditorViewModel {
         takeStored(\.options.timeoutSeconds)
         takeStored(\.options.verifyTLS)
         takeStored(\.options.keepaliveSeconds)
-        return merged
+        return merged.normalized()
     }
 
     /// Whether the URL bar showing `text` already describes `spec`, i.e. applying it would change nothing.

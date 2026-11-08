@@ -6,6 +6,7 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 
 - **Protocol.** Switch any request between HTTP, gRPC, and WebSocket from the protocol menu in its header; its auth, headers, and host carry over.
 - **Methods.** Any, including custom ones such as `PURGE`. Methods that never carry a body (`GET`, `HEAD`, `TRACE`) keep the body you typed and send it again if you switch back.
+- **Path variables.** A path segment written `:name`, as in `/users/:id`, is a path variable: give it a value under **Params**, where each one the URL uses is listed below the query. The value can use `{{variables}}`, and it's encoded as one segment, so `a/b` goes out as `a%2Fb`. A request with an empty one isn't sent. A colon inside a segment (`/things:batchGet`) or in the host (`:8080`) is plain text.
 - **Bodies.** Raw with any Content-Type, form-data, x-www-form-urlencoded, binary, and GraphQL (a query and its variables, sent as the JSON body GraphQL servers expect).
 - **Auth.** Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
 - **Scripts.** JavaScript that runs before the request, on each event of an event stream, and after its response, in the **Scripts** tab ([Scripts](scripts.md)).

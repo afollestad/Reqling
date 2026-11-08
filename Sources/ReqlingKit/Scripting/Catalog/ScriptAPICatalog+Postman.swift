@@ -47,7 +47,7 @@ extension ScriptAPICatalog {
             .property("url", .named("PostmanURL"), "The URL and its query.").postman("rq.request.url"),
             .property("body", .optional(.named("PostmanBody")), "The body.", protocols: .http).postman("rq.request.body")
         ]),
-        ScriptType("PostmanList", "Headers or query parameters, as `{ key, value }`.", members: postmanListMembers),
+        ScriptType("PostmanList", "Headers, query parameters, or path variables, as `{ key, value }`.", members: postmanListMembers),
         // The keys `pm.js`'s `postmanRequestKeys` takes; it refuses any other, `auth` included.
         ScriptType("PostmanOutgoingRequest", "A request for `pm.sendRequest` to send.", members: [
             .property("url", .any, "The URL, or Postman's `{ raw }`.").postman("OutgoingRequest.url"),
@@ -69,6 +69,8 @@ extension ScriptAPICatalog {
                    members: postmanJarMembers),
         ScriptType("PostmanURL", "The URL.", members: [
             .property("query", .named("PostmanList"), "The query parameters.", protocols: .withQuery).postman("rq.request.query"),
+            .property("variables", .named("PostmanList"), "The path variables: one per `:name` in the URL.", protocols: .withQuery)
+                .postman("rq.request.pathVariables"),
             .method("toString", returns: .string, "The URL with its query.").postman("rq.request.url")
         ]),
         ScriptType("PostmanBody", "The body.", members: [

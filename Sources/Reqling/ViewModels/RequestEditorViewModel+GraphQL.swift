@@ -40,6 +40,7 @@ extension RequestEditorViewModel {
     static func changesGraphQLSchema(from old: HTTPRequestSpec, to new: HTTPRequestSpec) -> Bool {
         old.url != new.url
             || old.queryParameters != new.queryParameters
+            || old.pathVariables != new.pathVariables
             || old.headers != new.headers
             || old.auth != new.auth
             || old.options.verifyTLS != new.options.verifyTLS

@@ -105,6 +105,8 @@ struct TemplateField: View {
     @Binding var text: String
     var placeholder = ""
     var tokenContext: TemplateTokenContext = .empty
+    /// A URL bar's path variable rows, which highlights its `:name` segments; `nil` in every other field.
+    var pathVariables: [KeyValuePair]?
     var accessibilityLabel: String
     var onSubmit: (() -> Void)?
     var onPaste: ((String) -> Bool)?
@@ -117,6 +119,7 @@ struct TemplateField: View {
             text: $text,
             placeholder: placeholder,
             tokenContext: tokenContext,
+            pathVariables: pathVariables,
             accessibilityLabel: accessibilityLabel,
             onSubmit: onSubmit,
             onPaste: onPaste,
@@ -135,6 +138,7 @@ private struct SingleLineTextView: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var tokenContext: TemplateTokenContext
+    var pathVariables: [KeyValuePair]?
     var accessibilityLabel: String
     var onSubmit: (() -> Void)?
     var onPaste: ((String) -> Bool)?
@@ -175,6 +179,9 @@ private struct SingleLineTextView: NSViewRepresentable {
         scrollView.alphaValue = isEnabled ? 1 : CodeTextView.disabledAlpha
         textView.placeholder = placeholder
         textView.tokenContext = tokenContext
+        textView.pathVariables = pathVariables.map { rows in
+            Dictionary(rows.map { ($0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
+        }
         textView.accentColor = accent
         textView.onSubmit = onSubmit
         textView.onPaste = onPaste

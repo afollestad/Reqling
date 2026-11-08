@@ -43,7 +43,7 @@ public enum ScriptFlowRequest: Hashable, Sendable, Codable {
     case setNextRequest(String?)
 }
 
-/// One change a pre-request script makes to a header (or gRPC metadata entry) or query parameter.
+/// One change a pre-request script makes to a header (or gRPC metadata entry), query parameter, or path variable.
 public struct ScriptRequestChange: Hashable, Sendable, Codable {
     public enum Operation: String, Hashable, Sendable, Codable {
         /// Replaces the first entry with the name, dropping any others, or adds one.
@@ -56,6 +56,8 @@ public struct ScriptRequestChange: Hashable, Sendable, Codable {
     public enum Target: String, Hashable, Sendable, Codable {
         case header
         case query
+        /// The value of a `:name` the URL uses; a name it doesn't use is dropped when the request is built.
+        case pathVariable
     }
 
     public var operation: Operation
@@ -71,7 +73,8 @@ public struct ScriptRequestChange: Hashable, Sendable, Codable {
         self.value = value
     }
 
-    /// Whether `candidate` names the same entry: headers ignore case, as HTTP does; query parameters don't.
+    /// Whether `candidate` names the same entry: headers ignore case, as HTTP does; query parameters and path variables
+    /// don't.
     public func matches(_ candidate: String) -> Bool {
         target == .header ? candidate.caseInsensitiveCompare(name) == .orderedSame : candidate == name
     }

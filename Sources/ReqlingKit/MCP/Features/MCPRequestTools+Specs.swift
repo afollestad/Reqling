@@ -77,8 +77,9 @@ extension MCPRequestTools {
     }
 
     static let httpSpecSchema = MCPSchema.openObject(
-        "An HTTP spec: method, url (any query string moves into queryParameters), queryParameters and headers "
-            + #"([{"key", "value", "enabled"}]), body ({"mode": "none" | "raw" | "form-data" | "x-www-form-urlencoded" | "#
+        "An HTTP spec: method, url (any query string moves into queryParameters; a :name path segment is a path "
+            + #"variable), queryParameters and headers ([{"key", "value", "enabled"}]), pathVariables ([{"key", "value"}], "#
+            + #"one per :name), body ({"mode": "none" | "raw" | "form-data" | "x-www-form-urlencoded" | "#
             + #""binary" | "graphql", "raw": {"text", "contentType"}, "x-www-form-urlencoded": [{"key", "value"}], "graphql": "#
             + #"{"query", "variables", "operationName", "schema": {"type": "introspection"} (the default; null resets it) or "#
             + #"{"type": "file", "file": {"relative": "path"}} for a .graphql SDL or introspection .json file}}), "#
@@ -93,8 +94,9 @@ extension MCPRequestTools {
     )
 
     static let webSocketSpecSchema = MCPSchema.openObject(
-        #"A WebSocket spec: url ("ws://" or "wss://"; any query string moves into queryParameters), queryParameters and "#
-            + #"headers ([{"key", "value", "enabled"}]), subprotocols (strings, in preference order), messages "#
+        #"A WebSocket spec: url ("ws://" or "wss://"; any query string moves into queryParameters; a :name path segment "#
+            + #"is a path variable), queryParameters and headers ([{"key", "value", "enabled"}]), pathVariables "#
+            + #"([{"key", "value"}], one per :name), subprotocols (strings, in preference order), messages "#
             + #"([{"format": "text" | "binary", "text", "sendOnConnect"}]; binary is base64, and the checked ones go out "#
             + #"in order on connect), enabledAutoHeaders (["origin"] sends an Origin from the URL), auth, and options "#
             + #"({"timeoutSeconds", "verifyTLS", "keepaliveSeconds"}). Values may contain {{variables}}."#

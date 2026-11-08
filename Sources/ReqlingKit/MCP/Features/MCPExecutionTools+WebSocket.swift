@@ -104,7 +104,8 @@ extension MCPExecutionTools {
         [
             "request": try MCPJSON.encode(preview.request),
             "messages": .array(preview.messages.map { ["format": .string($0.format.rawValue), "text": .string($0.text)] }),
-            "unresolvedVariables": .array(preview.unresolvedVariables.map(Value.string))
+            "unresolvedVariables": .array(preview.unresolvedVariables.map(Value.string)),
+            "emptyPathVariables": .array(preview.emptyPathVariables.map(Value.string))
         ]
     }
 }

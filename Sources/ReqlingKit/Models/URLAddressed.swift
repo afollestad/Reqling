@@ -1,27 +1,38 @@
-/// A spec addressed by a URL whose query lives in a table, as HTTP's and WebSocket's are.
+import ReqlingScriptProtocol
+
+/// A spec addressed by a URL whose query and path variables live in tables, as HTTP's and WebSocket's are.
 ///
 /// `url` never carries a query string: `queryParameters` is the single source of truth, including disabled rows, and
 /// the editor shows the two joined. `normalized()` moves a pasted or externally written query into the table.
-public protocol QueryAddressed {
+///
+/// `url` does carry its path variables' names (`/pets/:petId`, read by `RequestPathVariables`), and `pathVariables`
+/// holds one row per name with its value. `normalized()` and `applyDisplayURL` keep the two in step, so nothing else
+/// adds or removes those rows.
+public protocol URLAddressed {
     var url: String { get set }
     var queryParameters: [KeyValuePair] { get set }
+    /// One row per `:name` segment of `url`, in the order the URL first uses each; `isEnabled` is always true, since a
+    /// segment can't be left out of a path.
+    var pathVariables: [KeyValuePair] { get set }
 }
 
-extension QueryAddressed {
+extension URLAddressed {
     /// Splits a query string out of `url` and appends its items to `queryParameters` as enabled rows. Item text is
     /// kept as written, percent-escapes included, so encoding happens once, when the request is built; only `+` is
     /// read as a space, as form-encoded queries mean it (`?q=a+b` searches for "a b").
     ///
     /// The new rows' IDs derive from their positions and text, so normalizing the same spec twice yields equal specs:
     /// editors normalize every stored spec they read, and a random ID would make each read look like a change elsewhere.
+    ///
+    /// It also gives `pathVariables` one row per `:name` the URL uses (`syncPathVariables()`).
     public func normalized() -> Self {
-        guard let (path, query) = Self.splitQuery(url) else {
-            return self
-        }
         var copy = self
-        copy.url = path
-        copy.queryParameters += Self.parseQuery(query)
-        copy.queryParameters.deriveIDs(at: queryParameters.count..<copy.queryParameters.count, name: Self.queryRowName)
+        if let (path, query) = Self.splitQuery(url) {
+            copy.url = path
+            copy.queryParameters += Self.parseQuery(query)
+            copy.queryParameters.deriveIDs(at: queryParameters.count..<copy.queryParameters.count, name: Self.queryRowName)
+        }
+        copy.syncPathVariables()
         return copy
     }
 
@@ -63,6 +74,36 @@ extension QueryAddressed {
         url = path
         let parsed = enabled.carryingIDs(into: Self.parseQuery(query), reserving: Set(disabled.map(\.id)), name: Self.queryRowName)
         queryParameters = parsed + disabled
+        syncPathVariables()
+    }
+
+    /// Makes `pathVariables` one row per name `url` uses, in its order. A row whose name the URL still uses keeps its
+    /// ID and value. When the URL drops as many names as it gains, as renaming `:petId` to `:id` in the bar does, the
+    /// rows it dropped pass their IDs and values to the names it gained, in order; otherwise a new name starts empty.
+    /// Rows already in step are left as they are, so normalizing twice yields equal specs.
+    mutating func syncPathVariables() {
+        let names = RequestPathVariables.names(in: url)
+        guard names != pathVariables.map(\.key) || pathVariables.contains(where: { !$0.isEnabled }) else {
+            return
+        }
+        let kept = Set(names)
+        var dropped = pathVariables.filter { !kept.contains($0.key) }[...]
+        let gained = names.filter { name in !pathVariables.contains { $0.key == name } }
+        let renames = dropped.count == gained.count
+        var rows: [KeyValuePair] = []
+        var unnamed: [Int] = []
+        for name in names {
+            if let row = pathVariables.first(where: { $0.key == name }) {
+                rows.append(KeyValuePair(id: row.id, key: name, value: row.value))
+            } else if renames, let row = dropped.popFirst() {
+                rows.append(KeyValuePair(id: row.id, key: name, value: row.value))
+            } else {
+                unnamed.append(rows.count)
+                rows.append(KeyValuePair(key: name, value: ""))
+            }
+        }
+        rows.deriveIDs(at: unnamed, name: Self.pathRowName)
+        pathVariables = rows
     }
 
     /// `url` before its `?`, and the query after it up to any `#fragment`; `nil` when there is no `?`.
@@ -80,6 +121,11 @@ extension QueryAddressed {
     /// What a query row parsed from text derives its ID from (`deriveIDs`).
     private static func queryRowName(_ index: Int, _ row: KeyValuePair) -> String {
         "query/\(index)/\(row.key)=\(row.value)"
+    }
+
+    /// What a path variable row made for a new name derives its ID from (`deriveIDs`).
+    private static func pathRowName(_ index: Int, _ row: KeyValuePair) -> String {
+        "path/\(index)/\(row.key)"
     }
 
     static func parseQuery(_ query: String) -> [KeyValuePair] {

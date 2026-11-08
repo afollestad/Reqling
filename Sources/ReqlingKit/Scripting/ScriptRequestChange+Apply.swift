@@ -1,12 +1,12 @@
 import Foundation
 import ReqlingScriptProtocol
 
-/// A pre-request script's header and query changes, applied for one run: to the request it sends, and to the masked
-/// record of what was sent, which marks the rows scripts touched.
+/// A pre-request script's header, query, and path variable changes, applied for one run: to the request it sends, and
+/// to the masked record of what was sent, which marks the rows scripts touched.
 extension RequestKind {
-    /// The request with a pre-request script's header and query changes applied, for this run only. Changes reach only
-    /// enabled rows, the ones a script saw; removing a header also turns off Reqling's automatic one by that name, so
-    /// `remove("User-Agent")` does what it says.
+    /// The request with a pre-request script's header, query, and path variable changes applied, for this run only.
+    /// Changes reach only enabled rows, the ones a script saw; removing a header also turns off Reqling's automatic one
+    /// by that name, so `remove("User-Agent")` does what it says.
     func applying(_ changes: [ScriptRequestChange]) -> RequestKind {
         guard !changes.isEmpty else {
             return self
@@ -15,6 +15,7 @@ extension RequestKind {
         case .http(var spec):
             spec.headers = Self.apply(changes, target: .header, to: spec.headers)
             spec.queryParameters = Self.apply(changes, target: .query, to: spec.queryParameters)
+            spec.pathVariables = Self.apply(changes, target: .pathVariable, to: spec.pathVariables)
             spec.disabledAutoHeaders = Self.disabling(changes, in: spec.disabledAutoHeaders)
             return .http(spec)
         case .grpc(var spec):
@@ -23,6 +24,7 @@ extension RequestKind {
         case .webSocket(var spec):
             spec.headers = Self.apply(changes, target: .header, to: spec.headers)
             spec.queryParameters = Self.apply(changes, target: .query, to: spec.queryParameters)
+            spec.pathVariables = Self.apply(changes, target: .pathVariable, to: spec.pathVariables)
             spec.disabledAutoHeaders = Self.disabling(changes, in: spec.disabledAutoHeaders)
             return .webSocket(spec)
         }
@@ -57,6 +59,7 @@ extension PreparedHTTPRequest {
         let written = changes.filter { $0.operation != .remove }
         let headers = Set(written.filter { $0.target == .header }.map { $0.name.lowercased() })
         let query = Set(written.filter { $0.target == .query }.map(\.name))
+        let writesURL = written.contains { $0.target != .header }
         for index in summary.headers.indices where headers.contains(summary.headers[index].key.lowercased()) {
             let masked = redaction.apply(summary.headers[index].value)
             if masked != summary.headers[index].value {
@@ -64,7 +67,7 @@ extension PreparedHTTPRequest {
                 credentialHeaderNames.insert(summary.headers[index].key.lowercased())
             }
         }
-        if !query.isEmpty, let url = URL(string: summary.url) {
+        if writesURL, let url = URL(string: summary.url) {
             summary.url = redaction.apply(to: url)
         }
         summary.scriptChangedHeaders = headers.isEmpty ? nil : headers.sorted()

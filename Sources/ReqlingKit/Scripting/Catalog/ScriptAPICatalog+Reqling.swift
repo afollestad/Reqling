@@ -28,7 +28,7 @@ extension ScriptAPICatalog {
         variableType("Globals", "The Global environment's variables, which every project shares.", source: .globals, named: true),
         variableType("Variables", "Every variable as `{{name}}` resolves it; values set here last only for this run.", source: .all, named: false),
         ScriptType("Request", "The request as typed, `{{variables}}` unresolved.", members: requestMembers),
-        rowsType("Rows", "Headers, query parameters, or metadata. Pre-request scripts can change them for this run.", mutable: true),
+        rowsType("Rows", "Headers, query parameters, path variables, or metadata. Pre-request scripts can change them for this run.", mutable: true),
         rowsType("ReadonlyRows", "Headers, metadata, or trailers.", mutable: false),
         ScriptType("Row", "One header, query parameter, or metadata entry.", members: [
             .property("name", .string, "Its name."),
@@ -157,11 +157,13 @@ extension ScriptAPICatalog {
 
     private static let requestMembers: [ScriptMember] = [
         .property("protocol", .string, "`http`, `grpc`, or `websocket`."),
-        .property("url", .string, "The URL without its query, or a gRPC call's target."),
+        .property("url", .string, "The URL without its query, its `:name` path variables as written, or a gRPC call's target."),
         .property("method", .string, "The HTTP method.", protocols: .http),
         .property("body", .optional(.named("RequestBody")), "The body as typed.", protocols: .http),
         .property("headers", .named("Rows"), "The headers, or a gRPC call's metadata."),
         .property("query", .named("Rows"), "The query parameters.", protocols: .withQuery),
+        .property("pathVariables", .named("Rows"), "The path variables: one per `:name` in the URL, with its value.",
+                  protocols: .withQuery),
         .property("metadata", .named("Rows"), "The call's metadata.", protocols: [.grpc]),
         .property("service", .string, "The call's service.", protocols: [.grpc]),
         .property("rpc", .string, "The call's method.", protocols: [.grpc]),

@@ -7,7 +7,7 @@ import ReqlingTemplating
 /// the helper runs: a stream's items, and what each request a script sent got back.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 6
+    public static let currentProtocolVersion = 7
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
@@ -122,17 +122,20 @@ public struct ScriptRow: Hashable, Sendable, Codable {
 }
 
 /// The request as a script sees it: the template, `{{variables}}` unresolved, with only enabled rows. Pre-request
-/// scripts change headers and query parameters through `ScriptRequestChange`, which later levels see here.
+/// scripts change headers, query parameters, and path variables through `ScriptRequestChange`, which later levels see
+/// here.
 public struct ScriptRequestSnapshot: Hashable, Sendable, Codable {
     /// `http`, `grpc`, or `websocket`.
     public var protocolName: String
     public var method: String?
-    /// The URL without its query (HTTP and WebSocket), or the target (gRPC).
+    /// The URL without its query, its `:name` path variables as written (HTTP and WebSocket), or the target (gRPC).
     public var url: String
     /// Headers, or a gRPC call's metadata.
     public var headers: [ScriptRow]
     /// Empty for gRPC, which has none.
     public var query: [ScriptRow]
+    /// One row per `:name` in `url`, with its value as typed; empty for gRPC.
+    public var pathVariables: [ScriptRow]
     public var body: ScriptRequestBody?
     /// A gRPC call's service and method.
     public var service: String?
@@ -146,6 +149,7 @@ public struct ScriptRequestSnapshot: Hashable, Sendable, Codable {
         url: String,
         headers: [ScriptRow] = [],
         query: [ScriptRow] = [],
+        pathVariables: [ScriptRow] = [],
         body: ScriptRequestBody? = nil,
         service: String? = nil,
         rpc: String? = nil,
@@ -156,6 +160,7 @@ public struct ScriptRequestSnapshot: Hashable, Sendable, Codable {
         self.url = url
         self.headers = headers
         self.query = query
+        self.pathVariables = pathVariables
         self.body = body
         self.service = service
         self.rpc = rpc

@@ -12,13 +12,11 @@ extension PostmanPlanner {
         let request = item["request"]
         if let url = request?.string {
             // A request given as its URL alone is a GET.
-            spec.url = url
-            spec = spec.normalized()
-            spec.url = pathVariables(in: Self.withoutFragment(spec.url), values: [], owner: owner)
+            Self.setURL(.string(url), of: &spec)
         } else if let request {
             let method = request["method"]?.string?.trimmingCharacters(in: .whitespaces) ?? ""
             spec.method = HTTPMethod(rawValue: method.isEmpty ? "GET" : method)
-            (spec.url, spec.queryParameters) = url(request["url"], owner: owner)
+            Self.setURL(request["url"], of: &spec)
             spec.headers = Self.headers(request["header"])
             body(request["body"], into: &spec, request: id, owner: owner, sendsDespiteMethod: profile["disableBodyPruning"]?.bool == true)
             spec.auth = auth(request["auth"], owner: owner, inheritedByDefault: true)
@@ -31,26 +29,33 @@ extension PostmanPlanner {
 
     // MARK: - URL
 
-    /// The URL without its query, and the query as rows. Postman's `query` list keeps the rows it turned off, which
-    /// `raw` leaves out, so it's the source when there is one.
-    private mutating func url(_ url: PostmanJSON?, owner: PostmanImportNote.Owner) -> (String, [KeyValuePair]) {
+    /// The spec's URL without its query or fragment, its query as rows, and a path variable row for each `:name`
+    /// segment, with the value Postman gave it. Postman's `query` list keeps the rows it turned off, which `raw` leaves
+    /// out, so it's the source when there is one.
+    private static func setURL(_ url: PostmanJSON?, of spec: inout HTTPRequestSpec) {
         guard let url else {
-            return ("", [])
+            return
         }
+        var values: [KeyValuePair] = []
         if let raw = url.string {
-            var spec = HTTPRequestSpec(url: raw).normalized()
-            spec.url = pathVariables(in: Self.withoutFragment(spec.url), values: [], owner: owner)
-            return (spec.url, spec.queryParameters)
+            spec.url = raw
+        } else {
+            let raw = url["raw"]?.string ?? rebuilt(url)
+            values = rows(url["variable"]).filter(\.isEnabled)
+            if let query = url["query"]?.array {
+                spec.url = raw.firstIndex(of: "?").map { String(raw[..<$0]) } ?? raw
+                spec.queryParameters = rows(.array(query))
+            } else {
+                spec.url = raw
+            }
         }
-        let raw = url["raw"]?.string ?? Self.rebuilt(url)
-        let values = Self.rows(url["variable"]).filter(\.isEnabled)
-        guard let query = url["query"]?.array else {
-            var spec = HTTPRequestSpec(url: raw).normalized()
-            spec.url = pathVariables(in: Self.withoutFragment(spec.url), values: values, owner: owner)
-            return (spec.url, spec.queryParameters)
+        spec = spec.normalized()
+        // Normalizing split off the query, which ends at a fragment; one left without a query goes here.
+        spec.url = withoutFragment(spec.url)
+        spec = spec.normalized()
+        for index in spec.pathVariables.indices {
+            spec.pathVariables[index].value = values.last { $0.key == spec.pathVariables[index].key }?.value ?? ""
         }
-        let base = raw.firstIndex(of: "?").map { String(raw[..<$0]) } ?? raw
-        return (pathVariables(in: Self.withoutFragment(base), values: values, owner: owner), Self.rows(.array(query)))
     }
 
     /// A URL from Postman's parts, for an export that gives no `raw`.
@@ -67,32 +72,6 @@ extension PostmanPlanner {
     /// A fragment never goes out with a request, so it's dropped rather than kept where it reads as part of the path.
     private static func withoutFragment(_ url: String) -> String {
         url.firstIndex(of: "#").map { String(url[..<$0]) } ?? url
-    }
-
-    /// The URL with each `:name` path segment written as `{{name}}`, since Reqling has no path variables. Postman's
-    /// value for it is noted rather than kept: requests that share a name usually give it different values, which one
-    /// environment couldn't hold.
-    private mutating func pathVariables(in url: String, values: [KeyValuePair], owner: PostmanImportNote.Owner) -> String {
-        // The authority (`host:port`) ends at the first `/` after the scheme, or at the first `/` when there is none.
-        let authorityStart = url.range(of: "://")?.upperBound ?? url.startIndex
-        guard let pathStart = url[authorityStart...].firstIndex(of: "/") else {
-            return url
-        }
-        var segments = url[pathStart...].split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        for index in segments.indices {
-            let segment = segments[index]
-            guard segment.count > 1, segment.hasPrefix(":") else {
-                continue
-            }
-            let name = String(segment.dropFirst())
-            segments[index] = "{{\(name)}}"
-            let given = values.last { $0.key == name }?.value ?? ""
-            let message = given.isEmpty
-                ? "The URL's :\(name) is {{\(name)}} now, since Reqling has no path variables; define “\(name)” in an environment."
-                : "The URL's :\(name) is {{\(name)}} now, since Reqling has no path variables; Postman gave it “\(given)”."
-            note(owner, .url, message)
-        }
-        return String(url[..<pathStart]) + segments.joined(separator: "/")
     }
 
     // MARK: - Rows

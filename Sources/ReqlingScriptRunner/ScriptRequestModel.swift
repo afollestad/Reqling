@@ -17,7 +17,11 @@ final class ScriptRequestModel {
     }
 
     func rows(_ target: ScriptRequestChange.Target) -> [ScriptRow] {
-        target == .header ? snapshot.headers : snapshot.query
+        switch target {
+        case .header: snapshot.headers
+        case .query: snapshot.query
+        case .pathVariable: snapshot.pathVariables
+        }
     }
 
     func apply(_ change: ScriptRequestChange) throws(ScriptFailure) {
@@ -25,19 +29,28 @@ final class ScriptRequestModel {
             throw ScriptFailure("Only pre-request scripts can change the request.")
         }
         guard change.target == .header || snapshot.protocolName != "grpc" else {
-            throw ScriptFailure("A gRPC call has no query parameters; change rq.request.metadata instead.")
+            let what = change.target == .query ? "query parameters" : "path variables"
+            throw ScriptFailure("A gRPC call has no \(what); change rq.request.metadata instead.")
         }
         guard !change.name.isEmpty else {
-            throw ScriptFailure("A \(change.target == .header ? "header" : "query parameter") needs a name.")
+            let what = switch change.target {
+            case .header: "header"
+            case .query: "query parameter"
+            case .pathVariable: "path variable"
+            }
+            throw ScriptFailure("A \(what) needs a name.")
         }
         guard changes < limits.requestChanges else {
             throw ScriptFailure("Scripts can change the request at most \(limits.requestChanges) times.")
         }
         changes += 1
-        if change.target == .header {
+        switch change.target {
+        case .header:
             change.apply(to: &snapshot.headers, name: \.name, setValue: { $0.value = $1 }, make: ScriptRow.init)
-        } else {
+        case .query:
             change.apply(to: &snapshot.query, name: \.name, setValue: { $0.value = $1 }, make: ScriptRow.init)
+        case .pathVariable:
+            change.apply(to: &snapshot.pathVariables, name: \.name, setValue: { $0.value = $1 }, make: ScriptRow.init)
         }
         events.write(.request(change))
     }

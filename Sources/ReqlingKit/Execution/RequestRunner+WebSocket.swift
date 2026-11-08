@@ -312,6 +312,8 @@ public struct WebSocketRequestPreview: Sendable {
     /// The on-connect messages in order, masked: text as resolved, binary as its base64.
     public let messages: [(format: WebSocketMessageFormat, text: String)]
     public let unresolvedVariables: [String]
+    /// The handshake URL's path variables that have no value (`PreparedHTTPRequest.emptyPathVariables`).
+    public let emptyPathVariables: [String]
     /// What the pre-request scripts the preview ran did; `nil` when none would run.
     public let scriptReport: ScriptReport?
 }
@@ -352,6 +354,7 @@ extension RequestRunner {
             request: summary,
             messages: messages,
             unresolvedVariables: prepared.unresolvedVariables + templates.unresolved.filter { !prepared.unresolvedVariables.contains($0) },
+            emptyPathVariables: prepared.emptyPathVariables,
             scriptReport: session?.shownReport
         )
     }

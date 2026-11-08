@@ -56,11 +56,13 @@
   function buildRequest() {
     const request = rq.request;
     const query = request.query ? postmanList(request.query) : undefined;
+    const variables = request.pathVariables ? postmanList(request.pathVariables) : undefined;
     return Object.freeze({
       method: request.method,
       headers: postmanList(request.headers),
       url: Object.freeze({
         query,
+        variables,
         toString() {
           const pairs = request.query ? request.query.all() : [];
           return pairs.length === 0 ? request.url : `${request.url}?${pairs.map(({ name, value }) => `${name}=${value}`).join('&')}`;

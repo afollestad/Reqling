@@ -91,7 +91,7 @@ struct MCPExecutionTools {
             "resolve_request",
             title: "Preview resolved request",
             description: "What a saved request would send, {{variables}} resolved and secrets masked, without sending it. Its "
-                + "pre-request scripts run, but nothing they set is kept. Lists any undefined variables.",
+                + "pre-request scripts run, but nothing they set is kept. Lists any undefined variables and empty path variables.",
             properties: [
                 "project": MCPSchema.project,
                 "request": MCPSchema.request,
@@ -114,7 +114,8 @@ struct MCPExecutionTools {
                     let preview = try await context.runner.previewHTTP(request.id, in: project.id, options: options)
                     description = [
                         "request": try MCPJSON.encode(preview.prepared.summary),
-                        "unresolvedVariables": .array(preview.prepared.unresolvedVariables.map(Value.string))
+                        "unresolvedVariables": .array(preview.prepared.unresolvedVariables.map(Value.string)),
+                        "emptyPathVariables": .array(preview.prepared.emptyPathVariables.map(Value.string))
                     ]
                     report = preview.scriptReport
                 case .grpc:

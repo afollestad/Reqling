@@ -30,6 +30,13 @@ final class CurlCodecTests: XCTestCase {
         XCTAssertTrue(imported.warnings.isEmpty)
     }
 
+    func testAPathVariableSegmentGetsAnEmptyRow() throws {
+        let imported = try CurlCodec.importCommand("curl 'https://api.example.com/users/:id?x=1'")
+
+        XCTAssertEqual(imported.spec.url, "https://api.example.com/users/:id")
+        XCTAssertEqual(imported.spec.pathVariables.unidentified, [KeyValuePair(key: "id", value: "")].unidentified)
+    }
+
     func testBundledSwitchesAttachedValuesAndCurlDefaults() throws {
         let imported = try CurlCodec.importCommand("curl -sSLk -XPUT -uada:pw -d a=1 -d b=2 --max-time=5 example.com/x")
 

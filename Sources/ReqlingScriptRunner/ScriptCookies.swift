@@ -135,15 +135,24 @@ final class ScriptCookies {
         }
     }
 
-    /// A gRPC call is sent to no URL, so only `rq.cookies.for` reaches the jar from its scripts.
+    /// A gRPC call is sent to no URL, so only `rq.cookies.for` reaches the jar from its scripts. Path variables are
+    /// substituted as `HTTPRequestBuilder` does, each value resolved and then encoded, so the scope has the path the
+    /// request is sent to.
     private func requestScope() throws(ScriptFailure) -> ScriptCookieScope {
         guard request.snapshot.protocolName != "grpc" else {
             throw ScriptFailure("A gRPC call has no URL for cookies; use rq.cookies.for(url).")
         }
-        let resolved = variables.resolve(request.snapshot.url)
-        guard resolved.unresolved.isEmpty else {
+        var unresolved: [String] = []
+        let url = RequestPathVariables.substituting(in: request.snapshot.url) { name in
+            let value = variables.resolve(request.snapshot.pathVariables.first { $0.name == name }?.value ?? "")
+            unresolved += value.unresolved.filter { !unresolved.contains($0) }
+            return value.value.isEmpty ? nil : RequestPathVariables.encoded(value.value)
+        }
+        let resolved = variables.resolve(url)
+        unresolved += resolved.unresolved.filter { !unresolved.contains($0) }
+        guard unresolved.isEmpty else {
             throw ScriptFailure(
-                "This request's URL uses \(Self.names(resolved.unresolved)), which isn't defined, so it has no cookies; use rq.cookies.for(url)."
+                "This request's URL uses \(Self.names(unresolved)), which isn't defined, so it has no cookies; use rq.cookies.for(url)."
             )
         }
         do {

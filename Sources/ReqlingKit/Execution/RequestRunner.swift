@@ -407,7 +407,7 @@ public final class RequestRunner {
     }
 
     /// An HTTP spec's request built as a run builds it: normalized, with templates and auth resolved, refusing
-    /// unresolved variables unless `options` allows them.
+    /// unresolved variables and empty path variables unless `options` allows them.
     func preparedHTTP(_ spec: HTTPRequestSpec, context: RunContext, options: RunOptions) throws(RunFailure) -> PreparedHTTPRequest {
         let spec = spec.normalized()
         let buildContext = HTTPBuildContext(
@@ -425,6 +425,9 @@ public final class RequestRunner {
         }
         if !options.allowUnresolved, !prepared.unresolvedVariables.isEmpty {
             throw RunFailure.undefinedVariables(prepared.unresolvedVariables)
+        }
+        if !options.allowUnresolved, !prepared.emptyPathVariables.isEmpty {
+            throw RunFailure.emptyPathVariables(prepared.emptyPathVariables)
         }
         return prepared
     }

@@ -59,6 +59,7 @@ struct WebSocketURLBar: View {
                 text: $editor.urlText,
                 placeholder: "wss://echo.example.com/{{path}}",
                 tokenContext: editor.tokenContext,
+                pathVariables: editor.spec.pathVariables,
                 accessibilityLabel: "URL",
                 onSubmit: { editor.send() }
             )

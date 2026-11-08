@@ -1,10 +1,11 @@
-/// Everything needed to open one WebSocket connection, with `{{variables}}` still unresolved. Its URL and query follow
-/// `QueryAddressed`, and its handshake is an HTTP GET (`handshake`), so auth, headers, and automatic headers behave as
-/// an HTTP request's do.
-public struct WebSocketRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
+/// Everything needed to open one WebSocket connection, with `{{variables}}` still unresolved. Its URL, query, and
+/// path variables follow `URLAddressed`, and its handshake is an HTTP GET (`handshake`), so auth, headers, and
+/// automatic headers behave as an HTTP request's do.
+public struct WebSocketRequestSpec: Hashable, Sendable, Codable, URLAddressed {
     /// `ws://` or `wss://`. `http(s)://` maps to `ws(s)://`, and a URL with no scheme is `ws://`, as browsers allow.
     public var url: String
     public var queryParameters: [KeyValuePair]
+    public var pathVariables: [KeyValuePair]
     public var headers: [KeyValuePair]
     /// Lower-cased names of on-by-default automatic headers (such as `user-agent`) the user turned off.
     public var disabledAutoHeaders: [String]
@@ -20,6 +21,7 @@ public struct WebSocketRequestSpec: Hashable, Sendable, Codable, QueryAddressed 
     public init(
         url: String = "",
         queryParameters: [KeyValuePair] = [],
+        pathVariables: [KeyValuePair] = [],
         headers: [KeyValuePair] = [],
         disabledAutoHeaders: [String] = [],
         enabledAutoHeaders: [String] = [],
@@ -30,6 +32,7 @@ public struct WebSocketRequestSpec: Hashable, Sendable, Codable, QueryAddressed 
     ) {
         self.url = url
         self.queryParameters = queryParameters
+        self.pathVariables = pathVariables
         self.headers = headers
         self.disabledAutoHeaders = disabledAutoHeaders
         self.enabledAutoHeaders = enabledAutoHeaders
@@ -45,13 +48,14 @@ public struct WebSocketRequestSpec: Hashable, Sendable, Codable, QueryAddressed 
     }
 
     private enum CodingKeys: String, CodingKey {
-        case url, queryParameters, headers, disabledAutoHeaders, enabledAutoHeaders, subprotocols, messages, auth, options
+        case url, queryParameters, pathVariables, headers, disabledAutoHeaders, enabledAutoHeaders, subprotocols, messages, auth, options
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
         queryParameters = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .queryParameters) ?? []
+        pathVariables = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .pathVariables) ?? []
         headers = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .headers) ?? []
         disabledAutoHeaders = try container.decodeIfPresent([String].self, forKey: .disabledAutoHeaders) ?? []
         enabledAutoHeaders = try container.decodeIfPresent([String].self, forKey: .enabledAutoHeaders) ?? []
@@ -66,6 +70,9 @@ public struct WebSocketRequestSpec: Hashable, Sendable, Codable, QueryAddressed 
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(url, forKey: .url)
         try container.encode(queryParameters, forKey: .queryParameters)
+        if !pathVariables.isEmpty {
+            try container.encode(pathVariables, forKey: .pathVariables)
+        }
         try container.encode(headers, forKey: .headers)
         if !disabledAutoHeaders.isEmpty {
             try container.encode(disabledAutoHeaders, forKey: .disabledAutoHeaders)

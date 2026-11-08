@@ -1,5 +1,6 @@
 import AppKit
 import ReqlingKit
+import ReqlingScriptProtocol
 import ReqlingTemplating
 
 /// The text view behind `CodeEditor` and `TemplateField`, on TextKit 2.
@@ -25,6 +26,17 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
             }
         }
     }
+    /// A URL bar's path variable values by name, which its `:name` segments are colored and explained with
+    /// (`CodeTextView+PathVariables`); `nil` in every other field, where a colon means nothing.
+    var pathVariables: [String: String]? {
+        didSet {
+            if pathVariables != oldValue {
+                refreshHighlighting()
+            }
+        }
+    }
+    /// The `:name` segments `pathVariables` colors, as of the last highlight.
+    var pathVariableSegments: [RequestPathVariables.Segment] = []
     /// What resolved pills draw in: the SwiftUI `appAccent` the hosting representable passes down.
     var accentColor: NSColor = .controlAccentColor {
         didSet {
@@ -188,6 +200,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
                 layoutManager.addRenderingAttribute(.foregroundColor, value: color, for: range)
             }
         }
+        colorPathVariables(in: layoutManager)
         // Text edits recreate the fragments they touch; `rebuildPills` recreates the rest when token states change.
         layoutManager.invalidateLayout(for: contentStorage.documentRange)
         needsDisplay = true
@@ -269,15 +282,6 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
 
     // MARK: - Tooltips
 
-    private func refreshToolTips() {
-        removeAllToolTips()
-        for token in templateTokens {
-            for rect in segmentRects(for: token.utf16Range) {
-                addToolTip(rect, owner: self, userData: nil)
-            }
-        }
-    }
-
     /// A multi-line editor is created at zero width and re-wraps on every resize, either of which moves the pills off
     /// the rectangles `refreshToolTips` registered; rebuild them once the new width is laid out.
     override func setFrameSize(_ newSize: NSSize) {
@@ -286,7 +290,7 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
         if widthChanged {
             dismissCompletions()
         }
-        if widthChanged, !templateTokens.isEmpty {
+        if widthChanged, !templateTokens.isEmpty || !pathVariableSegments.isEmpty {
             needsToolTipRefresh = true
             needsLayout = true
         }
@@ -308,13 +312,6 @@ final class CodeTextView: NSTextView, @preconcurrency NSTextLayoutManagerDelegat
             needsToolTipRefresh = false
             refreshToolTips()
         }
-    }
-
-    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
-        let token = templateTokens.first { token in
-            segmentRects(for: token.utf16Range).contains { $0.insetBy(dx: -2, dy: -2).contains(point) }
-        }
-        return token.map(tokenContext.tooltip(for:)) ?? ""
     }
 
     // MARK: - Editing

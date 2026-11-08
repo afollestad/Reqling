@@ -282,9 +282,10 @@ final class RequestEditorViewModel {
     /// A three-way merge: each field the draft changed since `base` keeps the draft's value, and every other field
     /// takes the stored one, so a change made elsewhere survives unless the draft changed the same field. The body and
     /// options merge per subfield (switching body mode keeps a raw text edited elsewhere; editing a GraphQL query keeps
-    /// a schema source chosen elsewhere), and each list (query rows,
+    /// a schema source chosen elsewhere), and each list (query rows, path variables,
     /// headers, form fields) row by row by ID (`ListMerge`), so a header removed elsewhere stays removed unless the
-    /// draft edited it. The auth is one field. A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions`
+    /// draft edited it. The result is normalized, since the URL and the path variable rows can come from different
+    /// sides. The auth is one field. A field added to `HTTPRequestSpec`, `HTTPBody`, or `HTTPRequestOptions`
     /// (or `GraphQLBody`) must be listed here, or the draft wins it unconditionally.
     private nonisolated static func merge(base: HTTPRequestSpec, draft: HTTPRequestSpec, stored: HTTPRequestSpec) -> HTTPRequestSpec {
         var merged = draft
@@ -299,6 +300,7 @@ final class RequestEditorViewModel {
         takeStored(\.method)
         takeStored(\.url)
         mergeRows(\.queryParameters)
+        mergeRows(\.pathVariables)
         mergeRows(\.headers)
         takeStored(\.disabledAutoHeaders)
         takeStored(\.body.mode)
@@ -314,7 +316,7 @@ final class RequestEditorViewModel {
         takeStored(\.options.timeoutSeconds)
         takeStored(\.options.followRedirects)
         takeStored(\.options.verifyTLS)
-        return merged
+        return merged.normalized()
     }
 
     /// Whether the URL bar showing `text` already describes `spec`, i.e. applying it would change nothing.

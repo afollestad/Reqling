@@ -32,6 +32,15 @@ extension SnapshotTests {
         try assertEditor(\.listUsers, tab: .params)
     }
 
+    /// `:name` segments colored by whether their row has a value, and the Path variables table below the query.
+    func testEditorPathVariables() throws {
+        try assertEditor(\.listUsers, tab: .params, spec: HTTPRequestSpec(
+            url: "{{baseUrl}}/orgs/:org/users/:userId",
+            queryParameters: [KeyValuePair(key: "page", value: "2")],
+            pathVariables: [KeyValuePair(key: "org", value: "reqling"), KeyValuePair(key: "userId", value: "")]
+        ))
+    }
+
     func testEditorHeadersWithAutomaticHeaders() throws {
         try assertEditor(\.createUser, tab: .headers, spec: HTTPRequestSpec(
             method: .post,

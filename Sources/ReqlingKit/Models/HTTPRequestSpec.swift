@@ -1,9 +1,10 @@
-/// Everything needed to build one HTTP request, with `{{variables}}` still unresolved. Its URL and query follow
-/// `QueryAddressed`.
-public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
+/// Everything needed to build one HTTP request, with `{{variables}}` still unresolved. Its URL, query, and path
+/// variables follow `URLAddressed`.
+public struct HTTPRequestSpec: Hashable, Sendable, Codable, URLAddressed {
     public var method: HTTPMethod
     public var url: String
     public var queryParameters: [KeyValuePair]
+    public var pathVariables: [KeyValuePair]
     public var headers: [KeyValuePair]
     /// Lower-cased names of automatic headers (such as `user-agent`) the user turned off.
     public var disabledAutoHeaders: [String]
@@ -15,6 +16,7 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
         method: HTTPMethod = .get,
         url: String = "",
         queryParameters: [KeyValuePair] = [],
+        pathVariables: [KeyValuePair] = [],
         headers: [KeyValuePair] = [],
         disabledAutoHeaders: [String] = [],
         body: HTTPBody = HTTPBody(),
@@ -24,6 +26,7 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
         self.method = method
         self.url = url
         self.queryParameters = queryParameters
+        self.pathVariables = pathVariables
         self.headers = headers
         self.disabledAutoHeaders = disabledAutoHeaders
         self.body = body
@@ -35,6 +38,7 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
         case method
         case url
         case queryParameters
+        case pathVariables
         case headers
         case disabledAutoHeaders
         case body
@@ -47,6 +51,7 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
         method = try container.decodeIfPresent(HTTPMethod.self, forKey: .method) ?? .get
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
         queryParameters = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .queryParameters) ?? []
+        pathVariables = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .pathVariables) ?? []
         headers = try container.decodeRowsIfPresent([KeyValuePair].self, forKey: .headers) ?? []
         disabledAutoHeaders = try container.decodeIfPresent([String].self, forKey: .disabledAutoHeaders) ?? []
         body = try container.decodeIfPresent(HTTPBody.self, forKey: .body) ?? HTTPBody()
@@ -59,6 +64,9 @@ public struct HTTPRequestSpec: Hashable, Sendable, Codable, QueryAddressed {
         try container.encode(method, forKey: .method)
         try container.encode(url, forKey: .url)
         try container.encode(queryParameters, forKey: .queryParameters)
+        if !pathVariables.isEmpty {
+            try container.encode(pathVariables, forKey: .pathVariables)
+        }
         try container.encode(headers, forKey: .headers)
         if !disabledAutoHeaders.isEmpty {
             try container.encode(disabledAutoHeaders, forKey: .disabledAutoHeaders)

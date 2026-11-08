@@ -48,6 +48,9 @@ public struct PreparedHTTPRequest: Sendable {
     public var followRedirects: Bool
     public var verifyTLS: Bool
     public var unresolvedVariables: [String]
+    /// The path variables whose value resolved empty, by name, so the URL kept their `:name`; a run refuses to send
+    /// them (`RunFailure.emptyPathVariables`), as it does unresolved variables.
+    public var emptyPathVariables: [String] = []
     /// Lower-cased names of the headers that carry credentials: the auth's (an API key's header, `Authorization`) and
     /// any whose name or value uses a secret variable. `HTTPExecutor` strips them, with `Cookie`, before following a
     /// redirect to another origin.
@@ -144,6 +147,7 @@ public enum HTTPRequestBuilder {
             followRedirects: spec.options.followRedirects ?? context.defaults.followRedirects,
             verifyTLS: spec.options.verifyTLS ?? context.defaults.verifyTLS,
             unresolvedVariables: built.unresolved,
+            emptyPathVariables: built.emptyPathVariables,
             credentialHeaderNames: built.credentialHeaderNames,
             summary: ResolvedHTTPRequest(
                 method: spec.method.rawValue,
@@ -167,7 +171,7 @@ public enum HTTPRequestBuilder {
     }
 
     /// One template's text for the wire and for the summary, from the same resolution.
-    private struct Resolved {
+    struct Resolved {
         var sent: String
         var shown: String
 
@@ -198,10 +202,11 @@ public enum HTTPRequestBuilder {
         var headers: [Header]
         var body: Body?
         var unresolved: [String]
+        var emptyPathVariables: [String]
         var credentialHeaderNames: Set<String>
     }
 
-    private typealias Resolve = (String) throws(HTTPBuildError) -> Resolved
+    typealias Resolve = (String) throws(HTTPBuildError) -> Resolved
 
     private static func build(_ spec: HTTPRequestSpec, context: HTTPBuildContext, boundary: String) throws(HTTPBuildError) -> Built {
         guard spec.method.isValid else {
@@ -231,6 +236,7 @@ public enum HTTPRequestBuilder {
             headers: headers,
             body: body,
             unresolved: unresolved,
+            emptyPathVariables: urls.emptyPathVariables,
             credentialHeaderNames: Set((auth.headers + secretHeaders).map { $0.name.sent.lowercased() })
         )
     }
@@ -257,30 +263,6 @@ public enum HTTPRequestBuilder {
         case .apiKey(let name, let value, .query):
             return ([], [KeyValuePair(key: name, value: value)])
         }
-    }
-
-    /// The URL to send, and the masked one to show. Only the sent URL must parse; a failure reports the masked text,
-    /// since the sent one may carry a secret.
-    private static func buildURLs(
-        _ spec: HTTPRequestSpec,
-        authQuery: [KeyValuePair],
-        resolve: Resolve
-    ) throws(HTTPBuildError) -> (sent: URL, shown: String) {
-        let text = try resolve(spec.url)
-        var query: [(name: Resolved, value: Resolved)] = []
-        for item in spec.queryParameters.filter({ $0.isEnabled && !$0.key.isEmpty }) + authQuery {
-            query.append((try resolve(item.key), try resolve(item.value)))
-        }
-        let url: URL
-        do {
-            url = try buildURL(text.sent, query: query.map { ($0.name.sent, $0.value.sent) })
-        } catch {
-            throw .invalidURL(text.sent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text.shown)
-        }
-        let shownQuery = query.map { ($0.name.shown, $0.value.shown) }
-        let shown = (try? buildURL(text.shown, query: shownQuery))?.absoluteString
-            ?? (shownQuery.isEmpty ? text.shown : "\(text.shown)?\(HTTPEncoding.query(shownQuery))")
-        return (url, shown)
     }
 
     /// User headers, then auth headers they do not override, then the automatic ones neither overrides nor disables.
@@ -328,22 +310,6 @@ public enum HTTPRequestBuilder {
             return contentType
         }
         return "\(contentType.trimmingCharacters(in: .whitespaces)); boundary=\(boundary)"
-    }
-
-    static func buildURL(_ resolved: String, query: [(String, String)]) throws(HTTPBuildError) -> URL {
-        guard !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw .invalidURL("")
-        }
-        guard var components = RequestURLText.components(resolved) else {
-            throw .invalidURL(resolved)
-        }
-        if !query.isEmpty {
-            components.percentEncodedQuery = ([components.percentEncodedQuery].compactMap { $0 } + [HTTPEncoding.query(query)]).joined(separator: "&")
-        }
-        guard let url = components.url else {
-            throw .invalidURL(resolved)
-        }
-        return url
     }
 
     private static func buildBody(

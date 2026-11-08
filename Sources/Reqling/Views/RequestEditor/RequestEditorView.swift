@@ -108,6 +108,7 @@ struct RequestEditorURLBar: View {
                 text: $editor.urlText,
                 placeholder: "https://api.example.com/{{path}}",
                 tokenContext: editor.tokenContext,
+                pathVariables: editor.spec.pathVariables,
                 accessibilityLabel: "URL",
                 onSubmit: { editor.send() },
                 onPaste: { editor.importCurl($0) }

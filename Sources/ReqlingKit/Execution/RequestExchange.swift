@@ -143,6 +143,12 @@ public struct RunFailure: Hashable, Sendable, Codable, Error {
         return RunFailure(kind: .invalidRequest, message: "Undefined variables: \(list). Define them in an environment, or remove them.")
     }
 
+    /// Path variables with no value stop a run the same way: the URL would otherwise go out with `:name` in its path.
+    static func emptyPathVariables(_ names: [String]) -> RunFailure {
+        let list = names.map { ":\($0)" }.joined(separator: ", ")
+        return RunFailure(kind: .invalidRequest, message: "Path variables without a value: \(list). Give them one under Params.")
+    }
+
     /// A gRPC call that ended without a status; TLS failures of either kind share `.tls`, as HTTP's do.
     init(_ error: GRPCCallError) {
         let kind: Kind = switch error {

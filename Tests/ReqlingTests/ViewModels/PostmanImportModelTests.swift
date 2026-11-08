@@ -100,7 +100,6 @@ final class PostmanImportModelTests: XCTestCase {
             + "bearerToken.")
         XCTAssertEqual(summary.groups.map(\.title), ["Pets ▸ Get pet"])
         XCTAssertEqual(summary.groups.first?.lines, [
-            "The URL's :id is {{id}} now, since Reqling has no path variables; define “id” in an environment.",
             "Post-response script, line 1: tests is from Postman's old script API, which Reqling doesn't have; use pm.test."
         ])
         XCTAssertEqual(summary.trust, "Its scripts run once you trust them: the first request you send with scripts asks.")

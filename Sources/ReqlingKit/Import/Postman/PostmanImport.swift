@@ -37,7 +37,6 @@ public struct PostmanImportNote: Hashable, Sendable {
         /// A script problem, by its phase and, when it has one, the line it's on.
         case script(ScriptPhase, line: Int?)
         case auth
-        case url
         case body
         case file
         case variable

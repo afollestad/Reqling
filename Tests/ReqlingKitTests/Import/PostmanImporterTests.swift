@@ -122,16 +122,14 @@ final class PostmanImporterTests: XCTestCase {
 
     // MARK: - URLs and headers
 
-    func testTheQueryKeepsTurnedOffRowsAndPathVariablesBecomeVariables() throws {
+    func testTheQueryKeepsTurnedOffRowsAndPathVariablesKeepTheirValues() throws {
         let plan = try petstore()
         let getPet = try spec(plan, "Pets", "Get pet")
 
-        XCTAssertEqual(getPet.url, "{{baseUrl}}/pets/{{petId}}")
+        XCTAssertEqual(getPet.url, "{{baseUrl}}/pets/:petId")
+        XCTAssertEqual(getPet.pathVariables.map { "\($0.key)=\($0.value)" }, ["petId=42"])
         XCTAssertEqual(getPet.queryParameters.map(\.key), ["expand", "trace"])
         XCTAssertEqual(getPet.queryParameters.map(\.isEnabled), [true, false], "Postman's query list keeps the rows raw leaves out")
-        XCTAssertTrue(messages(plan, "Pets", "Get pet").contains(
-            "The URL's :petId is {{petId}} now, since Reqling has no path variables; Postman gave it “42”."
-        ))
         XCTAssertEqual(try spec(plan, "Pets", "Health").url, "https://api.example.com/health")
     }
 
@@ -142,11 +140,10 @@ final class PostmanImporterTests: XCTestCase {
         """)
 
         let raw = try spec(plan, "Raw")
-        XCTAssertEqual(raw.url, "http://localhost:8080/a/{{id}}", "the port isn't a path variable, and the fragment is dropped")
+        XCTAssertEqual(raw.url, "http://localhost:8080/a/:id", "the fragment is dropped")
+        XCTAssertEqual(raw.pathVariables.map { "\($0.key)=\($0.value)" }, ["id="], "the port isn't a path variable")
         XCTAssertEqual(raw.queryParameters.map(\.key), ["x"])
-        XCTAssertEqual(messages(plan, "Raw"), [
-            "The URL's :id is {{id}} now, since Reqling has no path variables; define “id” in an environment."
-        ])
+        XCTAssertEqual(messages(plan, "Raw"), [])
         XCTAssertEqual(try spec(plan, "Parts").url, "https://api.example.com:8443/v1/users")
     }
 

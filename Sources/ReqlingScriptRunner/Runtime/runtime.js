@@ -188,7 +188,7 @@
 
   /// Headers ignore case, as HTTP does; query parameters don't.
   function rowList(read, target, mutable) {
-    const matches = target === 'query'
+    const matches = target === 'query' || target === 'pathVariable'
       ? (name, row) => row[0] === name
       : (name, row) => row[0].toLowerCase() === name.toLowerCase();
     const list = {
@@ -231,6 +231,7 @@
       request.messages = Object.freeze(template.messages.slice());
     } else {
       request.query = rowList(() => native.requestRows('query'), 'query', true);
+      request.pathVariables = rowList(() => native.requestRows('pathVariable'), 'pathVariable', true);
     }
     if (template.protocol === 'http') {
       request.method = template.method;

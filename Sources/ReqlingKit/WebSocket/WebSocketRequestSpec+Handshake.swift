@@ -23,6 +23,7 @@ extension WebSocketRequestSpec {
             method: .get,
             url: url,
             queryParameters: queryParameters,
+            pathVariables: pathVariables,
             headers: headers,
             disabledAutoHeaders: disabledAutoHeaders + ["accept"],
             auth: auth,

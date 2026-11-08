@@ -44,6 +44,17 @@ final class MCPRequestToolsTests: XCTestCase {
         XCTAssertTrue(bad.contains("`http` is not valid"), bad)
     }
 
+    func testAPathVariableTakesItsValueAndAnEmptyOneIsListedWhenResolved() async throws {
+        let id = try await create("Pet", ["url": "https://api.test/pets/:petId/toys/:toy", "pathVariables": [["key": "petId", "value": "7"]]])
+
+        let request = try XCTUnwrap(try fixture.document(project).request(XCTUnwrap(RequestNodeID(string: id))))
+        let resolved = try await fixture.success("resolve_request", ["project": projectArgument, "request": .string(id)])
+
+        XCTAssertEqual(request.kind.httpSpec?.pathVariables.map { "\($0.key)=\($0.value)" }, ["petId=7", "toy="])
+        XCTAssertEqual(resolved["request"]?["url"], "https://api.test/pets/7/toys/:toy")
+        XCTAssertEqual(resolved["emptyPathVariables"], ["toy"])
+    }
+
     func testListFiltersByFolderKindAndQuery() async throws {
         let folder = try await fixture.success("create_folder", ["project": projectArgument, "name": "Users"])
         let folderID = try XCTUnwrap(folder["folder"]?["id"]?.stringValue)
