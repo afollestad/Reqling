@@ -25,7 +25,11 @@ extension ScriptAPICatalog {
             .method("skipRequest", returns: .void, "Doesn't send this request.", phases: .pre).postman("rq.execution.skipRequest"),
             .method("setNextRequest", [ScriptParameter("request", .optional(.string), "A request's name or ID, or `null` to end the iteration.")],
                     returns: .void,
-                    "Runs this request next; `null` ends the iteration.").postman("rq.execution.setNextRequest")
+                    "Runs this request next; `null` ends the iteration.").postman("rq.execution.setNextRequest"),
+            .method("runRequest", [ScriptParameter("request", .string, "The saved request's ID or name."),
+                                   ScriptParameter("options", .named("RunRequestOptions"),
+                                                   "`{ variables }`: values that beat every other for this request.", isOptional: true)],
+                    returns: .promise(.named("PostmanResponse")), "Sends a saved request.").postman("rq.runRequest")
         ]),
         postmanVariables("PostmanEnvironment", equivalent: "rq.environment", source: .environment, extra: [
             .property("name", .string, "The environment's name.").postman("rq.environment.name")
@@ -102,7 +106,13 @@ extension ScriptAPICatalog {
         .property("variables", .named("PostmanVariables"), "Every variable; a value set here lasts for this run.").postman("rq.variables"),
         .property("request", .named("PostmanRequest"), "The request as typed.").postman("rq.request"),
         .property("response", .named("PostmanResponse"), "The HTTP response.", phases: .post, protocols: [.http]).postman("rq.response"),
-        .unsupported("sendRequest", "scripts can't make network calls", isMethod: true),
+        .method("sendRequest", [
+            ScriptParameter("request", .any, "A URL, or a Postman request: `{ url, method, header, body }`."),
+            ScriptParameter("callback", .callback([
+                ScriptParameter("error", .optional(.object), "Why the request failed, or `null`."),
+                ScriptParameter("response", .named("PostmanResponse"), "What came back.")
+            ]), "Called with `(error, response)` once it's answered; without it, the call returns a promise.", isOptional: true)
+        ], returns: .promise(.named("PostmanResponse")), "Sends a request.").postman("rq.sendRequest"),
         .property("cookies", .named("PostmanCookies"), "The cookies for the request's URL.").postman("rq.cookies"),
         .unsupported("vault", "Reqling keeps secrets as secret variables"),
         .property("iterationData", .named("PostmanIterationData"), "This iteration's data row.").postman("rq.iterationData"),

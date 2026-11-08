@@ -27,6 +27,10 @@ extension ScriptSession {
         stream = run
         run.driver = Task {
             for await event in execution.events {
+                if case .fetch(let id, _, _) = event {
+                    execution.reply(Self.unansweredFetch(id), Data())
+                    continue
+                }
                 self.apply(event, in: run)
             }
             return self.streamEnded(await execution.termination(), in: run, timeLimit: timeLimit)

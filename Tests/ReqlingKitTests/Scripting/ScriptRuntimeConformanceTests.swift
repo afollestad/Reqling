@@ -7,8 +7,9 @@ import XCTest
 
 /// `ScriptAPICatalog` against the runtime the helper runs, both ways, in every phase and for every protocol: each
 /// member the catalog says applies exists with its declared type, and each key the runtime exposes on `rq`, `pm`, and
-/// what they hold is in the catalog. One helper launch per context checks every path at once; a stream context also
-/// registers every handler (`ScriptValueType.callback`) and checks what each is called with.
+/// what they hold is in the catalog. One helper launch per context checks every path at once, and passes every
+/// callback (`ScriptValueType.callback`) a method takes there, checking what each is called with: a stream's handlers,
+/// and `pm.sendRequest`'s, whose request the fixture answers.
 @MainActor
 final class ScriptRuntimeConformanceTests: XCTestCase {
     private let fixtures = ScriptFixtures()
@@ -38,10 +39,13 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         let type: String
     }
 
-    /// A method that takes a handler, which the probe registers to check the handler's argument; its probes and walks
-    /// are paths into that argument.
+    /// A method that takes a callback, which the probe passes to check what it's called with; its probes and walks
+    /// are paths into the callback's parameter at `position`.
     private struct Handler: Encodable {
         let method: [String]
+        /// Where the callback goes among the method's arguments; those before it get a URL.
+        let argument: Int
+        let position: Int
         var probes: [Probe] = []
         var walked: [Walked] = []
     }
@@ -106,15 +110,18 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         } else {
             await fixtures.run(input, blobs: [Data(#"{"id": 7}"#.utf8)])
         }
-        let output = try XCTUnwrap(run.console.first, "\(context.name): \(run.failures)")
-        let report = try JSONDecoder().decode(Report.self, from: Data(output.utf8))
+        // A callback that isn't a stream's handler, such as `pm.sendRequest`'s, reports during the top level, so
+        // each report names whose it is.
+        let reports = try run.console.map { try JSONDecoder().decode(Report.self, from: Data($0.utf8)) }
+        let report = try XCTUnwrap(reports.first { $0.tag == Self.topLevel }, "\(context.name): \(run.failures)")
         XCTAssertGreaterThan(plan.probes.count, 100, "\(context.name) checks too little to mean anything")
         verify(plan.probes, plan.walked, against: report, in: context.name)
 
-        XCTAssertEqual(run.console.count, 1 + plan.handlers.count, "\(context.name): every handler runs once: \(run.callFailures)")
-        for (handler, output) in zip(plan.handlers, run.console.dropFirst()) {
-            let report = try JSONDecoder().decode(Report.self, from: Data(output.utf8))
-            verify(handler.probes, handler.walked, against: report, in: "\(context.name) \(handler.method.joined(separator: "."))(…)")
+        XCTAssertEqual(run.console.count, 1 + plan.handlers.count, "\(context.name): every callback runs once: \(run.callFailures)")
+        for (tag, handler) in plan.handlers.enumerated() {
+            let name = "\(context.name) \(handler.method.joined(separator: "."))(…)"
+            let report = try XCTUnwrap(reports.first { $0.tag == tag }, "\(name) never ran")
+            verify(handler.probes, handler.walked, against: report, in: name)
         }
     }
 
@@ -143,8 +150,8 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         var handlers: [Handler] = []
     }
 
-    /// Reads every probe's `typeof` and every walked object's own keys, and logs them as one JSON line; then registers
-    /// each handler, which logs a line of its own for its argument when it's called.
+    /// Reads every probe's `typeof` and every walked object's own keys, and logs them as one JSON line; then passes
+    /// each callback, which logs a line of its own, tagged with its place in the plan, when it's called.
     private func probeScript(_ plan: Plan) throws -> String {
         """
         const probes = \(try json(plan.probes))
@@ -158,7 +165,7 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
           }
           return { value }
         }
-        function report(probes, walked, root) {
+        function report(probes, walked, root, tag) {
           const results = probes.map((probe) => {
             try {
               const found = read(probe.path, root)
@@ -172,20 +179,25 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
               return value !== null && (typeof value === 'object' || typeof value === 'function') ? Object.keys(value) : []
             } catch (error) { return [] }
           })
-          console.log(JSON.stringify({ results, keys }))
+          console.log(JSON.stringify({ tag, results, keys }))
         }
-        report(probes, walked)
-        for (const handler of handlers) {
+        report(probes, walked, undefined, \(Self.topLevel))
+        for (const [tag, handler] of handlers.entries()) {
           const receiver = read(handler.method.slice(0, -1)).value
-          receiver[handler.method[handler.method.length - 1]]((argument) => report(handler.probes, handler.walked, argument))
+          const values = Array(handler.argument).fill('https://example.test/conformance')
+          values.push((...parameters) => report(handler.probes, handler.walked, parameters[handler.position], tag))
+          receiver[handler.method[handler.method.length - 1]](...values)
         }
         """
     }
 
     /// Stands for the global object among the walked types; no catalog type has the name.
     private static let globalObject = "(global object)"
+    /// The top level's report's tag; a callback's is its index in the plan's handlers.
+    private static let topLevel = -1
 
     private struct Report: Decodable {
+        let tag: Int
         let results: [String]
         let keys: [[String]]
     }
@@ -208,13 +220,7 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
             if let functionType = member.functionType {
                 walk(memberPath, type: functionType, context: context, mayBeMissing: mayBeMissing, into: &plan)
             }
-            for case .callback(let arguments) in member.parameters.map(\.type) {
-                var handler = Plan()
-                if let argument = arguments.first?.type.namedType {
-                    walk([], type: argument, context: context, mayBeMissing: false, into: &handler)
-                }
-                plan.handlers.append(Handler(method: memberPath, probes: handler.probes, walked: handler.walked))
-            }
+            plan.handlers += handlers(of: member, at: memberPath, context: context)
             guard !member.isMethod else {
                 continue
             }
@@ -235,6 +241,22 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         }
     }
 
+    /// What the probe passes each callback `member` takes, checking the callback's first parameter of a named type, as
+    /// `pm.sendRequest`'s gets an error before the response.
+    private func handlers(of member: ScriptMember, at path: [String], context: Context) -> [Handler] {
+        member.parameters.enumerated().compactMap { index, parameter in
+            guard case .callback(let arguments) = parameter.type else {
+                return nil
+            }
+            let position = arguments.firstIndex { $0.type.namedType != nil } ?? 0
+            var handler = Plan()
+            if let argument = arguments.indices.contains(position) ? arguments[position].type.namedType : nil {
+                walk([], type: argument, context: context, mayBeMissing: false, into: &handler)
+            }
+            return Handler(method: path, argument: index, position: position, probes: handler.probes, walked: handler.walked)
+        }
+    }
+
     /// The `typeof` results a member may give. A named type may be a callable object, as lodash's `_` is.
     private func jsTypes(_ member: ScriptMember) -> [String] {
         member.isMethod ? ["function"] : jsTypes(member.type)
@@ -251,6 +273,7 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         case .optional(let wrapped): jsTypes(wrapped) + ["null"]
         case .named: ["object", "function"]
         case .object, .array, .promise, .void: ["object"]
+        case .oneOf(let types): types.flatMap(jsTypes)
         }
     }
 

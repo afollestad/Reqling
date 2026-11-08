@@ -20,6 +20,10 @@ public struct ScriptLimits: Hashable, Sendable, Codable {
     public var sends = 1_000
     /// One message `rq.send` sends, in bytes, as large as a WebSocket message Reqling sends may be.
     public var sendLength = 16 * 1_024 * 1_024
+    /// Requests `rq.sendRequest` and `rq.runRequest` send.
+    public var fetches = 100
+    /// The body of one request `rq.sendRequest` sends, in bytes.
+    public var fetchBodyLength = 16 * 1_024 * 1_024
 
     public static let standard = ScriptLimits()
 

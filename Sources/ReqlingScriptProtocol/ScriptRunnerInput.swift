@@ -2,12 +2,12 @@ import ReqlingTemplating
 
 /// Everything one launch of `ReqlingScriptRunner` runs: one phase of one request's scripts, outermost level first, with
 /// the variables, cookies, request, and (after the request) response they see. It travels as the first frame on the helper's
-/// standard input (`ScriptFraming`); bodies follow as raw frames that `ScriptBlob` points at, so a large response is
-/// never base64'd into the JSON. A stream phase has no bodies: `ScriptStreamInput` frames follow instead, for as long as
-/// the stream stays open.
+/// standard input (`ScriptFraming`); `blobCount` bodies follow as raw frames that `ScriptBlob` points at, so a large
+/// response is never base64'd into the JSON. `ScriptRunnerMessage` frames follow those, in every phase, for as long as
+/// the helper runs: a stream's items, and what each request a script sent got back.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 4
+    public static let currentProtocolVersion = 5
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
@@ -24,6 +24,9 @@ public struct ScriptRunnerInput: Codable, Sendable {
     /// The folder holding `runtime.js` and the vendored libraries.
     public var runtimeDirectory: String
     public var limits: ScriptLimits
+    /// How many raw body frames follow this one. Standard input stays open after them for `ScriptRunnerMessage`s, so
+    /// the helper can't read bodies to its end; `HelperScriptRunner` sets it from the bodies it writes.
+    public var blobCount = 0
 
     public init(
         phase: ScriptPhase,

@@ -5,4 +5,5 @@ These instructions cover `Sources/ReqlingScriptProtocol/`: what the app and `Req
 - **Keep this target Foundation-only, depending on nothing but `ReqlingTemplating`.** The runner links it, and each launch must stay fast.
 - **Bump `ScriptRunnerInput.currentProtocolVersion` on any change one side could misread.** The helper ships inside the app, but a stale build in `.build/` or a test bundle can pair either side with the other's old version.
 - **Read and write both directions only through `ScriptFraming`.** Never switch to newline-delimited JSON: U+2028 in a `console.log` would split a line.
+- **Never end a phase by closing the helper's standard input; write `ScriptRunnerMessage.endOfItems`.** Fetch replies share that pipe, so `HelperScriptRunner` closes it only once the helper has exited.
 - **Parse, match, and validate cookies only through `ScriptCookieScope` and `ScriptCookieSetting`, and match a URL only through `HTTPCookieStorage.cookies(for:)`,** in the helper, `ProjectCookieJar`, and MCP alike, so scripts, agents, and what URLSession sends never disagree.

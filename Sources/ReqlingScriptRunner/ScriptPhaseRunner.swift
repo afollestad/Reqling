@@ -18,16 +18,22 @@ final class ScriptPhaseRunner {
     let cookies: ScriptCookies
     let reporter: ScriptReporter
     let response: ScriptResponseAccess?
-    /// A stream phase's items; `nil` in every other phase.
-    let inbox: ScriptStreamInbox?
+    /// What the app writes after the input: a stream phase's items, and every phase's fetch replies.
+    let inbox: ScriptInbox
     /// What `rq.execution` asked last, across every level, so a script calling it in a loop writes one event per
     /// change rather than one per call, which no limit would bound.
     private var skipsRequest = false
     private var nextRequest: String?? = .none
     /// What `rq.send` sent in the top level or the call in hand.
     private var sends = 0
+    /// What `rq.sendRequest` and `rq.runRequest` sent in the phase, or a stream phase's top level or call in hand.
+    private var fetches = 0
+    /// IDs count across the whole phase, so a reply a level or call left behind never answers a later fetch.
+    private var nextFetchID = 1
+    /// Each request still out, with where the cookies' changes stood as it went out (`ScriptCookies.requestSent`).
+    private var fetchMarks: [Int: Int] = [:]
 
-    init(input: ScriptRunnerInput, blobs: [Data], runtime: ScriptRuntimeFiles, events: EventWriter, inbox: ScriptStreamInbox? = nil) {
+    init(input: ScriptRunnerInput, blobs: [Data], runtime: ScriptRuntimeFiles, events: EventWriter, inbox: ScriptInbox) {
         self.input = input
         self.runtime = runtime
         self.events = events
@@ -68,9 +74,6 @@ final class ScriptPhaseRunner {
     /// level threw gets no calls: its handlers may depend on what it never set up. A handler that throws keeps getting
     /// later items, as an `EventSource` listener does. False only when JavaScriptCore couldn't make a context.
     func runStream() -> Bool {
-        guard let inbox else {
-            return false
-        }
         let machine = JSVirtualMachine()
         var hosts: [ScriptLevelHost] = []
         for (index, level) in input.levels.enumerated() {
@@ -110,11 +113,12 @@ final class ScriptPhaseRunner {
         variables.beginCall()
         cookies.beginCall()
         sends = 0
+        fetches = 0
     }
 
     /// Reports a stream script's `rq.send`; the runtime has already turned the script's value into `message`.
     func send(_ message: ScriptOutgoingMessage, level: Int) throws(ScriptFailure) {
-        guard input.phase == .stream, let inbox else {
+        guard input.phase == .stream else {
             throw ScriptFailure("rq.send works only in stream scripts.")
         }
         guard inbox.canSend else {
@@ -130,6 +134,31 @@ final class ScriptPhaseRunner {
         }
         sends += 1
         events.write(.send(level: level, message: message))
+    }
+
+    /// Reports a request a script asked Reqling to send, once it's within the limits, and returns its ID. The inbox
+    /// expects its reply before the event goes out, so the reply can't arrive first.
+    func fetch(_ fetch: ScriptFetch, level: Int) throws(ScriptFailure) -> Int {
+        guard fetches < input.limits.fetches else {
+            throw ScriptFailure("Scripts can send at most \(input.limits.fetches) requests in one \(reporter.unit).")
+        }
+        if case .send(let request) = fetch, let body = request.body, body.count > input.limits.fetchBodyLength {
+            throw ScriptFailure("rq.sendRequest can send at most \(input.limits.fetchBodyLength / 1_024 / 1_024) MB in one body.")
+        }
+        fetches += 1
+        let id = nextFetchID
+        nextFetchID += 1
+        fetchMarks[id] = cookies.requestSent()
+        inbox.expect(id)
+        events.write(.fetch(id: id, level: level, fetch))
+        return id
+    }
+
+    /// A request was answered with `jar`, or given up on (`nil`): the cookies' copy takes what it carries.
+    func fetchSettled(_ id: Int, jar: [ScriptCookie]?) {
+        if let mark = fetchMarks.removeValue(forKey: id) {
+            cookies.requestSettled(mark, jar: jar)
+        }
     }
 
     func skipRequest() {

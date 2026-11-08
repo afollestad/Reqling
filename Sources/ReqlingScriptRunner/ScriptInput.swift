@@ -41,12 +41,26 @@ final class ScriptInputReader: @unchecked Sendable {
     }
 }
 
-/// What a stream phase's reader thread hands the main thread: the items, in order, and whether `rq.send` can still
-/// reply. Only this crosses threads; JavaScriptCore and `EventWriter` stay on the main thread.
-final class ScriptStreamInbox: @unchecked Sendable {
+/// What the reader thread hands the main thread, in every phase: a stream's items, in order, and whether `rq.send` can
+/// still reply; and the replies to the requests scripts sent, by ID. Only this crosses threads; JavaScriptCore and
+/// `EventWriter` stay on the main thread.
+///
+/// A reply arrives only for a fetch the main thread said it waits on (`expect`), so one a level left behind when it
+/// ended (`forget`) is dropped as it arrives rather than holding its body until the phase ends.
+final class ScriptInbox: @unchecked Sendable {
+    /// A fetch's reply, with the body its `.response` carries.
+    struct Reply {
+        let reply: ScriptFetchReply
+        let body: Data
+    }
+
     private let condition = NSCondition()
     private var items: [ScriptStreamItem] = []
-    private var isClosed = false
+    private var replies: [Reply] = []
+    private var expected: Set<Int> = []
+    private var isEndOfItems = false
+    /// The input ended, or a frame couldn't be read: nothing more arrives.
+    private var isInputClosed = false
     private var isSendingOpen: Bool
 
     init(canSend: Bool) {
@@ -54,39 +68,94 @@ final class ScriptStreamInbox: @unchecked Sendable {
     }
 
     var canSend: Bool {
-        condition.lock()
-        defer { condition.unlock() }
-        return isSendingOpen
+        locked { isSendingOpen }
     }
 
-    /// The next item, waiting for one; `nil` once the input has ended and every item was taken.
+    var isClosed: Bool {
+        locked { isInputClosed }
+    }
+
+    /// The next item, waiting for one; `nil` once no more will come and every item was taken.
     func next() -> ScriptStreamItem? {
         condition.lock()
         defer { condition.unlock() }
-        while items.isEmpty, !isClosed {
+        while items.isEmpty, !isEndOfItems, !isInputClosed {
             condition.wait()
         }
         return items.isEmpty ? nil : items.removeFirst()
     }
 
-    /// The reader thread's body: queues each frame's item until the input ends. A frame that can't be read ends it
-    /// too, since nothing after it can be trusted.
+    /// Notes a fetch whose reply to keep. Called before its event is written, so a reply can't beat it.
+    func expect(_ id: Int) {
+        locked { _ = expected.insert(id) }
+    }
+
+    /// Stops waiting on fetches a level or handler call left behind, dropping any reply already in.
+    func forget(_ ids: Set<Int>) {
+        locked {
+            expected.subtract(ids)
+            replies.removeAll { ids.contains($0.reply.id) }
+        }
+    }
+
+    /// Every reply in, waiting for one until `deadline` (`ScriptTimers.now`'s clock), or for as long as it takes
+    /// when there is none; empty once the deadline passes, or when the input has closed.
+    func takeReplies(waitingUntil deadline: TimeInterval?) -> [Reply] {
+        condition.lock()
+        defer { condition.unlock() }
+        while replies.isEmpty, !isInputClosed {
+            guard let deadline else {
+                condition.wait()
+                continue
+            }
+            let remaining = deadline - ScriptTimers.now
+            guard remaining > 0 else {
+                break
+            }
+            _ = condition.wait(until: Date(timeIntervalSinceNow: remaining))
+        }
+        let taken = replies
+        replies.removeAll()
+        return taken
+    }
+
+    /// The reader thread's body: queues each message until the input ends. A frame that can't be read ends it too,
+    /// since nothing after it can be trusted.
     func read(from reader: ScriptInputReader) {
         let decoder = JSONDecoder()
-        while case .frame(let frame) = reader.next(), let input = try? decoder.decode(ScriptStreamInput.self, from: frame) {
+        while case .frame(let frame) = reader.next(), let message = try? decoder.decode(ScriptRunnerMessage.self, from: frame) {
+            var body = Data()
+            if case .fetched(let reply) = message, case .response = reply.outcome {
+                guard case .frame(let bytes) = reader.next() else {
+                    break
+                }
+                body = bytes
+            }
             condition.lock()
-            switch input {
+            switch message {
             case .item(let item):
                 items.append(item)
             case .sendingClosed:
                 isSendingOpen = false
+            case .endOfItems:
+                isEndOfItems = true
+            case .fetched(let reply):
+                if expected.remove(reply.id) != nil {
+                    replies.append(Reply(reply: reply, body: body))
+                }
             }
-            condition.signal()
+            condition.broadcast()
             condition.unlock()
         }
         condition.lock()
-        isClosed = true
+        isInputClosed = true
         condition.broadcast()
         condition.unlock()
+    }
+
+    private func locked<Value>(_ body: () -> Value) -> Value {
+        condition.lock()
+        defer { condition.unlock() }
+        return body()
     }
 }

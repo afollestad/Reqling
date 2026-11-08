@@ -3,12 +3,13 @@ import JavaScriptCore
 import ReqlingScriptProtocol
 
 /// Runs one level's script in its own `JSContext`: evaluates the runtime, then the script wrapped in an async function
-/// (`ScriptWrapper`), so top-level `await` and `return` work as in Postman, then drains its timers until the script
-/// and every test it started have settled.
+/// (`ScriptWrapper`), so top-level `await` and `return` work as in Postman, then drains its timers and the replies to
+/// its requests until the script and everything it started have settled.
 ///
 /// Microtasks need no driving here: JavaScriptCore runs them whenever a call from Swift into JavaScript returns, which
-/// is after the script's evaluation and after every timer callback. A level is done once its script settled and no
-/// test is pending; timers still waiting then are dropped, as a script that wants them awaits them.
+/// is after the script's evaluation, after every timer callback, and after each reply is handed over. A level is done
+/// once its script settled and no test or request is pending; timers still waiting then are dropped, as a script that
+/// wants them awaits them. A pending request keeps it going, though, as Postman's callback form never awaits one.
 ///
 /// In a stream phase the host outlives its top level: `handle` calls the handlers it registered with each item, and
 /// drains the same way, so each call ends once its handlers settle, its timers dropped too.
@@ -26,6 +27,11 @@ final class ScriptLevelHost {
     private var settlement: Result<Void, ScriptError>?
     /// The first handler that failed in the call in hand.
     private var callError: ScriptError?
+    /// The level's requests still out (`ScriptPhaseRunner.fetch`).
+    private var pendingFetches: Set<Int> = []
+    /// Each answered request's body, which its response decodes only when a script reads it. Kept as long as the level:
+    /// a stream script's top level may keep a response its handlers read later.
+    private var fetchBodies: [Int: Data] = [:]
 
     init(index: Int, level: ScriptLevelSource, context: JSContext, phase: ScriptPhaseRunner) {
         self.index = index
@@ -53,6 +59,7 @@ final class ScriptLevelHost {
         context.evaluateScript(ScriptWrapper.wrap(level.source), withSourceURL: sourceURL)
         let failure = drain(neverFinished: "The script awaited something that never finished.")
         timers.removeAll()
+        forgetPendingFetches()
         // Handlers register only here: one registered from a handler would run on some items and not others.
         runtimeCall("closeRegistration")
         return failure
@@ -77,6 +84,7 @@ final class ScriptLevelHost {
         runtimeCall("runCall", [Self.handlerKind(of: item), Self.description(of: item)])
         let failure = drain(neverFinished: "A handler awaited something that never finished.")
         timers.removeAll()
+        forgetPendingFetches()
         return failure ?? callError
     }
 
@@ -117,26 +125,110 @@ final class ScriptLevelHost {
         context.objectForKeyedSubscript("__rq")?.invokeMethod(name, withArguments: arguments)
     }
 
-    /// Fires timers until the level or call is done, or until nothing is left that could finish it.
+    /// Fires timers and hands over replies until the level or call is done, or until nothing is left that could
+    /// finish it.
     private func drain(neverFinished: String) -> ScriptError? {
         while true {
             if let uncaught {
                 abandonPendingTests()
                 return uncaught
             }
-            if let settlement, pendingTestCount == 0 {
+            if let settlement, pendingTestCount == 0, pendingFetches.isEmpty {
                 return settlement.failure
             }
-            guard let next = timers.next() else {
+            let next = timers.next()
+            guard next != nil || !pendingFetches.isEmpty else {
                 abandonPendingTests()
                 return settlement.map(\.failure) ?? ScriptError(name: "Error", message: neverFinished)
             }
-            let wait = next.dueAt - ScriptTimers.now
-            if wait > 0 {
-                Thread.sleep(forTimeInterval: wait)
+            if pendingFetches.isEmpty, let next {
+                let wait = next.dueAt - ScriptTimers.now
+                if wait > 0 {
+                    Thread.sleep(forTimeInterval: wait)
+                }
+                timers.fire(next.id)
+                continue
             }
-            timers.fire(next.id)
+            if !receiveReplies(waitingUntil: next?.dueAt), let next, next.dueAt <= ScriptTimers.now {
+                timers.fire(next.id)
+            }
         }
+    }
+
+    /// Waits for replies until `deadline`, when the next timer is due, and hands over what arrived; false when none did
+    /// by then. Once the input has closed, every request still out fails, as no reply can come.
+    private func receiveReplies(waitingUntil deadline: TimeInterval?) -> Bool {
+        let replies = phase.inbox.takeReplies(waitingUntil: deadline)
+        if !replies.isEmpty {
+            // After a callback throws, the level is over: what else arrived stays unanswered, as a later timer does.
+            for reply in replies where uncaught == nil {
+                receive(reply)
+            }
+            return true
+        }
+        guard phase.inbox.isClosed else {
+            return false
+        }
+        for id in pendingFetches.sorted() {
+            phase.fetchSettled(id, jar: nil)
+            finishFetch(id, response: NSNull(), error: "Reqling stopped answering the script's requests.")
+        }
+        return true
+    }
+
+    /// Starts waiting on a request the level sent.
+    func expectFetch(_ id: Int) {
+        pendingFetches.insert(id)
+    }
+
+    /// The body of an answered request; empty for one the level never got.
+    func fetchBody(_ id: Int) -> Data {
+        fetchBodies[id] ?? Data()
+    }
+
+    /// Hands a reply to the script that waits on it. The cookies it carries land first, so the script's next read
+    /// already sees what the response stored.
+    private func receive(_ reply: ScriptInbox.Reply) {
+        guard pendingFetches.contains(reply.reply.id) else {
+            return
+        }
+        phase.fetchSettled(reply.reply.id, jar: reply.reply.cookies)
+        switch reply.reply.outcome {
+        case .response(let response):
+            fetchBodies[reply.reply.id] = reply.body
+            finishFetch(reply.reply.id, response: Self.description(of: response), error: NSNull())
+        case .failed(let message):
+            finishFetch(reply.reply.id, response: NSNull(), error: message)
+        }
+    }
+
+    /// Settles the request in the runtime: its promise, or a Postman callback, which runs inside this call, so one that
+    /// throws fails the level as a timer callback that throws does.
+    private func finishFetch(_ id: Int, response: Any, error: Any) {
+        pendingFetches.remove(id)
+        runtimeCall("finishFetch", [id, response, error])
+    }
+
+    /// Drops what a level or call left out when it ended, such as on an uncaught throw: their replies have no one to
+    /// answer.
+    private func forgetPendingFetches() {
+        guard !pendingFetches.isEmpty else {
+            return
+        }
+        phase.inbox.forget(pendingFetches)
+        for id in pendingFetches {
+            phase.fetchSettled(id, jar: nil)
+        }
+        runtimeCall("forgetFetches", [Array(pendingFetches)])
+        pendingFetches.removeAll()
+    }
+
+    /// What `runtime.js` builds a request's `IncomingResponse` from.
+    private static func description(of response: ScriptHTTPResponse) -> [String: Any] {
+        [
+            "code": response.code, "status": response.status, "headers": ScriptResponseAccess.rows(response.headers),
+            "size": response.size, "truncated": response.truncated, "responseTime": response.responseTime
+        ]
     }
 
     func settle(_ error: JSValue) {

@@ -146,6 +146,10 @@ final class ScriptSession {
         var phaseReport = ScriptPhaseReport(phase: phase, levels: levelReports(phase))
         await withTaskCancellationHandler {
             for await event in execution.events {
+                if case .fetch(let id, _, _) = event {
+                    execution.reply(Self.unansweredFetch(id), Data())
+                    continue
+                }
                 apply(event, in: phase, to: &phaseReport)
             }
         } onCancel: {
@@ -331,6 +335,11 @@ final class ScriptSession {
 
     func levelReports(_ phase: ScriptPhase) -> [ScriptLevelReport] {
         (levels[phase] ?? []).map { ScriptLevelReport(kind: $0.kind, name: $0.name) }
+    }
+
+    /// What a request a script sends gets until Reqling sends them.
+    static func unansweredFetch(_ id: Int) -> ScriptFetchReply {
+        ScriptFetchReply(id: id, outcome: .failed("Reqling can't send scripts' requests yet."))
     }
 
     private static func masked(_ error: ScriptError, _ redaction: SecretRedaction) -> ScriptError {

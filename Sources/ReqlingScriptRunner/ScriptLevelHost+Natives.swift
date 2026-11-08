@@ -19,6 +19,7 @@ extension ScriptLevelHost {
         installCrypto(on: native)
         installCookies(on: native)
         installStream(on: native)
+        installFetch(on: native)
         installRuntime(on: native)
         context.setObject(native, forKeyedSubscript: "__native" as NSString)
     }
@@ -174,6 +175,60 @@ extension ScriptLevelHost {
         set(native, "handlerFailed", handlerFailed)
         set(native, "send", sendText)
         set(native, "sendBinary", sendBinary)
+    }
+
+    /// `rq.sendRequest` and `rq.runRequest`; the runtime normalizes their arguments to text first, and keeps the
+    /// promise each settles (`finishFetch`). Each returns the fetch's ID, or `undefined` after throwing.
+    private func installFetch(on native: JSValue) {
+        let send: @convention(block) (String, String, JSValue, JSValue, JSValue) -> JSValue = { [unowned self] method, url, headers, text, binary in
+            var body: Data?
+            if !binary.isNull, !binary.isUndefined {
+                guard let bytes = arrayBufferBytes(binary) else {
+                    fail("rq.sendRequest couldn't read the body's bytes.")
+                    return JSValue(undefinedIn: context)
+                }
+                body = bytes
+            } else if !text.isNull, !text.isUndefined {
+                body = Data((text.toString() ?? "").utf8)
+            }
+            let rows = (headers.toArray() ?? []).compactMap { row -> ScriptRow? in
+                guard let pair = row as? [Any], pair.count == 2 else {
+                    return nil
+                }
+                return ScriptRow(name: String(describing: pair[0]), value: String(describing: pair[1]))
+            }
+            return startFetch(.send(ScriptFetchRequest(method: method, url: url, headers: rows, body: body)))
+        }
+        let run: @convention(block) (String, JSValue) -> JSValue = { [unowned self] request, variables in
+            var values: [String: String] = [:]
+            for (key, value) in variables.toDictionary() ?? [:] {
+                values[String(describing: key)] = String(describing: value)
+            }
+            return startFetch(.run(request: request, variables: values))
+        }
+        let text: @convention(block) (Int) -> String = { [unowned self] id in
+            // `text()` decodes as browsers do, one bad byte becoming U+FFFD, rather than losing the body.
+            // swiftlint:disable:next optional_data_string_conversion
+            String(decoding: fetchBody(id), as: UTF8.self)
+        }
+        let base64: @convention(block) (Int) -> String = { [unowned self] id in
+            fetchBody(id).base64EncodedString()
+        }
+        set(native, "fetchSend", send)
+        set(native, "fetchRun", run)
+        set(native, "fetchText", text)
+        set(native, "fetchBase64", base64)
+    }
+
+    private func startFetch(_ fetch: ScriptFetch) -> JSValue {
+        do throws(ScriptFailure) {
+            let id = try phase.fetch(fetch, level: index)
+            expectFetch(id)
+            return JSValue(int32: Int32(id), in: context)
+        } catch {
+            fail(error.message)
+            return JSValue(undefinedIn: context)
+        }
     }
 
     private func report(_ message: ScriptOutgoingMessage) {

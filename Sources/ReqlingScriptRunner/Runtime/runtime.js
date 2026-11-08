@@ -306,27 +306,31 @@
     }
   }
 
+  /// An HTTP response, `rq.response`'s or a request's a script sent, its body read only when asked for, and once.
+  function httpResponse(response, readText, readBase64) {
+    let text;
+    const body = () => (text === undefined ? (text = readText()) : text);
+    return Object.freeze({
+      code: response.code,
+      status: response.status,
+      headers: staticRows(response.headers),
+      size: response.size,
+      truncated: response.truncated,
+      responseTime: response.responseTime,
+      text: body,
+      json: () => parseJSON(body(), 'The response body'),
+      base64: readBase64,
+    });
+  }
+
   function buildResponse() {
     const response = native.response();
     if (isStream) {
       return buildOpening(response);
     }
     switch (response.kind) {
-      case 'http': {
-        let text;
-        const body = () => (text === undefined ? (text = native.responseText()) : text);
-        return Object.freeze({
-          code: response.code,
-          status: response.status,
-          headers: staticRows(response.headers),
-          size: response.size,
-          truncated: response.truncated,
-          responseTime: response.responseTime,
-          text: body,
-          json: () => parseJSON(body(), 'The response body'),
-          base64: () => native.responseBase64(),
-        });
-      }
+      case 'http':
+        return httpResponse(response, () => native.responseText(), () => native.responseBase64());
       case 'eventStream':
         return Object.freeze({
           code: response.code,
@@ -473,6 +477,119 @@
       return Object.freeze(cookieMethods(native.cookieTarget(String(target))));
     };
     return Object.freeze(cookies);
+  }
+
+  // MARK: Requests
+
+  /// Each request a script sent that is still out, by ID, with what settles it with `(error, response)`, called from
+  /// the runner as its reply arrives (`ScriptLevelHost.finishFetch`).
+  const pendingFetches = new Map();
+  const methodToken = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  /// Written in any case, these go out in upper case, as `fetch` sends them; any other method keeps its case, since
+  /// HTTP methods are case-sensitive.
+  const standardMethods = ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'];
+  const requestKeys = ['method', 'url', 'headers', 'body'];
+
+  /// `[name, value]` rows from an object of names and values, or from a list of `[name, value]` pairs.
+  function requestHeaders(headers, name) {
+    if (headers === undefined || headers === null) {
+      return [];
+    }
+    const refuse = () => fail(`${name}'s headers are an object of names and values, or [name, value] pairs.`);
+    if (Array.isArray(headers)) {
+      return headers.map((row) => (Array.isArray(row) && row.length === 2 ? [String(row[0]), variableText(row[1])] : refuse()));
+    }
+    if (typeof headers !== 'object') {
+      refuse();
+    }
+    return Object.keys(headers).map((key) => [key, variableText(headers[key])]);
+  }
+
+  /// The body as the natives take it: text, or bytes; any other value goes as JSON, with a JSON `Content-Type`
+  /// unless `rows` already name one.
+  function requestBody(body, rows, name) {
+    if (body === undefined || body === null) {
+      return { text: null, binary: null };
+    }
+    if (typeof body === 'string') {
+      return { text: body, binary: null };
+    }
+    if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+      const view = body instanceof ArrayBuffer ? new Uint8Array(body) : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+      // A copy of exactly its bytes, as a view may cover only part of its buffer.
+      return { text: null, binary: view.slice().buffer };
+    }
+    const text = JSON.stringify(body);
+    if (text === undefined) {
+      fail(`${name} sends text, bytes, or a value JSON can hold as a body, not ${describe(body)}.`);
+    }
+    if (!rows.some(([key]) => key.toLowerCase() === 'content-type')) {
+      rows.push(['Content-Type', 'application/json']);
+    }
+    return { text, binary: null };
+  }
+
+  /// Sends a URL, or `{ method, url, headers, body }`, as given: `{{name}}` in it is plain text.
+  function startSend(request, name, settle) {
+    const fields = typeof request === 'string' ? { url: request } : request;
+    if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) {
+      fail(`${name} needs a URL, or a request such as { method: "POST", url, headers, body }.`);
+    }
+    for (const key of Object.keys(fields)) {
+      if (!requestKeys.includes(key)) {
+        fail(`${name} takes ${requestKeys.join(', ')}, not "${key}".`);
+      }
+    }
+    if (typeof fields.url !== 'string' || fields.url === '') {
+      fail(`${name} needs a URL, such as "https://api.example.com/token".`);
+    }
+    let method = fields.method === undefined ? 'GET' : String(fields.method);
+    if (standardMethods.includes(method.toUpperCase())) {
+      method = method.toUpperCase();
+    }
+    if (!methodToken.test(method)) {
+      fail(`${name}: "${method}" isn't an HTTP method.`);
+    }
+    const rows = requestHeaders(fields.headers, name);
+    const body = requestBody(fields.body, rows, name);
+    pendingFetches.set(native.fetchSend(method, fields.url, rows, body.text, body.binary), settle);
+  }
+
+  /// Sends a saved request by name or ID, with `{ variables }` beating every other value.
+  function startRun(request, options, name, settle) {
+    if (typeof request !== 'string' || request === '') {
+      fail(`${name} needs a saved request's name or ID.`);
+    }
+    if (options !== undefined && options !== null && (typeof options !== 'object' || Array.isArray(options))) {
+      fail(`${name}'s options are an object, such as { variables: { userId: "7" } }.`);
+    }
+    const settings = options || {};
+    for (const key of Object.keys(settings)) {
+      if (key !== 'variables') {
+        fail(`${name} takes { variables }, not "${key}".`);
+      }
+    }
+    const values = {};
+    if (settings.variables !== undefined && settings.variables !== null) {
+      if (typeof settings.variables !== 'object' || Array.isArray(settings.variables)) {
+        fail(`${name}'s variables are an object of names and values.`);
+      }
+      for (const key of Object.keys(settings.variables)) {
+        values[key] = variableText(settings.variables[key]);
+      }
+    }
+    pendingFetches.set(native.fetchRun(request, values), settle);
+  }
+
+  /// A promise of what `start` sends. `start` runs before this returns, so a bad argument or a reached limit throws at
+  /// the call, as every other `rq` call does, rather than only rejecting.
+  function promised(start) {
+    let settle;
+    const promise = new Promise((resolve, reject) => {
+      settle = (error, response) => (error === null ? resolve(response) : reject(error));
+    });
+    start(settle);
+    return promise;
   }
 
   // MARK: Tests
@@ -628,6 +745,8 @@
     onEvent: (handler) => register('event', 'onEvent', handler, ['http']),
     onMessage: (handler) => register('message', 'onMessage', handler, ['grpc', 'websocket']),
     send,
+    sendRequest: (request) => promised((settle) => startSend(request, 'rq.sendRequest', settle)),
+    runRequest: (request, options) => promised((settle) => startRun(request, options, 'rq.runRequest', settle)),
     test,
     crypto: cryptoHelpers,
   };
@@ -687,6 +806,27 @@
         }
         pendingTests.clear();
       },
+      /// Settles a request with its reply: `error` is `null` when a response came back.
+      finishFetch(id, response, error) {
+        const settle = pendingFetches.get(id);
+        if (settle === undefined) {
+          return;
+        }
+        pendingFetches.delete(id);
+        if (error !== null) {
+          settle(new Error(error));
+        } else {
+          settle(null, httpResponse(response, () => native.fetchText(id), () => native.fetchBase64(id)));
+        }
+      },
+      forgetFetches(ids) {
+        for (const id of ids) {
+          pendingFetches.delete(id);
+        }
+      },
+      startSend,
+      startRun,
+      promised,
       describe,
       fail,
       variableText,

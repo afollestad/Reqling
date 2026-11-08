@@ -78,7 +78,8 @@
     return response;
   }
 
-  function responseAssertions(negate) {
+  /// Assertions about `response`: `pm.response`'s, or a response `pm.sendRequest` got.
+  function responseAssertions(response, negate) {
     const check = (passed, positive, negative) => {
       if (passed === negate) {
         throw new Error(negate ? negative : positive);
@@ -86,17 +87,16 @@
     };
     const have = Object.freeze({
       status(expected) {
-        const response = httpResponse();
         const passed = typeof expected === 'number' ? response.code === expected : response.status === String(expected);
         check(passed, `expected response to have status ${expected} but got ${response.code}`, `expected response to not have status ${expected}`);
       },
       header(name, value) {
-        const actual = httpResponse().headers.get(name);
+        const actual = response.headers.get(name);
         const passed = actual !== undefined && (value === undefined || actual === String(value));
         check(passed, `expected response to have header ${name}${value === undefined ? '' : `: ${value}`}`, `expected response to not have header ${name}`);
       },
       body(expected) {
-        const text = httpResponse().text();
+        const text = response.text();
         const passed = expected === undefined ? text.length > 0
           : expected instanceof RegExp ? expected.test(text) : text === String(expected);
         check(passed, 'expected the response body to match', 'expected the response body to not match');
@@ -104,7 +104,7 @@
       jsonBody(path, value) {
         let json;
         try {
-          json = httpResponse().json();
+          json = response.json();
         } catch (error) {
           check(false, 'expected the response body to be JSON', 'expected the response body to not be JSON');
           return;
@@ -123,7 +123,7 @@
     });
     const be = Object.freeze({
       get ok() {
-        const code = httpResponse().code;
+        const code = response.code;
         check(code >= 200 && code < 300, `expected a 2xx response but got ${code}`, `expected a response other than 2xx but got ${code}`);
         return undefined;
       },
@@ -133,7 +133,7 @@
       get json() {
         let isJSON = true;
         try {
-          httpResponse().json();
+          response.json();
         } catch (error) {
           isJSON = false;
         }
@@ -144,10 +144,10 @@
     return { have, be };
   }
 
-  function buildResponse() {
-    const response = httpResponse();
-    const positive = responseAssertions(false);
-    const negative = responseAssertions(true);
+  /// Postman's view of an HTTP response: `rq.response`, or what `rq.sendRequest` got.
+  function buildResponse(response) {
+    const positive = responseAssertions(response, false);
+    const negative = responseAssertions(response, true);
     return Object.freeze({
       code: response.code,
       status: response.status,
@@ -217,6 +217,156 @@
     clear: (url, callback) => settle(callback, () => rq.cookies.for(url).clear()),
   });
 
+  // MARK: Requests
+
+  const postmanRequestKeys = ['url', 'method', 'header', 'body'];
+
+  function hasHeader(rows, name) {
+    return rows.some(([key]) => key.toLowerCase() === name.toLowerCase());
+  }
+
+  /// Postman's `header`: a list of `{ key, value, disabled }` or `"Name: value"` entries, `"Name: value"` lines, or an
+  /// object of names and values.
+  function postmanHeaders(header) {
+    if (header === undefined || header === null) {
+      return [];
+    }
+    const line = (text) => {
+      const colon = text.indexOf(':');
+      return colon < 0 ? fail(`pm.sendRequest can't read the header "${text}"; write it as "Name: value".`)
+        : [text.slice(0, colon).trim(), text.slice(colon + 1).trim()];
+    };
+    if (typeof header === 'string') {
+      return header.split(/\r?\n/).filter((text) => text.trim() !== '').map(line);
+    }
+    if (Array.isArray(header)) {
+      return header.filter((item) => !(item && item.disabled)).map((item) => {
+        if (typeof item === 'string') {
+          return line(item);
+        }
+        return item !== null && typeof item === 'object' ? [String(item.key), internals.variableText(item.value)]
+          : fail('pm.sendRequest\'s headers are { key, value } objects, "Name: value" text, or an object of names and values.');
+      });
+    }
+    if (typeof header === 'object') {
+      return Object.keys(header).map((key) => [key, internals.variableText(header[key])]);
+    }
+    return fail('pm.sendRequest\'s headers are { key, value } objects, "Name: value" text, or an object of names and values.');
+  }
+
+  /// Postman's `{ key, value, disabled }` fields, those still on.
+  function postmanFields(fields, mode) {
+    if (fields === undefined || fields === null) {
+      return [];
+    }
+    if (!Array.isArray(fields)) {
+      fail(`pm.sendRequest's ${mode} body is a list of { key, value } fields.`);
+    }
+    return fields.filter((field) => !(field && field.disabled)).map((field) => {
+      if (field === null || typeof field !== 'object') {
+        fail(`pm.sendRequest's ${mode} body is a list of { key, value } fields.`);
+      }
+      if (field.type === 'file' || field.src !== undefined) {
+        fail('pm.sendRequest can\'t send files from Reqling scripts.');
+      }
+      return [String(field.key), internals.variableText(field.value)];
+    });
+  }
+
+  function multipart(fields, rows) {
+    const boundary = `----ReqlingFormBoundary${rq.crypto.randomUUID().replace(/-/g, '')}`;
+    // As browsers escape a field's name in its header.
+    const escape = (text) => text.replace(/"/g, '%22').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    let text = '';
+    for (const [key, value] of fields) {
+      text += `--${boundary}\r\nContent-Disposition: form-data; name="${escape(key)}"\r\n\r\n${value}\r\n`;
+    }
+    if (!hasHeader(rows, 'content-type')) {
+      rows.push(['Content-Type', `multipart/form-data; boundary=${boundary}`]);
+    }
+    return `${text}--${boundary}--\r\n`;
+  }
+
+  /// Postman's `body`, by its `mode`, as the text `rq.sendRequest` sends, with the `Content-Type` its mode implies
+  /// unless the headers name one.
+  function postmanBody(body, rows) {
+    if (body === undefined || body === null || body.mode === undefined || body.mode === 'none') {
+      return undefined;
+    }
+    const type = (value) => {
+      if (!hasHeader(rows, 'content-type')) {
+        rows.push(['Content-Type', value]);
+      }
+    };
+    switch (body.mode) {
+      case 'raw': {
+        const options = body.options && body.options.raw;
+        if (options && options.language === 'json') {
+          type('application/json');
+        }
+        return body.raw === undefined || body.raw === null ? '' : internals.variableText(body.raw);
+      }
+      case 'urlencoded': {
+        const encode = (text) => encodeURIComponent(text).replace(/%20/g, '+');
+        type('application/x-www-form-urlencoded');
+        return postmanFields(body.urlencoded, 'urlencoded').map(([key, value]) => `${encode(key)}=${encode(value)}`).join('&');
+      }
+      case 'formdata':
+        return multipart(postmanFields(body.formdata, 'formdata'), rows);
+      case 'graphql': {
+        const graphQL = body.graphql || {};
+        let variables = graphQL.variables;
+        if (typeof variables === 'string') {
+          variables = variables.trim() === '' ? undefined : JSON.parse(variables);
+        }
+        type('application/json');
+        return JSON.stringify({ query: graphQL.query === undefined ? '' : String(graphQL.query), variables });
+      }
+      case 'file':
+        return fail('pm.sendRequest can\'t send files from Reqling scripts.');
+      default:
+        return fail(`pm.sendRequest has no body mode "${body.mode}"; it takes raw, urlencoded, formdata, or graphql.`);
+    }
+  }
+
+  /// Postman's request, or its URL, as `rq.sendRequest` takes it. What Reqling can't send, such as its own `auth`,
+  /// throws rather than going out without it.
+  function postmanRequest(request) {
+    if (typeof request === 'string') {
+      return request;
+    }
+    if (request === null || typeof request !== 'object') {
+      fail('pm.sendRequest needs a URL, or a request such as { url, method, header, body }.');
+    }
+    for (const key of Object.keys(request)) {
+      if (!postmanRequestKeys.includes(key)) {
+        fail(`pm.sendRequest takes a request's ${postmanRequestKeys.join(', ')} in Reqling scripts, not "${key}".`);
+      }
+    }
+    const url = request.url !== null && typeof request.url === 'object' ? request.url.raw : request.url;
+    if (typeof url !== 'string' || url === '') {
+      fail('pm.sendRequest needs the request\'s url.');
+    }
+    const headers = postmanHeaders(request.header);
+    const body = postmanBody(request.body, headers);
+    return { method: request.method === undefined ? 'GET' : request.method, url, headers, body };
+  }
+
+  /// With a callback, it's called with `(error, response)` once the reply arrives, inside the runner's call, so one that
+  /// throws fails the script; without one, the call returns a promise.
+  function sendRequest(request, callback) {
+    const fetch = postmanRequest(request);
+    if (typeof callback === 'function') {
+      internals.startSend(fetch, 'pm.sendRequest', (error, response) => (error === null ? callback(null, buildResponse(response)) : callback(error)));
+      return undefined;
+    }
+    return internals.promised((settle) => internals.startSend(fetch, 'pm.sendRequest', settle)).then(buildResponse);
+  }
+
+  function runRequest(request, options) {
+    return internals.promised((settle) => internals.startRun(request, options, 'pm.execution.runRequest', settle)).then(buildResponse);
+  }
+
   let request;
   let response;
   const test = (name, callback) => rq.test(name, callback);
@@ -236,7 +386,7 @@
     globals: variableScope(rq.globals),
     collectionVariables: variableScope(rq.defaultEnvironment),
     variables: variableScope(rq.variables, { replaceIn: (text) => rq.variables.replaceIn(text) }),
-    sendRequest: unsupported('pm.sendRequest', 'scripts can\'t make network calls'),
+    sendRequest,
     cookies: Object.freeze({
       get: (name) => rq.cookies.get(name),
       has: (name) => rq.cookies.has(name),
@@ -252,11 +402,12 @@
     execution: Object.freeze({
       setNextRequest: (request) => rq.execution.setNextRequest(request),
       skipRequest: () => rq.execution.skipRequest(),
+      runRequest,
     }),
     visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
   };
   Object.defineProperty(pm, 'request', { get: () => (request === undefined ? (request = buildRequest()) : request), enumerable: true });
-  Object.defineProperty(pm, 'response', { get: () => (response === undefined ? (response = buildResponse()) : response), enumerable: true });
+  Object.defineProperty(pm, 'response', { get: () => (response === undefined ? (response = buildResponse(httpResponse())) : response), enumerable: true });
   Object.defineProperty(globalThis, 'pm', { value: Object.freeze(pm), enumerable: false });
   Object.freeze(rq);
 })(globalThis.__rq);

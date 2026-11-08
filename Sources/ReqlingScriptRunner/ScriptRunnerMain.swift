@@ -5,9 +5,9 @@ import ReqlingScriptProtocol
 /// come (`EventWriter`), and kills this process at the time limit; nothing here bounds time. Exit statuses are
 /// `ScriptRunnerExit`'s.
 ///
-/// Most phases get their input whole, then standard input closes. A stream phase's input stays open while its stream
-/// does: each item for its handlers follows as a frame (`ScriptStreamInput`), read on a thread of its own, and the
-/// phase ends once the input closes and the item in hand is done.
+/// The input's header and bodies come first. Standard input then stays open: `ScriptRunnerMessage` frames follow,
+/// read on a thread of its own into a `ScriptInbox`, for a stream phase's items and for the replies to the requests
+/// scripts send. A stream phase ends once its items have ended and the item in hand is done.
 @main
 enum ScriptRunnerMain {
     static func main() {
@@ -24,35 +24,26 @@ enum ScriptRunnerMain {
         guard let runtime = ScriptRuntimeFiles(directory: URL(fileURLWithPath: input.runtimeDirectory, isDirectory: true)) else {
             exit(ScriptRunnerExit.missingRuntime)
         }
-        let ran: Bool
-        if let stream = input.stream {
-            let inbox = ScriptStreamInbox(canSend: stream.canSend)
-            Thread.detachNewThread {
-                inbox.read(from: reader)
-            }
-            ran = ScriptPhaseRunner(input: input, blobs: [], runtime: runtime, events: events, inbox: inbox).runStream()
-        } else {
-            ran = ScriptPhaseRunner(input: input, blobs: blobs(from: reader), runtime: runtime, events: events).run()
+        let blobs = blobs(input.blobCount, from: reader)
+        let inbox = ScriptInbox(canSend: input.stream?.canSend ?? false)
+        Thread.detachNewThread {
+            inbox.read(from: reader)
         }
-        guard ran else {
+        let phase = ScriptPhaseRunner(input: input, blobs: blobs, runtime: runtime, events: events, inbox: inbox)
+        guard input.stream == nil ? phase.run() : phase.runStream() else {
             exit(ScriptRunnerExit.noContext)
         }
         events.write(.done)
         exit(ScriptRunnerExit.success)
     }
 
-    /// The bodies after the header, to the input's end.
-    private static func blobs(from reader: ScriptInputReader) -> [Data] {
-        var blobs: [Data] = []
-        while true {
-            switch reader.next() {
-            case .frame(let blob):
-                blobs.append(blob)
-            case .end:
-                return blobs
-            case .corrupt:
+    /// The `count` bodies after the header.
+    private static func blobs(_ count: Int, from reader: ScriptInputReader) -> [Data] {
+        (0..<max(count, 0)).map { _ in
+            guard case .frame(let blob) = reader.next() else {
                 exit(ScriptRunnerExit.badInput)
             }
+            return blob
         }
     }
 }

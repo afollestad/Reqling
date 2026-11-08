@@ -11,8 +11,9 @@ struct ScriptStreamWindow {
     enum Action: Equatable {
         case none
         case write(ScriptStreamItem)
-        /// Closes the helper's input, which ends the phase once the item in hand is done.
-        case closeInput
+        /// Tells the helper no more items come (`ScriptRunnerMessage.endOfItems`), which ends the phase once the item in
+        /// hand is done. Its input stays open, for the replies that item's requests wait on.
+        case endItems
     }
 
     let limit: Int
@@ -26,7 +27,7 @@ struct ScriptStreamWindow {
     /// The stream ended: hand over what waits, then close.
     private var isEnding = false
     private var isStopped = false
-    private var isInputClosed = false
+    private var isEndOfItems = false
     private var isOver = false
 
     init(limit: Int, byteLimit: Int) {
@@ -60,7 +61,7 @@ struct ScriptStreamWindow {
         guard count > 0 else {
             waiting.removeAll()
             waitingBytes = 0
-            return closeInput()
+            return endItems()
         }
         return next()
     }
@@ -73,7 +74,7 @@ struct ScriptStreamWindow {
         return next()
     }
 
-    /// Drops what waits, returning how many items it held, and closes the input at once: the helper holds no more than
+    /// Drops what waits, returning how many items it held, and ends the items at once: the helper holds no more than
     /// the item in hand, which it still finishes.
     mutating func stop() -> (Int, Action) {
         guard !isStopped, !isOver else {
@@ -83,7 +84,7 @@ struct ScriptStreamWindow {
         let dropped = waiting.count
         waiting.removeAll()
         waitingBytes = 0
-        return (dropped, closeInput())
+        return (dropped, endItems())
     }
 
     mutating func end() -> Action {
@@ -111,14 +112,14 @@ struct ScriptStreamWindow {
             inHand = item.number
             return .write(item)
         }
-        return isEnding && waiting.isEmpty ? closeInput() : .none
+        return isEnding && waiting.isEmpty ? endItems() : .none
     }
 
-    private mutating func closeInput() -> Action {
-        guard !isInputClosed else {
+    private mutating func endItems() -> Action {
+        guard !isEndOfItems else {
             return .none
         }
-        isInputClosed = true
-        return .closeInput
+        isEndOfItems = true
+        return .endItems
     }
 }

@@ -123,19 +123,31 @@ struct ScriptFixtures {
         ScriptStreamItem(number: number, content: .grpcMessage(json))
     }
 
-    /// Runs to the end and collects every event.
-    func run(_ input: ScriptRunnerInput, blobs: [Data] = []) async -> ScriptRun {
+    /// Runs to the end and collects every event, answering each request a script sends with `answer`'s reply, or
+    /// never, for `nil`.
+    func run(
+        _ input: ScriptRunnerInput,
+        blobs: [Data] = [],
+        answer: (ScriptFetch) -> ScriptFetchAnswer? = { _ in .response() }
+    ) async -> ScriptRun {
         let execution = runner.run(input, blobs: blobs, timeLimit: .seconds(10))
         var events: [ScriptRunnerEvent] = []
         for await event in execution.events {
             events.append(event)
+            if case .fetch(let id, _, let fetch) = event, let reply = answer(fetch) {
+                execution.reply(reply.reply(id), reply.body)
+            }
         }
         return ScriptRun(events: events, termination: await execution.termination())
     }
 
     /// Runs a stream phase over `items`, handed over at once (they wait for its top level), then ends its input and
-    /// collects every event.
-    func stream(_ input: ScriptRunnerInput, items: [ScriptStreamItem]) async -> ScriptRun {
+    /// collects every event, answering requests as `run` does.
+    func stream(
+        _ input: ScriptRunnerInput,
+        items: [ScriptStreamItem],
+        answer: (ScriptFetch) -> ScriptFetchAnswer? = { _ in .response() }
+    ) async -> ScriptRun {
         let execution = runner.stream(input, timeLimit: .seconds(10))
         for item in items {
             _ = execution.deliver(item)
@@ -144,9 +156,46 @@ struct ScriptFixtures {
         var events: [ScriptRunnerEvent] = []
         for await event in execution.events {
             events.append(event)
+            if case .fetch(let id, _, let fetch) = event, let reply = answer(fetch) {
+                execution.reply(reply.reply(id), reply.body)
+            }
         }
         let ended = await execution.termination()
         return ScriptRun(events: events, termination: ended.reason, streamEnd: ended)
+    }
+}
+
+/// What a fixture answers a script's request with.
+struct ScriptFetchAnswer {
+    var outcome: ScriptFetchReply.Outcome
+    var body = Data()
+    var cookies: [ScriptCookie]?
+
+    /// A response, `{"ok": true}` unless a test gives another body.
+    static func response(
+        _ code: Int = 200,
+        status: String = "OK",
+        headers: [ScriptRow] = [ScriptRow(name: "Content-Type", value: "application/json")],
+        body: String = #"{"ok": true}"#,
+        cookies: [ScriptCookie]? = nil
+    ) -> ScriptFetchAnswer {
+        let bytes = Data(body.utf8)
+        return ScriptFetchAnswer(
+            outcome: .response(ScriptHTTPResponse(
+                code: code, status: status, headers: headers, body: ScriptBlob(index: 0, size: bytes.count),
+                size: bytes.count, truncated: false, responseTime: 12
+            )),
+            body: bytes,
+            cookies: cookies
+        )
+    }
+
+    static func failure(_ message: String) -> ScriptFetchAnswer {
+        ScriptFetchAnswer(outcome: .failed(message))
+    }
+
+    func reply(_ id: Int) -> ScriptFetchReply {
+        ScriptFetchReply(id: id, outcome: outcome, cookies: cookies)
     }
 }
 
@@ -268,6 +317,16 @@ struct ScriptRun {
             }
             return nil
         }.first
+    }
+
+    /// The requests scripts sent, in order.
+    var fetches: [ScriptFetch] {
+        events.compactMap { event in
+            if case .fetch(_, _, let fetch) = event {
+                return fetch
+            }
+            return nil
+        }
     }
 
     var sends: [ScriptOutgoingMessage] {

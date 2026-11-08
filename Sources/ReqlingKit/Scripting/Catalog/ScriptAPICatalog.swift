@@ -6,7 +6,7 @@ import ReqlingScriptProtocol
 public struct ScriptAPICatalog: Sendable {
     public static let standard = ScriptAPICatalog(
         globals: Self.globalMembers,
-        types: Self.reqlingTypes + Self.cookieTypes + Self.responseTypes + Self.postmanTypes + Self.libraryTypes
+        types: Self.reqlingTypes + Self.cookieTypes + Self.responseTypes + Self.fetchTypes + Self.postmanTypes + Self.libraryTypes
     )
 
     /// What a script names without a receiver.
@@ -207,9 +207,12 @@ public indirect enum ScriptValueType: Sendable, Hashable, CustomStringConvertibl
     case any
     case object
     case function
-    case promise
+    /// What a promise settles with, which `await` gives.
+    case promise(ScriptValueType)
     case array(ScriptValueType)
     case optional(ScriptValueType)
+    /// Any one of these, such as a URL or a request object.
+    case oneOf([ScriptValueType])
     /// JSON parsed from the response, whose keys come from this request's latest response.
     case responseJSON
     /// A function the API calls with these arguments, such as `rq.onEvent`'s handler; a script's function written as
@@ -226,19 +229,22 @@ public indirect enum ScriptValueType: Sendable, Hashable, CustomStringConvertibl
         case .any: "any"
         case .object: "object"
         case .function: "function"
-        case .promise: "Promise"
+        case .promise(let value): "Promise<\(value.description)>"
         case .array(let element): "\(element.description)[]"
         case .optional(let wrapped): "\(wrapped.description) | null"
+        case .oneOf(let types): types.map(\.description).joined(separator: " | ")
         case .responseJSON: "any"
         case .callback(let parameters): "(\(parameters.map(\.signature).joined(separator: ", "))) => void"
         }
     }
 
-    /// Every named type this one mentions, through arrays, optionals, and a callback's parameters.
+    /// Every named type this one mentions, through arrays, optionals, promises, alternatives, and a callback's
+    /// parameters.
     public var referencedNames: [String] {
         switch self {
         case .named(let name): [name]
-        case .array(let wrapped), .optional(let wrapped): wrapped.referencedNames
+        case .array(let wrapped), .optional(let wrapped), .promise(let wrapped): wrapped.referencedNames
+        case .oneOf(let types): types.flatMap(\.referencedNames)
         case .callback(let parameters): parameters.flatMap(\.type.referencedNames)
         default: []
         }

@@ -6,6 +6,8 @@ import Synchronization
 public struct ScriptStreamExecution: Sendable {
     /// Ends once the helper has written its last event.
     public let events: AsyncStream<ScriptRunnerEvent>
+    /// Answers a `ScriptRunnerEvent.fetch`, as `ScriptExecution.reply` does.
+    public let reply: ScriptFetchReplying
     /// Hands the handlers an item and returns at once, however far behind they are, so the stream stays responsive.
     public let deliver: @Sendable (ScriptStreamItem) -> ScriptStreamDelivery
     /// The connection or call no longer takes what `rq.send` sends.
@@ -21,6 +23,7 @@ public struct ScriptStreamExecution: Sendable {
 
     public init(
         events: AsyncStream<ScriptRunnerEvent>,
+        reply: @escaping ScriptFetchReplying,
         deliver: @escaping @Sendable (ScriptStreamItem) -> ScriptStreamDelivery,
         closeSending: @escaping @Sendable () -> Void,
         stop: @escaping @Sendable () -> Int,
@@ -29,6 +32,7 @@ public struct ScriptStreamExecution: Sendable {
         cancel: @escaping @Sendable () -> Void
     ) {
         self.events = events
+        self.reply = reply
         self.deliver = deliver
         self.closeSending = closeSending
         self.stop = stop
@@ -41,6 +45,7 @@ public struct ScriptStreamExecution: Sendable {
     public static func failed(_ message: String) -> ScriptStreamExecution {
         ScriptStreamExecution(
             events: AsyncStream { $0.finish() },
+            reply: { _, _ in },
             deliver: { _ in .refused },
             closeSending: {},
             stop: { 0 },
@@ -123,6 +128,7 @@ extension HelperScriptRunner {
         }
         return ScriptStreamExecution(
             events: events,
+            reply: { [input = launch.input] in input.write($0, body: $1) },
             deliver: driver.deliver,
             closeSending: driver.closeSending,
             stop: driver.stop,
@@ -203,8 +209,8 @@ final class ScriptStreamDriver: Sendable {
         case .write(let item):
             deadline.arm()
             input.write(.item(item))
-        case .closeInput:
-            input.close()
+        case .endItems:
+            input.write(.endOfItems)
         }
     }
 }

@@ -117,7 +117,7 @@ extension ScriptRunnerTests {
         pm.collectionVariables.set("shared", "1")
         pm.variables.set("local", "2")
         console.log(pm.info.eventName, pm.info.requestName, pm.environment.get("token"), pm.variables.replaceIn("{{local}}"))
-        try { pm.sendRequest("https://x", () => {}) } catch (error) { console.log(error.message) }
+        try { pm.vault.get("key") } catch (error) { console.log(error.message) }
         try { pm.request.headers.add({ key: "X", value: "1" }) } catch (error) { console.log(error.message) }
         """], response: httpResponse(body)), blobs: [body])
 
@@ -125,7 +125,7 @@ extension ScriptRunnerTests {
         XCTAssertEqual(run.writes.map(\.scope), [.environment, .defaultEnvironment, .local])
         XCTAssertEqual(run.console, [
             "test Login t0k 2",
-            "pm.sendRequest isn't supported in Reqling scripts: scripts can't make network calls.",
+            "pm.vault isn't supported in Reqling scripts.",
             "Only pre-request scripts can change the request."
         ])
     }

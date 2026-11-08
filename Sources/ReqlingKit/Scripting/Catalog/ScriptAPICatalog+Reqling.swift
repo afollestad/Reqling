@@ -89,6 +89,17 @@ extension ScriptAPICatalog {
         .method("send", [ScriptParameter("message", .any, "The message as an object, or its JSON text.")],
                 returns: .void, "Sends a message on the call's open request stream, as given: `{{variables}}` in it aren't resolved.",
                 phases: .stream, protocols: [.grpc]),
+        .method("sendRequest", [ScriptParameter("request", .oneOf([.string, .named("OutgoingRequest")]),
+                                                "A URL to GET, or the request to send: `{ method, url, headers, body }`.")],
+                returns: .promise(.named("IncomingResponse")),
+                "Sends a request from Reqling, as given: `{{variables}}` in it aren't resolved. Resolves with the response, "
+                    + "whatever its status, and rejects when none comes back."),
+        .method("runRequest", [ScriptParameter("request", .string, "The saved request's name or ID."),
+                               ScriptParameter("options", .named("RunRequestOptions"),
+                                               "`{ variables }`: values that beat every other for this request.", isOptional: true)],
+                returns: .promise(.named("IncomingResponse")),
+                "Sends a saved HTTP request as a run resolves it, auth included, without running its scripts or keeping it "
+                    + "in its history."),
         .method("test", testParameters, returns: .void,
                 "Runs a named test; it fails when the callback throws or its promise rejects.", functionType: "TestFunction"),
         .method("expect", expectParameters, returns: .named("Expectation"), "Starts a Chai-style assertion about a value."),

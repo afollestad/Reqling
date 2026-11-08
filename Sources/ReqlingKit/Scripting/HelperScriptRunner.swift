@@ -11,10 +11,13 @@ public protocol ScriptRunning: Sendable {
     func stream(_ input: ScriptRunnerInput, timeLimit: Duration) -> ScriptStreamExecution
 }
 
-/// One launched phase: its events as they arrive, how it ended, and a way to stop it.
+/// One launched phase: its events as they arrive, a way to answer the requests its scripts send, how it ended, and a
+/// way to stop it.
 public struct ScriptExecution: Sendable {
     /// Ends once the helper has written its last event.
     public let events: AsyncStream<ScriptRunnerEvent>
+    /// Answers a `ScriptRunnerEvent.fetch`, with the response's body for a `.response`; dropped once the helper is gone.
+    public let reply: ScriptFetchReplying
     /// Resolves after every event was delivered and the process is gone.
     public let termination: @Sendable () async -> ScriptTermination
     /// Kills the process, if it still runs; `termination` then reports `.cancelled`.
@@ -22,19 +25,24 @@ public struct ScriptExecution: Sendable {
 
     public init(
         events: AsyncStream<ScriptRunnerEvent>,
+        reply: @escaping ScriptFetchReplying,
         termination: @escaping @Sendable () async -> ScriptTermination,
         cancel: @escaping @Sendable () -> Void
     ) {
         self.events = events
+        self.reply = reply
         self.termination = termination
         self.cancel = cancel
     }
 
     /// A phase that never started, with no events.
     public static func failed(_ message: String) -> ScriptExecution {
-        ScriptExecution(events: AsyncStream { $0.finish() }, termination: { .failed(message) }, cancel: {})
+        ScriptExecution(events: AsyncStream { $0.finish() }, reply: { _, _ in }, termination: { .failed(message) }, cancel: {})
     }
 }
+
+/// Writes a fetch's reply to the helper: the reply, then a `.response`'s body.
+public typealias ScriptFetchReplying = @Sendable (ScriptFetchReply, Data) -> Void
 
 /// How a phase's helper ended.
 public enum ScriptTermination: Hashable, Sendable {
@@ -92,6 +100,7 @@ public final class HelperScriptRunner: ScriptRunning {
         }
         var input = input
         input.runtimeDirectory = runtimeDirectory.path
+        input.blobCount = blobs.count
         guard let header = try? JSONEncoder().encode(input) else {
             return .failed(Self.encodingMessage)
         }
@@ -101,12 +110,12 @@ public final class HelperScriptRunner: ScriptRunning {
         } catch {
             return .failed(Self.launchFailure(error))
         }
+        // Left open after the bodies, for the replies to the requests scripts send; closed once the helper is gone.
         let pipe = launch.input
         pipe.write(frame: header)
         for blob in blobs {
             pipe.write(frame: blob)
         }
-        pipe.close()
         let events = launch.readEvents()
         let process = launch.process
         let sleep = self.sleep
@@ -119,10 +128,12 @@ public final class HelperScriptRunner: ScriptRunning {
         let termination = Task {
             await launch.finished()
             deadline.cancel()
+            pipe.close()
             return process.termination
         }
         return ScriptExecution(
             events: events,
+            reply: { pipe.write($0, body: $1) },
             termination: { await termination.value },
             cancel: { process.kill(.cancelled) }
         )
@@ -201,8 +212,7 @@ struct ScriptLaunch: Sendable {
 }
 
 /// The helper's standard input. Frames are written in order off the caller's thread, so a helper that stops reading
-/// can't hold it, and a stream phase's items are encoded there too, never on the main actor. Writes after `close` are
-/// dropped.
+/// can't hold it, and messages are encoded there too, never on the main actor. Writes after `close` are dropped.
 final class ScriptInputPipe: Sendable {
     private let handle: FileHandle
     private let queue = DispatchQueue(label: "com.afollestad.reqling.script-input", qos: .userInitiated)
@@ -216,8 +226,21 @@ final class ScriptInputPipe: Sendable {
         enqueue { ScriptFraming.frame(payload) }
     }
 
-    func write(_ input: ScriptStreamInput) {
-        enqueue { (try? JSONEncoder().encode(input)).map(ScriptFraming.frame) }
+    func write(_ message: ScriptRunnerMessage) {
+        enqueue { (try? JSONEncoder().encode(message)).map(ScriptFraming.frame) }
+    }
+
+    /// A fetch's reply, and a `.response`'s body as the frame after it, written together so nothing comes between.
+    func write(_ reply: ScriptFetchReply, body: Data) {
+        enqueue {
+            guard let header = try? JSONEncoder().encode(ScriptRunnerMessage.fetched(reply)) else {
+                return nil
+            }
+            guard case .response = reply.outcome else {
+                return ScriptFraming.frame(header)
+            }
+            return ScriptFraming.frame(header) + ScriptFraming.frame(body)
+        }
     }
 
     /// Ends the helper's input once what was written before has gone out.

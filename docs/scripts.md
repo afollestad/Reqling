@@ -190,6 +190,8 @@ Reqling's script API.
 - `onMessage(handler: (message: GRPCMessage) => void): void`: Runs the handler on each message received, in order. *(stream, gRPC only)*
 - `send(message: any): void`: Sends a message on the open connection, as given: `{{variables}}` in it aren't resolved. *(stream, WebSocket only)*
 - `send(message: any): void`: Sends a message on the call's open request stream, as given: `{{variables}}` in it aren't resolved. *(stream, gRPC only)*
+- `sendRequest(request: string | OutgoingRequest): Promise<IncomingResponse>`: Sends a request from Reqling, as given: `{{variables}}` in it aren't resolved. Resolves with the response, whatever its status, and rejects when none comes back.
+- `runRequest(request: string, options?: RunRequestOptions): Promise<IncomingResponse>`: Sends a saved HTTP request as a run resolves it, auth included, without running its scripts or keeping it in its history.
 - `test(name: string, callback: function): void`: Runs a named test; it fails when the callback throws or its promise rejects.
 - `expect(value: any, message?: string): Expectation`: Starts a Chai-style assertion about a value.
 - `crypto: Crypto`: Hashes and HMACs for signing requests.
@@ -400,6 +402,35 @@ One message the call received.
 - `text(): string`: The message as JSON text.
 - `json(): any`: The message, parsed.
 
+### `IncomingResponse`
+
+What a request a script sent got back.
+
+- `code: number`: The HTTP status code.
+- `status: string`: The HTTP reason phrase, such as `OK`.
+- `headers: ReadonlyRows`: The response's headers.
+- `size: number`: The body's size in bytes, as received.
+- `truncated: boolean`: Whether the body was cut to the 64 MB scripts receive.
+- `responseTime: number`: How long it took, in milliseconds.
+- `text(): string`: The body as text.
+- `json(): any`: The body, parsed as JSON.
+- `base64(): string`: The body's bytes, base64.
+
+### `OutgoingRequest`
+
+A request for `rq.sendRequest` to send, as given.
+
+- `method: string`: The HTTP method; `GET` when left out.
+- `url: string`: The URL, as given; `rq.variables.replaceIn` resolves `{{variables}}` first.
+- `headers: object`: An object of names and values, or `[name, value]` pairs.
+- `body: any`: Text, an `ArrayBuffer` or typed array, or any other value as JSON, which adds a JSON `Content-Type` unless `headers` name one.
+
+### `RunRequestOptions`
+
+How `rq.runRequest` sends a saved request.
+
+- `variables: object`: Values that beat every other for this request, by name.
+
 ### `TestFunction`
 
 Runs a named test.
@@ -562,7 +593,7 @@ Scripts from Postman run as they are. Each name works like its Reqling equivalen
 - `pm.variables`: `rq.variables`
 - `pm.request`: `rq.request`
 - `pm.response`: `rq.response`
-- `pm.sendRequest`: not supported, since scripts can't make network calls
+- `pm.sendRequest`: `rq.sendRequest`
 - `pm.cookies`: `rq.cookies`
 - `pm.vault`: not supported, since Reqling keeps secrets as secret variables
 - `pm.iterationData`: `rq.iterationData`

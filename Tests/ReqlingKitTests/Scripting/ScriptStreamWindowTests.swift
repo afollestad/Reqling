@@ -20,7 +20,7 @@ final class ScriptStreamWindowTests: XCTestCase {
         XCTAssertEqual(window.finished(item: 3), .none)
         XCTAssertEqual(window.deliver(item(4)).1, .write(item(4)), "Nothing in hand, so it goes straight out")
         XCTAssertEqual(window.end(), .none, "Item 4 is still in hand")
-        XCTAssertEqual(window.finished(item: 4), .closeInput)
+        XCTAssertEqual(window.finished(item: 4), .endItems)
         XCTAssertEqual(window.deliver(item(5)).0, .refused)
     }
 
@@ -28,7 +28,7 @@ final class ScriptStreamWindowTests: XCTestCase {
         var window = ScriptStreamWindow(limit: 10, byteLimit: 1_000)
         _ = window.deliver(item(1))
 
-        XCTAssertEqual(window.registered(handlers: 0), .closeInput)
+        XCTAssertEqual(window.registered(handlers: 0), .endItems)
         XCTAssertEqual(window.deliver(item(2)).0, .unneeded)
         XCTAssertEqual(window.over().abandoned, 0, "What waited needed no handler, so none was abandoned")
     }
@@ -55,7 +55,7 @@ final class ScriptStreamWindowTests: XCTestCase {
 
         let (dropped, action) = window.stop()
         XCTAssertEqual(dropped, 2)
-        XCTAssertEqual(action, .closeInput)
+        XCTAssertEqual(action, .endItems)
         XCTAssertEqual(window.finished(item: 1), .none, "Nothing more goes out")
         XCTAssertEqual(window.deliver(item(4)).0, .refused)
         XCTAssertEqual(window.stop().0, 0)
@@ -69,7 +69,7 @@ final class ScriptStreamWindowTests: XCTestCase {
         XCTAssertEqual(window.end(), .none, "The top level still runs")
         XCTAssertEqual(window.registered(handlers: 2), .write(item(1)))
         XCTAssertEqual(window.finished(item: 1), .write(item(2)))
-        XCTAssertEqual(window.finished(item: 2), .closeInput)
+        XCTAssertEqual(window.finished(item: 2), .endItems)
         XCTAssertEqual(window.end(), .none, "Closed once")
     }
 

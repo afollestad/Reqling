@@ -5,7 +5,7 @@ import Foundation
 public struct ScriptStreamSetup: Hashable, Sendable, Codable {
     public var opening: ScriptStreamOpening
     /// Whether the connection or call takes what `rq.send` sends: never for an event stream, and for a gRPC call only
-    /// while its request stream is open. `ScriptStreamInput.sendingClosed` turns it off later.
+    /// while its request stream is open. `ScriptRunnerMessage.sendingClosed` turns it off later.
     public var canSend: Bool
 
     public init(opening: ScriptStreamOpening, canSend: Bool) {
@@ -64,16 +64,6 @@ public struct ScriptStreamItem: Hashable, Sendable, Codable {
             json.utf8.count
         }
     }
-}
-
-/// What the app writes to a stream phase's helper after its input, one frame each (`ScriptFraming`). Closing the
-/// helper's standard input ends the phase once the item in hand has been handled.
-public enum ScriptStreamInput: Hashable, Sendable, Codable {
-    /// The next item for the handlers. The app writes one only once the helper has finished the one before it
-    /// (`ScriptRunnerEvent.callFinished`), so what waits stays on the app's side, where it is bounded and counted.
-    case item(ScriptStreamItem)
-    /// The connection or call no longer takes what `rq.send` sends.
-    case sendingClosed
 }
 
 /// A message a stream script sent with `rq.send`, as the script gave it: never `{{variables}}`-resolved, since scripts

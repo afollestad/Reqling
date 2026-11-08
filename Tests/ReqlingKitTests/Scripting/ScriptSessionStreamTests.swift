@@ -232,6 +232,7 @@ private final class ScriptedStreamRunner: ScriptRunning {
     func stream(_ input: ScriptRunnerInput, timeLimit: Duration) -> ScriptStreamExecution {
         ScriptStreamExecution(
             events: stream.stream,
+            reply: { _, _ in },
             deliver: { _ in self.deliveries.withLock { $0.isEmpty ? .queued(dropped: 0) : $0.removeFirst() } },
             closeSending: {},
             stop: { self.waiting },

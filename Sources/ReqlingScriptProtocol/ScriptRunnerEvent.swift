@@ -25,6 +25,9 @@ public enum ScriptRunnerEvent: Hashable, Sendable, Codable {
     case callFinished(item: Int)
     /// A stream script's `rq.send`, already checked against `ScriptLimits`.
     case send(level: Int, message: ScriptOutgoingMessage)
+    /// A script asked Reqling to send a request, already checked against `ScriptLimits`. `id` counts up across the
+    /// phase; the reply (`ScriptRunnerMessage.fetched`) names it.
+    case fetch(id: Int, level: Int, ScriptFetch)
     /// A script asked to skip the request, or named what a folder or project run does next. Written only when that
     /// changes, so a loop calling it writes once.
     case flow(ScriptFlowRequest)
