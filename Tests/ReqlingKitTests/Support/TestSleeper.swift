@@ -12,6 +12,15 @@ final class TestSleeper: Sendable {
     private struct State {
         var requested: [Duration] = []
         var waiters: [Waiter] = []
+        /// Callers of `waitForWaiting`, each with the count it waits for.
+        var counters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+        /// Takes the counters the waiters now satisfy.
+        mutating func satisfiedCounters() -> [CheckedContinuation<Void, Never>] {
+            let satisfied = counters.filter { $0.count <= waiters.count }.map(\.continuation)
+            counters.removeAll { $0.count <= waiters.count }
+            return satisfied
+        }
     }
 
     /// Whether sleeps return at once, rather than waiting for `wake()`.
@@ -43,16 +52,19 @@ final class TestSleeper: Sendable {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 // Checked under the lock, so a cancel that lands before the waiter is added still ends it.
-                let isCancelled = state.withLock { state in
+                let (isCancelled, satisfied) = state.withLock { state in
                     if !Task.isCancelled {
                         state.waiters.append(Waiter(id: id, continuation: continuation))
                     }
-                    return Task.isCancelled
+                    return (Task.isCancelled, state.satisfiedCounters())
                 }
                 if isCancelled {
                     continuation.resume(throwing: CancellationError())
                 } else {
                     requested.yield(duration)
+                }
+                for counter in satisfied {
+                    counter.resume()
                 }
             }
         } onCancel: {
@@ -60,6 +72,23 @@ final class TestSleeper: Sendable {
                 state.waiters.firstIndex { $0.id == id }.map { state.waiters.remove(at: $0) }
             }
             waiter?.continuation.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Returns once at least `count` sleeps wait for `wake()`. A cancelled sleep stops waiting at once, so this counts
+    /// only the deadlines still armed, such as the one for the call a stream script is in now.
+    func waitForWaiting(_ count: Int) async {
+        await withCheckedContinuation { continuation in
+            let isReady = state.withLock { state in
+                guard state.waiters.count < count else {
+                    return true
+                }
+                state.counters.append((count, continuation))
+                return false
+            }
+            if isReady {
+                continuation.resume()
+            }
         }
     }
 

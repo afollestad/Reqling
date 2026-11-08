@@ -14,6 +14,8 @@ final class ScriptCookies {
     private let limits: ScriptLimits
     private let events: EventWriter
     private var writes = 0
+    /// What the write limit applies to, as its message names it.
+    private var unit = "phase"
     private var mirror: HTTPCookieStorage?
 
     init(snapshot: [ScriptCookie], request: ScriptRequestModel, variables: ScriptVariables, limits: ScriptLimits, events: EventWriter) {
@@ -22,6 +24,12 @@ final class ScriptCookies {
         self.variables = variables
         self.limits = limits
         self.events = events
+    }
+
+    /// Starts a stream handler call's own write limit; what earlier calls set stays.
+    func beginCall() {
+        writes = 0
+        unit = "handler call"
     }
 
     /// `rq.cookies.for`'s target with its `{{variables}}` resolved, as the canonical text `scope` reads back.
@@ -76,7 +84,7 @@ final class ScriptCookies {
     /// Applies and reports `changes`, or none of them past the phase's limit.
     private func record(_ changes: [ScriptCookieWrite]) throws(ScriptFailure) {
         guard writes + changes.count <= limits.cookieWrites else {
-            throw ScriptFailure("Scripts can set or remove at most \(limits.cookieWrites) cookies in one phase.")
+            throw ScriptFailure("Scripts can set or remove at most \(limits.cookieWrites) cookies in one \(unit).")
         }
         let jar = try jar()
         for change in changes {

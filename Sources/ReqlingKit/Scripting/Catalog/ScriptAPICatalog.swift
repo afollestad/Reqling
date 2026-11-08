@@ -198,6 +198,9 @@ public indirect enum ScriptValueType: Sendable, Hashable, CustomStringConvertibl
     case optional(ScriptValueType)
     /// JSON parsed from the response, whose keys come from this request's latest response.
     case responseJSON
+    /// A function the API calls with these arguments, such as `rq.onEvent`'s handler; a script's function written as
+    /// that argument gets them as its parameters. `ScriptRuntimeConformanceTests` calls each one to check them.
+    case callback([ScriptParameter])
 
     public var description: String {
         switch self {
@@ -213,6 +216,17 @@ public indirect enum ScriptValueType: Sendable, Hashable, CustomStringConvertibl
         case .array(let element): "\(element.description)[]"
         case .optional(let wrapped): "\(wrapped.description) | null"
         case .responseJSON: "any"
+        case .callback(let parameters): "(\(parameters.map(\.signature).joined(separator: ", "))) => void"
+        }
+    }
+
+    /// Every named type this one mentions, through arrays, optionals, and a callback's parameters.
+    public var referencedNames: [String] {
+        switch self {
+        case .named(let name): [name]
+        case .array(let wrapped), .optional(let wrapped): wrapped.referencedNames
+        case .callback(let parameters): parameters.flatMap(\.type.referencedNames)
+        default: []
         }
     }
 
@@ -288,10 +302,26 @@ extension ScriptMember {
 
 extension Set where Element == ScriptPhase {
     static let pre: Set<ScriptPhase> = [.preRequest]
+    static let stream: Set<ScriptPhase> = [.stream]
     static let post: Set<ScriptPhase> = [.postResponse]
+    /// What a stream script reads of a response, which it opened with, and a post-response script reads whole.
+    static let opened: Set<ScriptPhase> = [.stream, .postResponse]
+
+    /// As notes and warnings name them, in running order: "stream and post-response".
+    var listed: String {
+        ScriptPhase.allCases.filter(contains).map { $0.title.lowercased() }.joined(separator: " and ")
+    }
 }
 
 extension Set where Element == ScriptResponseKind {
+    /// As notes and warnings name them: "HTTP and WebSocket". An event stream is an HTTP response, so HTTP covers it.
+    var listed: String {
+        [(ScriptResponseKind.http, "HTTP"), (.grpc, "gRPC"), (.webSocket, "WebSocket")]
+            .filter { contains($0.0) || ($0.0 == .http && contains(.eventStream)) }
+            .map(\.1)
+            .joined(separator: " and ")
+    }
+
     /// HTTP's request members, which an event stream's request shares.
     static let http: ScriptProtocols = [.http, .eventStream]
     static let withQuery: ScriptProtocols = [.http, .eventStream, .webSocket]

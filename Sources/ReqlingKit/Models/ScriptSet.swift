@@ -1,10 +1,11 @@
 import ReqlingScriptProtocol
 
 extension ScriptPhase {
-    /// What follows the owner's file name in the phase's file: `list-users.pre.js`, `_folder.post.js`.
+    /// What follows the owner's file name in the phase's file: `list-users.pre.js`, `_folder.stream.js`.
     var fileSuffix: String {
         switch self {
         case .preRequest: "pre"
+        case .stream: "stream"
         case .postResponse: "post"
         }
     }
@@ -14,10 +15,12 @@ extension ScriptPhase {
 /// (`ProjectLayout.scriptPath`), so it diffs and edits as code; an empty script has no file.
 public struct ScriptSet: Hashable, Sendable {
     public var preRequest: String
+    public var stream: String
     public var postResponse: String
 
-    public init(preRequest: String = "", postResponse: String = "") {
+    public init(preRequest: String = "", stream: String = "", postResponse: String = "") {
         self.preRequest = preRequest
+        self.stream = stream
         self.postResponse = postResponse
     }
 
@@ -25,18 +28,20 @@ public struct ScriptSet: Hashable, Sendable {
         get {
             switch phase {
             case .preRequest: preRequest
+            case .stream: stream
             case .postResponse: postResponse
             }
         }
         set {
             switch phase {
             case .preRequest: preRequest = newValue
+            case .stream: stream = newValue
             case .postResponse: postResponse = newValue
             }
         }
     }
 
     public var isEmpty: Bool {
-        preRequest.isEmpty && postResponse.isEmpty
+        ScriptPhase.allCases.allSatisfy { self[$0].isEmpty }
     }
 }

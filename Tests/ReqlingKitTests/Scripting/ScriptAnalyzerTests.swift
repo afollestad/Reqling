@@ -119,7 +119,7 @@ final class ScriptAnalyzerTests: XCTestCase {
     }
 
     func testWarningsNameWhatDoesntWorkWhereTheScriptRuns() {
-        XCTAssertEqual(warnings("rq.response.code"), ["rq.response works only in post-response scripts."])
+        XCTAssertEqual(warnings("rq.response.code"), ["rq.response works only in stream and post-response scripts."])
         XCTAssertEqual(warnings("rq.request.foo"), ["rq.request has no “foo”."])
         XCTAssertEqual(warnings("rq.request.metadata"), ["rq.request.metadata applies only to gRPC requests."])
         XCTAssertEqual(warnings("pm.sendRequest()"), ["pm.sendRequest isn't supported in Reqling: scripts can't make network calls."])

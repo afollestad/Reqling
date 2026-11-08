@@ -69,7 +69,7 @@ extension ScriptsEditingTests {
         let items = scripts.diagnostics.items
         XCTAssertEqual(items.first?.severity, .error)
         XCTAssertTrue(items.first?.message.hasPrefix("SyntaxError") ?? false)
-        XCTAssertEqual(items.last?.message, "rq.response works only in post-response scripts.")
+        XCTAssertEqual(items.last?.message, "rq.response works only in stream and post-response scripts.")
     }
 
     func testNamesScriptsSetCountAsDefinedWhereTheyCanBe() throws {

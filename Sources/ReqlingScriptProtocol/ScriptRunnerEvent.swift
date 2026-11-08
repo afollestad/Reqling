@@ -15,10 +15,20 @@ public enum ScriptRunnerEvent: Hashable, Sendable, Codable {
     /// The level threw, or a timer or promise it started did, or its promise never settled.
     case levelFailed(level: Int, error: ScriptError)
     case levelFinished(level: Int)
+    /// A stream phase's levels have all run their top level, registering this many handlers among them for the
+    /// stream's protocol. With none, nothing could reach a handler, and the helper exits next.
+    case registered(handlers: Int)
+    /// A stream phase began handing item `item` (`ScriptStreamItem.number`) to its handlers. Every event up to
+    /// `callFinished` is that call's: a `levelFailed` then is one of the level's handlers failing on the item, and the
+    /// level keeps handling later ones.
+    case callStarted(item: Int)
+    case callFinished(item: Int)
+    /// A stream script's `rq.send`, already checked against `ScriptLimits`.
+    case send(level: Int, message: ScriptOutgoingMessage)
     /// A script asked to skip the request, or named what a folder or project run does next. Written only when that
     /// changes, so a loop calling it writes once.
     case flow(ScriptFlowRequest)
-    /// Every level ran; the helper exits next.
+    /// Every level ran, or for a stream phase, every item it was given; the helper exits next.
     case done
 }
 

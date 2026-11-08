@@ -26,11 +26,19 @@ final class ScriptVariables {
     private let limits: ScriptLimits
     private let events: EventWriter
     private var writes = 0
+    /// What the write limit applies to, as its message names it.
+    private var unit = "phase"
 
     init(layers: VariableLayers, limits: ScriptLimits, events: EventWriter) {
         self.layers = layers
         self.limits = limits
         self.events = events
+    }
+
+    /// Starts a stream handler call's own write limit; what earlier calls set stays.
+    func beginCall() {
+        writes = 0
+        unit = "handler call"
     }
 
     func get(_ scope: Scope, _ key: String) -> TemplateVariable? {
@@ -71,7 +79,7 @@ final class ScriptVariables {
             throw ScriptFailure("A variable needs a name.")
         }
         guard writes < limits.variableWrites else {
-            throw ScriptFailure("Scripts can set at most \(limits.variableWrites) values in one phase.")
+            throw ScriptFailure("Scripts can set at most \(limits.variableWrites) values in one \(unit).")
         }
         if let value, value.utf16.count > limits.valueLength {
             throw ScriptFailure("“\(key)” is too long to keep; a value can hold at most \(limits.valueLength) characters.")

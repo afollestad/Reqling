@@ -84,7 +84,7 @@ extension MCPRequestToolsTests {
 
         let problems = try XCTUnwrap(created["scriptProblems"])
         XCTAssertEqual(problems["preRequest"]?.arrayValue?.map { $0["message"] }, [
-            "rq.response works only in post-response scripts.",
+            "rq.response works only in stream and post-response scripts.",
             "rq.request.metadata applies only to gRPC requests."
         ])
         XCTAssertEqual(problems["preRequest"]?.arrayValue?.last?["line"], 2)

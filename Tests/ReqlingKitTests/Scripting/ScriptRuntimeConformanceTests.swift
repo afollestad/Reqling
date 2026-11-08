@@ -7,7 +7,8 @@ import XCTest
 
 /// `ScriptAPICatalog` against the runtime the helper runs, both ways, in every phase and for every protocol: each
 /// member the catalog says applies exists with its declared type, and each key the runtime exposes on `rq`, `pm`, and
-/// what they hold is in the catalog. One helper launch per context checks every path at once.
+/// what they hold is in the catalog. One helper launch per context checks every path at once; a stream context also
+/// registers every handler (`ScriptValueType.callback`) and checks what each is called with.
 @MainActor
 final class ScriptRuntimeConformanceTests: XCTestCase {
     private let fixtures = ScriptFixtures()
@@ -19,6 +20,8 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         let requestProtocol: String
         let response: ScriptResponseSnapshot?
         let protocols: ScriptProtocols
+        /// What a stream context's handlers are called with.
+        var item: ScriptStreamItem?
     }
 
     /// One path to read, and the `typeof` it must give.
@@ -33,6 +36,14 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
     private struct Walked: Encodable {
         let path: [String]
         let type: String
+    }
+
+    /// A method that takes a handler, which the probe registers to check the handler's argument; its probes and walks
+    /// are paths into that argument.
+    private struct Handler: Encodable {
+        let method: [String]
+        var probes: [Probe] = []
+        var walked: [Walked] = []
     }
 
     private var contexts: [Context] {
@@ -56,7 +67,13 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
             Context(name: "post websocket", phase: .postResponse, requestProtocol: "websocket", response: .webSocket(ScriptWebSocketResponse(
                 code: 101, headers: [], subprotocol: "chat", messages: [ScriptSocketMessage(direction: "received", text: "{}", base64: nil)],
                 closeCode: 1000, closeReason: "bye", end: "closed", responseTime: 1
-            )), protocols: [.webSocket])
+            )), protocols: [.webSocket]),
+            Context(name: "stream event stream", phase: .stream, requestProtocol: "http", response: nil, protocols: [.eventStream],
+                    item: ScriptStreamItem(number: 1, content: .event(ScriptStreamEvent(id: "1", event: "e", data: "{}", retry: 5)))),
+            Context(name: "stream grpc", phase: .stream, requestProtocol: "grpc", response: nil, protocols: [.grpc],
+                    item: ScriptFixtures.grpcMessage("{}", 1)),
+            Context(name: "stream websocket", phase: .stream, requestProtocol: "websocket", response: nil, protocols: [.webSocket],
+                    item: ScriptFixtures.message("{}", 1))
         ]
     }
 
@@ -77,33 +94,44 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         plan.walked.append(Walked(path: [], type: Self.globalObject))
         var limits = ScriptLimits()
         limits.consoleEntryLength = 1_000_000
-        let run = await fixtures.run(
-            ScriptFixtures.input(
-                context.phase,
-                [try probeScript(plan)],
-                request: ScriptFixtures.request(context.requestProtocol),
-                response: context.response,
-                limits: limits
-            ),
-            blobs: [Data(#"{"id": 7}"#.utf8)]
+        let input = ScriptFixtures.input(
+            context.phase,
+            [try probeScript(plan)],
+            request: ScriptFixtures.request(context.requestProtocol),
+            response: context.response,
+            limits: limits
         )
+        let run = if let item = context.item {
+            await fixtures.stream(input, items: [item])
+        } else {
+            await fixtures.run(input, blobs: [Data(#"{"id": 7}"#.utf8)])
+        }
         let output = try XCTUnwrap(run.console.first, "\(context.name): \(run.failures)")
         let report = try JSONDecoder().decode(Report.self, from: Data(output.utf8))
-        XCTAssertEqual(report.results.count, plan.probes.count, context.name)
-        XCTAssertEqual(report.keys.count, plan.walked.count, context.name)
         XCTAssertGreaterThan(plan.probes.count, 100, "\(context.name) checks too little to mean anything")
+        verify(plan.probes, plan.walked, against: report, in: context.name)
 
-        for (probe, result) in zip(plan.probes, report.results) {
+        XCTAssertEqual(run.console.count, 1 + plan.handlers.count, "\(context.name): every handler runs once: \(run.callFailures)")
+        for (handler, output) in zip(plan.handlers, run.console.dropFirst()) {
+            let report = try JSONDecoder().decode(Report.self, from: Data(output.utf8))
+            verify(handler.probes, handler.walked, against: report, in: "\(context.name) \(handler.method.joined(separator: "."))(…)")
+        }
+    }
+
+    private func verify(_ probes: [Probe], _ walked: [Walked], against report: Report, in name: String) {
+        XCTAssertEqual(report.results.count, probes.count, name)
+        XCTAssertEqual(report.keys.count, walked.count, name)
+        for (probe, result) in zip(probes, report.results) {
             let acceptable = probe.expected + (probe.mayBeMissing ? ["missing", "null"] : [])
             XCTAssertTrue(
                 acceptable.contains(result) || probe.expected.contains("any"),
-                "\(context.name): \(probe.path.joined(separator: ".")) is \(result), not \(probe.expected)"
+                "\(name): \(probe.path.joined(separator: ".")) is \(result), not \(probe.expected)"
             )
         }
-        for (item, keys) in zip(plan.walked, report.keys) {
+        for (item, keys) in zip(walked, report.keys) {
             let documented = Set((item.type == Self.globalObject ? catalog.globals : catalog.type(item.type)?.members ?? []).map(\.name))
             for key in keys where !documented.contains(key) {
-                XCTFail("\(context.name): \(item.path.joined(separator: ".")).\(key) isn't in the catalog's \(item.type)")
+                XCTFail("\(name): \(item.path.joined(separator: ".")).\(key) isn't in the catalog's \(item.type)")
             }
         }
     }
@@ -112,35 +140,45 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
     private struct Plan {
         var probes: [Probe] = []
         var walked: [Walked] = []
+        var handlers: [Handler] = []
     }
 
-    /// Reads every probe's `typeof` and every walked object's own keys, and logs them as one JSON line.
+    /// Reads every probe's `typeof` and every walked object's own keys, and logs them as one JSON line; then registers
+    /// each handler, which logs a line of its own for its argument when it's called.
     private func probeScript(_ plan: Plan) throws -> String {
         """
         const probes = \(try json(plan.probes))
         const walked = \(try json(plan.walked))
-        function read(path) {
-          let value = globalThis
+        const handlers = \(try json(plan.handlers))
+        function read(path, root) {
+          let value = root === undefined ? globalThis : root
           for (const key of path) {
             if (value === null || value === undefined) return { missing: true }
             value = value[key]
           }
           return { value }
         }
-        const results = probes.map((probe) => {
-          try {
-            const found = read(probe.path)
-            if (found.missing || found.value === undefined) return 'missing'
-            return found.value === null ? 'null' : typeof found.value
-          } catch (error) { return 'throws: ' + error.message }
-        })
-        const keys = walked.map((item) => {
-          try {
-            const { value } = read(item.path)
-            return value !== null && (typeof value === 'object' || typeof value === 'function') ? Object.keys(value) : []
-          } catch (error) { return [] }
-        })
-        console.log(JSON.stringify({ results, keys }))
+        function report(probes, walked, root) {
+          const results = probes.map((probe) => {
+            try {
+              const found = read(probe.path, root)
+              if (found.missing || found.value === undefined) return 'missing'
+              return found.value === null ? 'null' : typeof found.value
+            } catch (error) { return 'throws: ' + error.message }
+          })
+          const keys = walked.map((item) => {
+            try {
+              const { value } = read(item.path, root)
+              return value !== null && (typeof value === 'object' || typeof value === 'function') ? Object.keys(value) : []
+            } catch (error) { return [] }
+          })
+          console.log(JSON.stringify({ results, keys }))
+        }
+        report(probes, walked)
+        for (const handler of handlers) {
+          const receiver = read(handler.method.slice(0, -1)).value
+          receiver[handler.method[handler.method.length - 1]]((argument) => report(handler.probes, handler.walked, argument))
+        }
         """
     }
 
@@ -169,6 +207,13 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
             plan.probes.append(Probe(path: memberPath, expected: jsTypes(member), mayBeMissing: mayBeMissing))
             if let functionType = member.functionType {
                 walk(memberPath, type: functionType, context: context, mayBeMissing: mayBeMissing, into: &plan)
+            }
+            for case .callback(let arguments) in member.parameters.map(\.type) {
+                var handler = Plan()
+                if let argument = arguments.first?.type.namedType {
+                    walk([], type: argument, context: context, mayBeMissing: false, into: &handler)
+                }
+                plan.handlers.append(Handler(method: memberPath, probes: handler.probes, walked: handler.walked))
             }
             guard !member.isMethod else {
                 continue
@@ -200,9 +245,10 @@ final class ScriptRuntimeConformanceTests: XCTestCase {
         case .string: ["string"]
         case .number: ["number"]
         case .boolean: ["boolean"]
-        case .function: ["function"]
+        case .function, .callback: ["function"]
         case .any, .responseJSON: ["any"]
-        case .optional(let wrapped): jsTypes(wrapped)
+        // Present but empty, as a text message's `base64` is; never missing.
+        case .optional(let wrapped): jsTypes(wrapped) + ["null"]
         case .named: ["object", "function"]
         case .object, .array, .promise, .void: ["object"]
         }
@@ -220,18 +266,36 @@ final class ScriptAPICatalogTests: XCTestCase {
         var referenced: [String] = []
         for member in catalog.globals + catalog.types.values.flatMap(\.members) {
             XCTAssertFalse(member.summary.isEmpty, member.name)
-            referenced += [member.type.namedType, member.functionType].compactMap { $0 }
-            if case .array(let element) = member.type, let name = element.namedType {
-                referenced.append(name)
-            }
+            referenced += member.type.referencedNames + [member.functionType].compactMap { $0 }
             for parameter in member.parameters {
-                referenced += parameter.type.namedType.map { [$0] } ?? []
+                referenced += parameter.type.referencedNames
                 // Parameter hints show it as a sentence under the signature.
                 XCTAssertTrue(parameter.summary.hasSuffix("."), "\(member.name)(\(parameter.name)) needs a summary ending in a period")
+                if case .callback(let arguments) = parameter.type {
+                    for argument in arguments {
+                        XCTAssertTrue(argument.summary.hasSuffix("."), "\(member.name)(\(parameter.name)) needs its arguments described")
+                    }
+                }
             }
         }
         for name in referenced {
             XCTAssertNotNil(catalog.type(name), "\(name) is referenced but not in the catalog")
+        }
+    }
+
+    /// Members that share a name differ by protocol (`rq.onMessage`, `rq.response.messages`), so in any phase where
+    /// both apply, one protocol never has two of them to choose between.
+    func testMembersSharingANameNeverOverlap() {
+        for type in ScriptAPICatalog.standard.types.values {
+            let byName = Dictionary(grouping: type.members, by: \.name)
+            for (name, members) in byName where members.count > 1 {
+                for (index, first) in members.enumerated() {
+                    for second in members.dropFirst(index + 1) where !first.phases.isDisjoint(with: second.phases) {
+                        let disjoint = first.protocols.flatMap { mine in second.protocols.map { mine.isDisjoint(with: $0) } } ?? false
+                        XCTAssertTrue(disjoint, "\(type.name).\(name) has two members for one protocol and phase")
+                    }
+                }
+            }
         }
     }
 

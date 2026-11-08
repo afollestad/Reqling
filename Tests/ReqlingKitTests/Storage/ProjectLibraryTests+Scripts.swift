@@ -16,9 +16,14 @@ extension ProjectLibraryTests {
         var folder = RequestFolder(name: "Users")
         folder.scripts.preRequest = "rq.variables.set(\"folder\", 1)\n"
         var request = RequestItem.http("List users")
-        request.scripts = ScriptSet(preRequest: "// pre\r\nconsole.log('é')", postResponse: "rq.test(\"ok\", () => {})\n")
+        request.scripts = ScriptSet(
+            preRequest: "// pre\r\nconsole.log('é')",
+            stream: "rq.onEvent(() => {})\n",
+            postResponse: "rq.test(\"ok\", () => {})\n"
+        )
         try fixture.library.mutate(id) { document in
             document.scripts.postResponse = "console.log(\"project\")\n"
+            document.scripts.stream = "rq.onMessage(() => {})\n"
             try document.insert(.folder(folder), into: nil)
             try document.insert(.request(request), into: folder.id)
         }
@@ -30,6 +35,8 @@ extension ProjectLibraryTests {
         let (id, folder, request) = (scripted.id, scripted.folder, scripted.request)
 
         XCTAssertEqual(try fixture.contents("project.post.js", in: id), "console.log(\"project\")\n")
+        XCTAssertEqual(try fixture.contents("project.stream.js", in: id), "rq.onMessage(() => {})\n")
+        XCTAssertEqual(try fixture.contents("requests/users/list-users.stream.js", in: id), "rq.onEvent(() => {})\n")
         XCTAssertFalse(fixture.exists("project.pre.js", in: id), "An empty script has no file")
         XCTAssertEqual(try fixture.contents("requests/users/_folder.pre.js", in: id), "rq.variables.set(\"folder\", 1)\n")
         let pre = try Data(contentsOf: fixture.projectURL(id).appendingPathComponent("requests/users/list-users.pre.js"))
@@ -117,6 +124,7 @@ extension ProjectLibraryTests {
 
         try fixture.library.mutate(id) { try $0.moveNode(request.id, to: nil, at: 0) }
         XCTAssertTrue(fixture.exists("requests/find-users.pre.js", in: id))
+        XCTAssertTrue(fixture.exists("requests/find-users.stream.js", in: id))
         XCTAssertTrue(fixture.exists("requests/find-users.post.js", in: id))
         XCTAssertEqual(fixture.relaunched().document(id)?.request(request.id)?.scripts, request.scripts)
         XCTAssertTrue(fixture.trashedNames().isEmpty)
@@ -153,18 +161,24 @@ extension ProjectLibraryTests {
             try document.removeNode(request.id)
         }
 
-        XCTAssertEqual(fixture.trashedNames(), ["list-users.json", "list-users.post.js", "list-users.pre.js"])
+        XCTAssertEqual(fixture.trashedNames(), ["list-users.json", "list-users.post.js", "list-users.pre.js", "list-users.stream.js"])
         XCTAssertEqual(try fixture.contents("requests/users/copy.post.js", in: id), "rq.test(\"ok\", () => {})\n")
+        XCTAssertEqual(try fixture.contents("requests/users/copy.stream.js", in: id), "rq.onEvent(() => {})\n")
     }
 
     func testAnOrphanedScriptReservesItsNameAndIsLeftAlone() throws {
         let id = try fixture.library.createProject(named: "Orphans")
         try fixture.write("orphan", to: "requests/health.pre.js", in: id)
+        try fixture.write("orphan", to: "requests/ping.stream.js", in: id)
         fixture.library.reload(id)
 
-        try fixture.library.mutate(id) { try $0.insert(.request(.http("Health")), into: nil) }
+        try fixture.library.mutate(id) { document in
+            try document.insert(.request(.http("Health")), into: nil)
+            try document.insert(.request(.http("Ping")), into: nil)
+        }
 
         XCTAssertTrue(fixture.exists("requests/health-2.json", in: id))
+        XCTAssertTrue(fixture.exists("requests/ping-2.json", in: id))
         XCTAssertEqual(try fixture.contents("requests/health.pre.js", in: id), "orphan")
         XCTAssertEqual(fixture.library.document(id)?.items.first.flatMap { node in
             if case .request(let request) = node { return request.scripts.preRequest }

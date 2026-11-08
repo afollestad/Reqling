@@ -36,8 +36,8 @@ extension ScriptAPICatalog {
         var found: [ScriptType] = []
         while !queue.isEmpty {
             let member = queue.removeFirst()
-            let names = [member.type.namedType, Self.element(of: member.type), member.functionType] + member.parameters.map { $0.type.namedType }
-            for name in names.compactMap(\.self) where !name.hasPrefix("Postman") && seen.insert(name).inserted {
+            let names = member.type.referencedNames + [member.functionType].compactMap(\.self) + member.parameters.flatMap(\.type.referencedNames)
+            for name in names where !name.hasPrefix("Postman") && seen.insert(name).inserted {
                 if let type = type(name) {
                     found.append(type)
                     queue += type.members
@@ -47,26 +47,13 @@ extension ScriptAPICatalog {
         return found
     }
 
-    private static func element(of type: ScriptValueType) -> String? {
-        switch type {
-        case .array(let element): element.namedType
-        case .optional(let wrapped): element(of: wrapped)
-        default: nil
-        }
-    }
-
     private static func line(_ member: ScriptMember) -> String {
         var notes: [String] = []
-        if member.phases == [.preRequest] {
-            notes.append("pre-request")
-        } else if member.phases == [.postResponse] {
-            notes.append("post-response")
+        if member.phases != Set(ScriptPhase.allCases) {
+            notes.append(member.phases.listed)
         }
         if let protocols = member.protocols {
-            let names = [(ScriptResponseKind.http, "HTTP"), (.grpc, "gRPC"), (.webSocket, "WebSocket")]
-                .filter { protocols.contains($0.0) || ($0.0 == .http && protocols.contains(.eventStream)) }
-                .map(\.1)
-            notes.append(names.joined(separator: " and "))
+            notes.append(protocols.listed)
         }
         let suffix = notes.isEmpty ? "" : " *(\(notes.joined(separator: ", ")) only)*"
         return "- `\(member.signature)`: \(member.summary)\(suffix)"

@@ -5,13 +5,13 @@ import ReqlingScriptProtocol
 ///
 ///     <Name>.reqling/
 ///       project.json
-///       project.pre.js, project.post.js          (scripts, when not empty)
+///       project.pre.js, project.stream.js, project.post.js   (scripts, when not empty)
 ///       environments/default.json   (always present)
 ///       environments/<slug>.json
 ///       requests/<folder-slug>/_folder.json
-///       requests/<folder-slug>/_folder.pre.js     (and .post.js)
+///       requests/<folder-slug>/_folder.pre.js     (and .stream.js, .post.js)
 ///       requests/**/<slug>.json
-///       requests/**/<slug>.pre.js                 (and .post.js)
+///       requests/**/<slug>.pre.js                 (and .stream.js, .post.js)
 ///
 /// A script travels with the file it sits beside: renamed, moved, and trashed with it. Paths in `ProjectDiskIndex` are
 /// relative to the project folder and use `/`.

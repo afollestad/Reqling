@@ -76,15 +76,36 @@ extension ScriptAPICatalog {
         .property("execution", .named("Execution"), "Skips this request, or picks what a folder or project run runs next."),
         .property("request", .named("Request"), "The request as typed. Pre-request scripts can change its headers and query."),
         .property("cookies", .named("RequestCookies"), "The project's cookies for this request's URL, or for any other through `for(…)`."),
-        .property("response", .named("Response"), "What came back.", phases: .post),
+        .property("response", .named("Response"), "What came back; in a stream script, what the stream opened with.", phases: .opened),
+        .method("onEvent", [handler("event", "StreamEvent")], returns: .void,
+                "Runs the handler on each event the stream receives, in order.", phases: .stream, protocols: [.eventStream]),
+        .method("onMessage", [handler("message", "SocketMessage")], returns: .void,
+                "Runs the handler on each message received, in order.", phases: .stream, protocols: [.webSocket]),
+        .method("onMessage", [handler("message", "GRPCMessage")], returns: .void,
+                "Runs the handler on each message received, in order.", phases: .stream, protocols: [.grpc]),
+        .method("send", [ScriptParameter("message", .any, "Text, an `ArrayBuffer` or typed array for a binary message, or any other value as JSON.")],
+                returns: .void, "Sends a message on the open connection, as given: `{{variables}}` in it aren't resolved.",
+                phases: .stream, protocols: [.webSocket]),
+        .method("send", [ScriptParameter("message", .any, "The message as an object, or its JSON text.")],
+                returns: .void, "Sends a message on the call's open request stream, as given: `{{variables}}` in it aren't resolved.",
+                phases: .stream, protocols: [.grpc]),
         .method("test", testParameters, returns: .void,
                 "Runs a named test; it fails when the callback throws or its promise rejects.", functionType: "TestFunction"),
         .method("expect", expectParameters, returns: .named("Expectation"), "Starts a Chai-style assertion about a value."),
         .property("crypto", .named("Crypto"), "Hashes and HMACs for signing requests.")
     ]
 
+    /// A stream handler, which gets each `noun` the stream receives as a `type`.
+    private static func handler(_ noun: String, _ type: String) -> ScriptParameter {
+        ScriptParameter(
+            "handler",
+            .callback([ScriptParameter(noun, .named(type), "The \(noun) that arrived.")]),
+            "Runs with each \(noun), and is awaited before the next."
+        )
+    }
+
     private static let infoMembers: [ScriptMember] = [
-        .property("phase", .string, "`preRequest` or `postResponse`."),
+        .property("phase", .string, "`preRequest`, `stream`, or `postResponse`."),
         .property("level", .string, "Whose script this is: `project`, `folder`, or `request`."),
         .property("levelName", .string, "The project's, folder's, or request's name."),
         .property("requestName", .string, "The name of the request running."),

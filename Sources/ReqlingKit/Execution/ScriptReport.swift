@@ -227,10 +227,11 @@ public struct ScriptCookieChange: Hashable, Sendable, Codable {
 }
 
 extension ScriptPhase {
-    /// As people write it: "Pre-request", "Post-response".
+    /// As people write it: "Pre-request", "Stream", "Post-response".
     public var title: String {
         switch self {
         case .preRequest: "Pre-request"
+        case .stream: "Stream"
         case .postResponse: "Post-response"
         }
     }

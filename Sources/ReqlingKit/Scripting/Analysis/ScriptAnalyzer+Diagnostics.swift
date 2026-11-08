@@ -73,14 +73,9 @@ extension ScriptAnalyzer {
         case .missing:
             return "\(step.receiverText) has no “\(step.name)”."
         case .phases(let phases):
-            let titles = ScriptPhase.allCases.filter(phases.contains).map { $0.title.lowercased() }
-            return "\(name) works only in \(titles.joined(separator: " and ")) scripts."
+            return "\(name) works only in \(phases.listed) scripts."
         case .protocols(let protocols):
-            // An event stream is an HTTP response, so HTTP covers it.
-            let names = [(ScriptResponseKind.http, "HTTP"), (.grpc, "gRPC"), (.webSocket, "WebSocket")]
-                .filter { protocols.contains($0.0) || ($0.0 == .http && protocols.contains(.eventStream)) }
-                .map(\.1)
-            return "\(name) applies only to \(names.joined(separator: " and ")) requests."
+            return "\(name) applies only to \(protocols.listed) requests."
         case .unsupported(let reason):
             return "\(name) isn't supported in Reqling: \(reason)."
         }

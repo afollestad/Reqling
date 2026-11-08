@@ -18,6 +18,7 @@ extension ScriptLevelHost {
         installResponse(on: native)
         installCrypto(on: native)
         installCookies(on: native)
+        installStream(on: native)
         installRuntime(on: native)
         context.setObject(native, forKeyedSubscript: "__native" as NSString)
     }
@@ -152,6 +153,53 @@ extension ScriptLevelHost {
         set(native, "response", response)
         set(native, "responseText", responseText)
         set(native, "responseBase64", responseBase64)
+    }
+
+    /// A stream script's handler failures and `rq.send`; the runtime checks the phase and turns the script's value
+    /// into text or an `ArrayBuffer` first.
+    private func installStream(on native: JSValue) {
+        let handlerFailed: @convention(block) (JSValue) -> Void = { [unowned self] error in
+            handlerFailed(error)
+        }
+        let sendText: @convention(block) (String) -> Void = { [unowned self] text in
+            report(.text(text))
+        }
+        let sendBinary: @convention(block) (JSValue) -> Void = { [unowned self] buffer in
+            guard let bytes = arrayBufferBytes(buffer) else {
+                fail("rq.send couldn't read the message's bytes.")
+                return
+            }
+            report(.binary(bytes))
+        }
+        set(native, "handlerFailed", handlerFailed)
+        set(native, "send", sendText)
+        set(native, "sendBinary", sendBinary)
+    }
+
+    private func report(_ message: ScriptOutgoingMessage) {
+        do throws(ScriptFailure) {
+            try phase.send(message, level: index)
+        } catch {
+            fail(error.message)
+        }
+    }
+
+    /// An `ArrayBuffer`'s bytes, through JavaScriptCore's public C API, which reads them without converting each byte
+    /// to a number.
+    private func arrayBufferBytes(_ value: JSValue) -> Data? {
+        guard let context = context.jsGlobalContextRef, let reference = value.jsValueRef,
+              JSValueGetTypedArrayType(context, reference, nil) == kJSTypedArrayTypeArrayBuffer,
+              let object = JSValueToObject(context, reference, nil) else {
+            return nil
+        }
+        let length = JSObjectGetArrayBufferByteLength(context, object, nil)
+        guard length > 0 else {
+            return Data()
+        }
+        guard let bytes = JSObjectGetArrayBufferBytesPtr(context, object, nil) else {
+            return nil
+        }
+        return Data(bytes: bytes, count: length)
     }
 
     /// What `runtime.js` builds `rq.request` from; absent values are `null`.

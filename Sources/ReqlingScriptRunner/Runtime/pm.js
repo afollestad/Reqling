@@ -226,7 +226,7 @@
     test,
     expect: rq.expect,
     info: Object.freeze({
-      eventName: rq.info.phase === 'preRequest' ? 'prerequest' : 'test',
+      eventName: { preRequest: 'prerequest', stream: 'stream' }[rq.info.phase] || 'test',
       requestName: rq.info.requestName,
       requestId: rq.info.requestId,
       iteration: rq.info.iteration,

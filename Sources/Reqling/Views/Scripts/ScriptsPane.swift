@@ -18,7 +18,7 @@ struct ScriptsPane: View {
         let diagnostics = scripts.diagnostics
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                SectionPicker("Phase", selection: $scripts.phase, options: ScriptPhase.allCases) { $0.title }
+                SectionPicker("Phase", selection: $scripts.phase, options: [ScriptPhase.preRequest, .postResponse]) { $0.title }
                 Spacer(minLength: 0)
                 if diagnostics.text == scripts.source, !diagnostics.items.isEmpty {
                     CodeProblemsMenu(diagnostics: diagnostics.items, handle: handle, subject: "the script")
@@ -58,6 +58,11 @@ struct ScriptsPane: View {
             """
             // Runs before the request is sent, after any inherited scripts.
             rq.request.headers.upsert("X-Request-Time", new Date().toISOString())
+            """
+        case .stream:
+            """
+            // Runs when an event stream, WebSocket, or gRPC call opens, after any inherited scripts.
+            rq.onEvent(event => rq.test("is JSON", () => event.json()))
             """
         case .postResponse:
             """

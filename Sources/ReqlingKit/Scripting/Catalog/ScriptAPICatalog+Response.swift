@@ -35,12 +35,12 @@ extension ScriptAPICatalog {
     ]
 
     private static let responseMembers: [ScriptMember] = [
-        .property("code", .number, "The HTTP status code.", phases: .post, protocols: .http),
+        .property("code", .number, "The HTTP status code.", phases: .opened, protocols: .http),
         .property("code", .optional(.number), "The gRPC status code; 0 is OK.", phases: .post, protocols: [.grpc]),
-        .property("code", .optional(.number), "The handshake's HTTP status code.", phases: .post, protocols: [.webSocket]),
-        .property("status", .string, "The HTTP reason phrase, such as `OK`.", phases: .post, protocols: .http),
+        .property("code", .optional(.number), "The handshake's HTTP status code.", phases: .opened, protocols: [.webSocket]),
+        .property("status", .string, "The HTTP reason phrase, such as `OK`.", phases: .opened, protocols: .http),
         .property("status", .named("GRPCStatus"), "How the call ended.", phases: .post, protocols: [.grpc]),
-        .property("headers", .named("ReadonlyRows"), "The response's headers, or the handshake's.", phases: .post,
+        .property("headers", .named("ReadonlyRows"), "The response's headers, or the handshake's.", phases: .opened,
                   protocols: [.http, .eventStream, .webSocket]),
         .property("size", .number, "The body's size in bytes, as received.", phases: .post, protocols: [.http]),
         .property("truncated", .boolean, "Whether the body was cut to the 64 MB scripts receive.", phases: .post, protocols: [.http]),
@@ -53,14 +53,14 @@ extension ScriptAPICatalog {
         .property("omittedEventCount", .number, "Events received but not kept.", phases: .post, protocols: [.eventStream]),
         .property("end", .string, "How the stream or connection ended: `closed`, `stopped`, `limit`, `timedOut`, `refused`, or `failed`.",
                   phases: .post, protocols: [.eventStream, .webSocket]),
-        .property("metadata", .named("ReadonlyRows"), "The call's response metadata.", phases: .post, protocols: [.grpc]),
+        .property("metadata", .named("ReadonlyRows"), "The call's response metadata.", phases: .opened, protocols: [.grpc]),
         .property("trailers", .named("ReadonlyRows"), "The call's trailers.", phases: .post, protocols: [.grpc]),
         .property("messages", .array(.named("GRPCMessage")), "Every message received, in order.", phases: .post, protocols: [.grpc]),
         .property("sentCount", .number, "How many messages the call sent.", phases: .post, protocols: [.grpc]),
         .property("receivedCount", .number, "How many messages the call received.", phases: .post, protocols: [.grpc]),
         .property("messages", .array(.named("SocketMessage")), "Every message sent and received, in order.", phases: .post,
                   protocols: [.webSocket]),
-        .property("subprotocol", .optional(.string), "The subprotocol the server chose.", phases: .post, protocols: [.webSocket]),
+        .property("subprotocol", .optional(.string), "The subprotocol the server chose.", phases: .opened, protocols: [.webSocket]),
         .property("close", .optional(.named("Close")), "How the connection closed, if it did.", phases: .post, protocols: [.webSocket])
     ]
 }

@@ -6,6 +6,9 @@ import Synchronization
 /// process runs.
 public protocol ScriptRunning: Sendable {
     func run(_ input: ScriptRunnerInput, blobs: [Data], timeLimit: Duration) -> ScriptExecution
+    /// Starts a stream phase (`ScriptPhase.stream`): its top level runs at once, then each item `deliver` hands it
+    /// reaches the handlers in turn. `timeLimit` bounds the top level, and each call on its own.
+    func stream(_ input: ScriptRunnerInput, timeLimit: Duration) -> ScriptStreamExecution
 }
 
 /// One launched phase: its events as they arrive, how it ended, and a way to stop it.
@@ -52,19 +55,36 @@ public final class HelperScriptRunner: ScriptRunning {
     /// Waits out a time limit; injected so a test decides when one expires.
     public typealias Sleep = @Sendable (Duration) async throws -> Void
 
-    private let executable: URL?
-    private let runtimeDirectory: URL?
-    private let sleep: Sleep
+    let executable: URL?
+    let runtimeDirectory: URL?
+    let sleep: Sleep
+    /// How many items, and how many bytes of them, may wait for a stream phase's handlers before the oldest is dropped:
+    /// `LiveEventBuffer`'s bounds, so a stream that outpaces its handlers costs no more than one that outpaces the window.
+    let streamWaitingLimit: Int
+    let streamWaitingByteLimit: Int
 
     /// `executable` and `runtimeDirectory` are `nil` when the app was built without them, which fails every phase
     /// rather than skipping it.
-    public init(executable: URL?, runtimeDirectory: URL?, sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
+    public init(
+        executable: URL?,
+        runtimeDirectory: URL?,
+        sleep: @escaping Sleep = { try await Task.sleep(for: $0) },
+        streamWaitingLimit: Int = 2_000,
+        streamWaitingByteLimit: Int = 32 * 1_024 * 1_024
+    ) {
         self.executable = executable
         self.runtimeDirectory = runtimeDirectory
         self.sleep = sleep
+        self.streamWaitingLimit = streamWaitingLimit
+        self.streamWaitingByteLimit = streamWaitingByteLimit
     }
 
     static let missingMessage = "Reqling's script runner is missing. Reinstall Reqling."
+    static let encodingMessage = "Reqling couldn't prepare the scripts to run."
+
+    static func launchFailure(_ error: any Error) -> String {
+        "Reqling couldn't start its script runner: \(error.localizedDescription)"
+    }
 
     public func run(_ input: ScriptRunnerInput, blobs: [Data], timeLimit: Duration) -> ScriptExecution {
         guard let executable, let runtimeDirectory else {
@@ -73,15 +93,20 @@ public final class HelperScriptRunner: ScriptRunning {
         var input = input
         input.runtimeDirectory = runtimeDirectory.path
         guard let header = try? JSONEncoder().encode(input) else {
-            return .failed("Reqling couldn't prepare the scripts to run.")
+            return .failed(Self.encodingMessage)
         }
-        let launch: Launch
+        let launch: ScriptLaunch
         do {
-            launch = try Launch(executable: executable)
+            launch = try ScriptLaunch(executable: executable)
         } catch {
-            return .failed("Reqling couldn't start its script runner: \(error.localizedDescription)")
+            return .failed(Self.launchFailure(error))
         }
-        launch.send([ScriptFraming.frame(header)] + blobs.map(ScriptFraming.frame))
+        let pipe = launch.input
+        pipe.write(frame: header)
+        for blob in blobs {
+            pipe.write(frame: blob)
+        }
+        pipe.close()
         let events = launch.readEvents()
         let process = launch.process
         let sleep = self.sleep
@@ -105,9 +130,9 @@ public final class HelperScriptRunner: ScriptRunning {
 }
 
 /// One launch of the helper: its process, the pipes to it, and when it's done.
-private struct Launch: Sendable {
+struct ScriptLaunch: Sendable {
     let process: ScriptProcess
-    private let input: FileHandle
+    let input: ScriptInputPipe
     private let output: FileHandle
     private let exit: AsyncStream<Void>
     private let reading: (stream: AsyncStream<Void>, continuation: AsyncStream<Void>.Continuation)
@@ -125,29 +150,20 @@ private struct Launch: Sendable {
         process.terminationHandler = { _ in
             exit.continuation.finish()
         }
-        input = standardInput.fileHandleForWriting
+        let input = standardInput.fileHandleForWriting
         output = standardOutput.fileHandleForReading
         // A helper that exits before reading everything must fail the write, not raise SIGPIPE in Reqling.
         _ = fcntl(input.fileDescriptor, F_SETNOSIGPIPE, 1)
         try process.run()
         self.process = ScriptProcess(process)
+        self.input = ScriptInputPipe(input)
         self.exit = exit.stream
         reading = AsyncStream<Void>.makeStream()
     }
 
-    /// Writes the frames off this thread, so a helper that stops reading cannot hold the caller, then closes its input.
-    func send(_ frames: [Data]) {
-        let input = input
-        DispatchQueue.global(qos: .userInitiated).async {
-            for frame in frames {
-                try? input.write(contentsOf: frame)
-            }
-            try? input.close()
-        }
-    }
-
-    /// Decodes events until the helper closes its output; a frame that can't be read ends the stream.
-    func readEvents() -> AsyncStream<ScriptRunnerEvent> {
+    /// Decodes events until the helper closes its output; a frame that can't be read ends the stream. `observe` sees
+    /// each event first, on the reading thread, so a stream phase acts on a finished call without waiting on any actor.
+    func readEvents(observe: (@Sendable (ScriptRunnerEvent) -> Void)? = nil) -> AsyncStream<ScriptRunnerEvent> {
         let events = AsyncStream<ScriptRunnerEvent>.makeStream()
         let output = output
         let process = process
@@ -167,6 +183,7 @@ private struct Launch: Sendable {
                     if event == .done {
                         process.markDone()
                     }
+                    observe?(event)
                     events.continuation.yield(event)
                 }
             }
@@ -183,9 +200,50 @@ private struct Launch: Sendable {
     }
 }
 
+/// The helper's standard input. Frames are written in order off the caller's thread, so a helper that stops reading
+/// can't hold it, and a stream phase's items are encoded there too, never on the main actor. Writes after `close` are
+/// dropped.
+final class ScriptInputPipe: Sendable {
+    private let handle: FileHandle
+    private let queue = DispatchQueue(label: "com.afollestad.reqling.script-input", qos: .userInitiated)
+    private let isClosed = Mutex(false)
+
+    init(_ handle: FileHandle) {
+        self.handle = handle
+    }
+
+    func write(frame payload: Data) {
+        enqueue { ScriptFraming.frame(payload) }
+    }
+
+    func write(_ input: ScriptStreamInput) {
+        enqueue { (try? JSONEncoder().encode(input)).map(ScriptFraming.frame) }
+    }
+
+    /// Ends the helper's input once what was written before has gone out.
+    func close() {
+        queue.async { [self] in
+            // Checked on the queue, so a write sent after the close is dropped rather than raced.
+            guard isClosed.withLock({ closed in defer { closed = true }; return !closed }) else {
+                return
+            }
+            try? handle.close()
+        }
+    }
+
+    private func enqueue(_ frame: @escaping @Sendable () -> Data?) {
+        queue.async { [self] in
+            guard !isClosed.withLock({ $0 }), let frame = frame() else {
+                return
+            }
+            try? handle.write(contentsOf: frame)
+        }
+    }
+}
+
 /// The running helper, and why it was stopped if Reqling stopped it. A kill names its reason first, so a time limit
 /// and a cancel arriving together report the earlier one.
-private final class ScriptProcess: Sendable {
+final class ScriptProcess: Sendable {
     private struct State {
         var stopReason: ScriptTermination?
         var sawDone = false

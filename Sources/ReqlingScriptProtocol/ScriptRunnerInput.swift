@@ -3,10 +3,11 @@ import ReqlingTemplating
 /// Everything one launch of `ReqlingScriptRunner` runs: one phase of one request's scripts, outermost level first, with
 /// the variables, cookies, request, and (after the request) response they see. It travels as the first frame on the helper's
 /// standard input (`ScriptFraming`); bodies follow as raw frames that `ScriptBlob` points at, so a large response is
-/// never base64'd into the JSON.
+/// never base64'd into the JSON. A stream phase has no bodies: `ScriptStreamInput` frames follow instead, for as long as
+/// the stream stays open.
 public struct ScriptRunnerInput: Codable, Sendable {
     /// Bumped on any change one side could misread; the helper refuses another version (`ScriptRunnerExit.badInput`).
-    public static let currentProtocolVersion = 3
+    public static let currentProtocolVersion = 4
 
     public var protocolVersion: Int
     public var phase: ScriptPhase
@@ -14,8 +15,10 @@ public struct ScriptRunnerInput: Codable, Sendable {
     public var variables: VariableLayers
     public var info: ScriptRunInfo
     public var request: ScriptRequestSnapshot
-    /// `nil` before the request.
+    /// `nil` before the request, and in a stream phase, which reads what the stream opened with (`stream`).
     public var response: ScriptResponseSnapshot?
+    /// Set exactly for a stream phase.
+    public var stream: ScriptStreamSetup?
     /// The project's whole cookie jar as the phase starts: after the request, with its response's `Set-Cookie`s stored.
     public var cookies: [ScriptCookie]
     /// The folder holding `runtime.js` and the vendored libraries.
@@ -29,6 +32,7 @@ public struct ScriptRunnerInput: Codable, Sendable {
         info: ScriptRunInfo,
         request: ScriptRequestSnapshot,
         response: ScriptResponseSnapshot? = nil,
+        stream: ScriptStreamSetup? = nil,
         cookies: [ScriptCookie] = [],
         runtimeDirectory: String,
         limits: ScriptLimits = .standard
@@ -40,6 +44,7 @@ public struct ScriptRunnerInput: Codable, Sendable {
         self.info = info
         self.request = request
         self.response = response
+        self.stream = stream
         self.cookies = cookies
         self.runtimeDirectory = runtimeDirectory
         self.limits = limits

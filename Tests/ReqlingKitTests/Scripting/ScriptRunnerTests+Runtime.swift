@@ -199,11 +199,11 @@ extension ScriptRunnerTests {
         XCTAssertEqual(run.changes.map(\.target), [.header])
     }
 
-    /// The response is only a post-response script's, and a runtime refusal points at the script's line that asked.
+    /// The response is only a stream or post-response script's, and a runtime refusal points at the script's line that asked.
     func testReadingTheResponseBeforeTheRequestFailsAtTheCallersLine() async {
         let run = await fixtures.run(ScriptFixtures.input(.preRequest, ["const a = 1\nconst b = rq.response.code"]))
 
-        XCTAssertEqual(run.failures[0]?.message, "rq.response is only available in post-response scripts.")
+        XCTAssertEqual(run.failures[0]?.message, "rq.response is only available in stream and post-response scripts.")
         XCTAssertEqual(run.failures[0]?.line, 2)
     }
 

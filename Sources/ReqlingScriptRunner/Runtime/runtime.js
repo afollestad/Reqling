@@ -7,6 +7,7 @@
   const info = native.info();
   const phase = info.phase;
   const isPre = phase === 'preRequest';
+  const isStream = phase === 'stream';
 
   function fail(message) {
     throw new Error(message);
@@ -260,8 +261,56 @@
     return rowList(() => rows, 'header', false);
   }
 
+  // What `rq.response` lists and stream handlers get alike: `StreamEvent`, `SocketMessage`, and `GRPCMessage`.
+
+  function eventObject(event) {
+    return Object.freeze({
+      id: event.id,
+      event: event.event,
+      data: event.data,
+      retry: event.retry,
+      json: () => parseJSON(event.data, 'The event\'s data'),
+    });
+  }
+
+  function socketMessageObject(message) {
+    return Object.freeze({
+      direction: message.direction,
+      text: message.text,
+      isBinary: message.text === null,
+      base64: message.base64,
+      json: () => (message.text === null
+        ? fail('A binary message isn\'t JSON.')
+        : parseJSON(message.text, 'The message')),
+    });
+  }
+
+  function grpcMessageObject(message) {
+    return Object.freeze({
+      text: () => message,
+      json: () => parseJSON(message, 'The message'),
+    });
+  }
+
+  /// A stream script's `rq.response`: what the stream opened with, as the rest is known only once it ends.
+  function buildOpening(response) {
+    switch (response.kind) {
+      case 'eventStream':
+        return Object.freeze({ code: response.code, status: response.status, headers: staticRows(response.headers) });
+      case 'webSocket':
+        return Object.freeze({ code: response.code, headers: staticRows(response.headers), subprotocol: response.subprotocol });
+      case 'grpc':
+        return Object.freeze({ metadata: staticRows(response.metadata) });
+      default:
+        return fail('Reqling sent a response this runtime doesn\'t know.');
+    }
+  }
+
   function buildResponse() {
     const response = native.response();
+    if (isStream) {
+      return buildOpening(response);
+    }
     switch (response.kind) {
       case 'http': {
         let text;
@@ -283,13 +332,7 @@
           code: response.code,
           status: response.status,
           headers: staticRows(response.headers),
-          events: Object.freeze(response.events.map((event) => Object.freeze({
-            id: event.id,
-            event: event.event,
-            data: event.data,
-            retry: event.retry,
-            json: () => parseJSON(event.data, 'The event\'s data'),
-          }))),
+          events: Object.freeze(response.events.map(eventObject)),
           end: response.end,
           omittedEventCount: response.omittedEventCount,
           responseTime: response.responseTime,
@@ -297,10 +340,7 @@
           json: () => fail('An event stream has no single body; read rq.response.events.'),
         });
       case 'grpc': {
-        const messages = Object.freeze(response.messages.map((message) => Object.freeze({
-          text: () => message,
-          json: () => parseJSON(message, 'The message'),
-        })));
+        const messages = Object.freeze(response.messages.map(grpcMessageObject));
         return Object.freeze({
           code: response.status.code,
           status: Object.freeze(Object.assign({}, response.status)),
@@ -320,15 +360,7 @@
           code: response.code,
           headers: staticRows(response.headers),
           subprotocol: response.subprotocol,
-          messages: Object.freeze(response.messages.map((message) => Object.freeze({
-            direction: message.direction,
-            text: message.text,
-            isBinary: message.text === null,
-            base64: message.base64,
-            json: () => (message.text === null
-              ? fail('A binary message isn\'t JSON.')
-              : parseJSON(message.text, 'The message')),
-          }))),
+          messages: Object.freeze(response.messages.map(socketMessageObject)),
           close: response.close === null ? null : Object.freeze(Object.assign({}, response.close)),
           end: response.end,
           responseTime: response.responseTime,
@@ -487,6 +519,72 @@
     native.test(String(name), 'skipped', undefined);
   };
 
+  // MARK: Stream handlers
+
+  /// A stream script's handlers, by what they take, in the order they registered. Registering for the other kind of
+  /// stream is no error, so a folder's or the project's script can serve every protocol; it just never runs.
+  const handlers = { event: [], message: [] };
+  let isRegistering = true;
+  /// Bumped by each call, so a handler that never settled and resumes late can't run beside a later call's.
+  let callGeneration = 0;
+
+  function register(kind, name, handler, protocols) {
+    if (!isStream) {
+      fail(`rq.${name} works only in stream scripts.`);
+    }
+    if (typeof handler !== 'function') {
+      fail(`rq.${name} needs a function to run on each ${kind}.`);
+    }
+    if (!isRegistering) {
+      fail(`rq.${name} registers a handler only while a stream script's top level runs, not from a handler or later.`);
+    }
+    if (protocols.includes(info.protocol)) {
+      handlers[kind].push(handler);
+    }
+  }
+
+  /// Text as it is, `ArrayBuffer`s and typed arrays as WebSocket binary, and anything else as JSON text.
+  function send(message) {
+    if (!isStream) {
+      fail('rq.send works only in stream scripts.');
+    }
+    if (info.protocol === 'http') {
+      fail('rq.send can\'t reply on an event stream, which only receives.');
+    }
+    if (message instanceof ArrayBuffer || ArrayBuffer.isView(message)) {
+      if (info.protocol === 'grpc') {
+        fail('rq.send sends a gRPC message as JSON: an object, or its text.');
+      }
+      const view = message instanceof ArrayBuffer ? new Uint8Array(message) : new Uint8Array(message.buffer, message.byteOffset, message.byteLength);
+      // A copy of exactly its bytes, as a view may cover only part of its buffer.
+      native.sendBinary(view.slice().buffer);
+      return;
+    }
+    if (typeof message === 'string') {
+      if (info.protocol === 'grpc') {
+        parseJSON(message, 'The message');
+      }
+      native.send(message);
+      return;
+    }
+    const text = message === undefined ? undefined : JSON.stringify(message);
+    if (text === undefined) {
+      fail(`rq.send needs text or a value JSON can hold, not ${describe(message)}.`);
+    }
+    native.send(text);
+  }
+
+  function handlerArgument(item) {
+    switch (item.shape) {
+      case 'event':
+        return eventObject(item);
+      case 'socket':
+        return socketMessageObject(item);
+      default:
+        return grpcMessageObject(item.json);
+    }
+  }
+
   // MARK: rq
 
   let request;
@@ -527,6 +625,9 @@
     globals: Object.freeze(variableScope('global', 'Global')),
     variables: Object.freeze(variables),
     cookies: buildCookies(),
+    onEvent: (handler) => register('event', 'onEvent', handler, ['http']),
+    onMessage: (handler) => register('message', 'onMessage', handler, ['grpc', 'websocket']),
+    send,
     test,
     crypto: cryptoHelpers,
   };
@@ -537,7 +638,7 @@
   Object.defineProperty(rq, 'response', {
     get() {
       if (isPre) {
-        fail('rq.response is only available in post-response scripts.');
+        fail('rq.response is only available in stream and post-response scripts.');
       }
       return response === undefined ? (response = buildResponse()) : response;
     },
@@ -551,6 +652,34 @@
       runLevel(body) {
         body().then(() => native.settled(undefined), (error) => native.settled(error instanceof Error ? error : new Error(errorMessage(error))));
       },
+      /// Awaits each of `kind`'s handlers with `item` in turn, reporting the first failure of each, then settles
+      /// the call.
+      runCall(kind, item) {
+        const generation = ++callGeneration;
+        const argument = handlerArgument(item);
+        const list = handlers[kind].slice();
+        (async () => {
+          for (const handler of list) {
+            if (generation !== callGeneration) {
+              return;
+            }
+            try {
+              await handler(argument);
+            } catch (error) {
+              if (generation === callGeneration) {
+                native.handlerFailed(error instanceof Error ? error : new Error(errorMessage(error)));
+              }
+            }
+          }
+          if (generation === callGeneration) {
+            native.settled(undefined);
+          }
+        })();
+      },
+      closeRegistration() {
+        isRegistering = false;
+      },
+      handlerCount: (kind) => handlers[kind].length,
       pendingTestCount: () => pendingTests.size,
       abandonPendingTests() {
         for (const entry of pendingTests) {

@@ -123,7 +123,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 
 ## API reference
 
-Every name a script can use, as Reqling's editor completes and describes it. A member marked *pre-request only* or *post-response only* works only in that phase, and one marked with a protocol works only for requests of that protocol.
+Every name a script can use, as Reqling's editor completes and describes it. A member marked with phases, such as *pre-request only* or *stream and post-response only*, works only in those phases, and one marked with a protocol works only for requests of that protocol; an event stream's is HTTP.
 
 <!-- script-reference:start -->
 
@@ -155,7 +155,12 @@ Reqling's script API.
 - `execution: Execution`: Skips this request, or picks what a folder or project run runs next.
 - `request: Request`: The request as typed. Pre-request scripts can change its headers and query.
 - `cookies: RequestCookies`: The project's cookies for this request's URL, or for any other through `for(…)`.
-- `response: Response`: What came back. *(post-response only)*
+- `response: Response`: What came back; in a stream script, what the stream opened with. *(stream and post-response only)*
+- `onEvent(handler: (event: StreamEvent) => void): void`: Runs the handler on each event the stream receives, in order. *(stream, HTTP only)*
+- `onMessage(handler: (message: SocketMessage) => void): void`: Runs the handler on each message received, in order. *(stream, WebSocket only)*
+- `onMessage(handler: (message: GRPCMessage) => void): void`: Runs the handler on each message received, in order. *(stream, gRPC only)*
+- `send(message: any): void`: Sends a message on the open connection, as given: `{{variables}}` in it aren't resolved. *(stream, WebSocket only)*
+- `send(message: any): void`: Sends a message on the call's open request stream, as given: `{{variables}}` in it aren't resolved. *(stream, gRPC only)*
 - `test(name: string, callback: function): void`: Runs a named test; it fails when the callback throws or its promise rejects.
 - `expect(value: any, message?: string): Expectation`: Starts a Chai-style assertion about a value.
 - `crypto: Crypto`: Hashes and HMACs for signing requests.
@@ -210,7 +215,7 @@ lodash 4.17.21. Lists the most used of its members.
 
 Where this script runs.
 
-- `phase: string`: `preRequest` or `postResponse`.
+- `phase: string`: `preRequest`, `stream`, or `postResponse`.
 - `level: string`: Whose script this is: `project`, `folder`, or `request`.
 - `levelName: string`: The project's, folder's, or request's name.
 - `requestName: string`: The name of the request running.
@@ -315,12 +320,12 @@ The project's cookies that go to this request's URL. Pre-request changes go out 
 
 What came back: an HTTP response, an event stream, a gRPC call, or a WebSocket connection.
 
-- `code: number`: The HTTP status code. *(post-response, HTTP only)*
+- `code: number`: The HTTP status code. *(stream and post-response, HTTP only)*
 - `code: number | null`: The gRPC status code; 0 is OK. *(post-response, gRPC only)*
-- `code: number | null`: The handshake's HTTP status code. *(post-response, WebSocket only)*
-- `status: string`: The HTTP reason phrase, such as `OK`. *(post-response, HTTP only)*
+- `code: number | null`: The handshake's HTTP status code. *(stream and post-response, WebSocket only)*
+- `status: string`: The HTTP reason phrase, such as `OK`. *(stream and post-response, HTTP only)*
 - `status: GRPCStatus`: How the call ended. *(post-response, gRPC only)*
-- `headers: ReadonlyRows`: The response's headers, or the handshake's. *(post-response, HTTP and WebSocket only)*
+- `headers: ReadonlyRows`: The response's headers, or the handshake's. *(stream and post-response, HTTP and WebSocket only)*
 - `size: number`: The body's size in bytes, as received. *(post-response, HTTP only)*
 - `truncated: boolean`: Whether the body was cut to the 64 MB scripts receive. *(post-response, HTTP only)*
 - `responseTime: number`: How long it took, in milliseconds. *(post-response only)*
@@ -330,14 +335,41 @@ What came back: an HTTP response, an event stream, a gRPC call, or a WebSocket c
 - `events: StreamEvent[]`: Every event received, in order. *(post-response, HTTP only)*
 - `omittedEventCount: number`: Events received but not kept. *(post-response, HTTP only)*
 - `end: string`: How the stream or connection ended: `closed`, `stopped`, `limit`, `timedOut`, `refused`, or `failed`. *(post-response, HTTP and WebSocket only)*
-- `metadata: ReadonlyRows`: The call's response metadata. *(post-response, gRPC only)*
+- `metadata: ReadonlyRows`: The call's response metadata. *(stream and post-response, gRPC only)*
 - `trailers: ReadonlyRows`: The call's trailers. *(post-response, gRPC only)*
 - `messages: GRPCMessage[]`: Every message received, in order. *(post-response, gRPC only)*
 - `sentCount: number`: How many messages the call sent. *(post-response, gRPC only)*
 - `receivedCount: number`: How many messages the call received. *(post-response, gRPC only)*
 - `messages: SocketMessage[]`: Every message sent and received, in order. *(post-response, WebSocket only)*
-- `subprotocol: string | null`: The subprotocol the server chose. *(post-response, WebSocket only)*
+- `subprotocol: string | null`: The subprotocol the server chose. *(stream and post-response, WebSocket only)*
 - `close: Close | null`: How the connection closed, if it did. *(post-response, WebSocket only)*
+
+### `StreamEvent`
+
+One event of an event stream.
+
+- `id: string | null`: Its `id:`.
+- `event: string | null`: Its `event:` type.
+- `data: string`: Its data.
+- `retry: number | null`: Its `retry:` delay, in milliseconds.
+- `json(): any`: Its data, parsed as JSON.
+
+### `SocketMessage`
+
+One message the connection sent or received.
+
+- `direction: string`: `sent` or `received`.
+- `text: string | null`: A text message's text.
+- `isBinary: boolean`: Whether it was a binary message.
+- `base64: string | null`: A binary message's bytes, base64.
+- `json(): any`: A text message, parsed as JSON.
+
+### `GRPCMessage`
+
+One message the call received.
+
+- `text(): string`: The message as JSON text.
+- `json(): any`: The message, parsed.
 
 ### `TestFunction`
 
@@ -465,33 +497,6 @@ Headers, metadata, or trailers.
 - `has(name: string): boolean`: Whether an entry has the name.
 - `all(): Row[]`: Every entry, in order.
 - `toObject(): object`: Every entry by name.
-
-### `StreamEvent`
-
-One event of an event stream.
-
-- `id: string | null`: Its `id:`.
-- `event: string | null`: Its `event:` type.
-- `data: string`: Its data.
-- `retry: number | null`: Its `retry:` delay, in milliseconds.
-- `json(): any`: Its data, parsed as JSON.
-
-### `GRPCMessage`
-
-One message the call received.
-
-- `text(): string`: The message as JSON text.
-- `json(): any`: The message, parsed.
-
-### `SocketMessage`
-
-One message the connection sent or received.
-
-- `direction: string`: `sent` or `received`.
-- `text: string | null`: A text message's text.
-- `isBinary: boolean`: Whether it was a binary message.
-- `base64: string | null`: A binary message's bytes, base64.
-- `json(): any`: A text message, parsed as JSON.
 
 ### `Close`
 

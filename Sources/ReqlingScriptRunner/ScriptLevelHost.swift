@@ -9,6 +9,9 @@ import ReqlingScriptProtocol
 /// Microtasks need no driving here: JavaScriptCore runs them whenever a call from Swift into JavaScript returns, which
 /// is after the script's evaluation and after every timer callback. A level is done once its script settled and no
 /// test is pending; timers still waiting then are dropped, as a script that wants them awaits them.
+///
+/// In a stream phase the host outlives its top level: `handle` calls the handlers it registered with each item, and
+/// drains the same way, so each call ends once its handlers settle, its timers dropped too.
 final class ScriptLevelHost {
     let index: Int
     let level: ScriptLevelSource
@@ -19,8 +22,10 @@ final class ScriptLevelHost {
     let sourceURL: URL
     /// An exception nothing caught: a syntax error, or a throw in a timer callback.
     private var uncaught: ScriptError?
-    /// Set when the script's promise settles: `.success` or why it failed.
+    /// Set when the script's promise settles, or a handler call's: `.success` or why it failed.
     private var settlement: Result<Void, ScriptError>?
+    /// The first handler that failed in the call in hand.
+    private var callError: ScriptError?
 
     init(index: Int, level: ScriptLevelSource, context: JSContext, phase: ScriptPhaseRunner) {
         self.index = index
@@ -46,13 +51,74 @@ final class ScriptLevelHost {
             }
         }
         context.evaluateScript(ScriptWrapper.wrap(level.source), withSourceURL: sourceURL)
-        let failure = drain()
+        let failure = drain(neverFinished: "The script awaited something that never finished.")
         timers.removeAll()
+        // Handlers register only here: one registered from a handler would run on some items and not others.
+        runtimeCall("closeRegistration")
         return failure
     }
 
-    /// Fires timers until the level is done, or until nothing is left that could finish it.
-    private func drain() -> ScriptError? {
+    /// How many handlers the level's stream script registered.
+    var handlerCount: Int {
+        Int(runtimeCall("handlerCount", ["event"])?.toInt32() ?? 0) + Int(runtimeCall("handlerCount", ["message"])?.toInt32() ?? 0)
+    }
+
+    /// Whether the level has a handler for `item`.
+    func handles(_ item: ScriptStreamItem) -> Bool {
+        (runtimeCall("handlerCount", [Self.handlerKind(of: item)])?.toInt32() ?? 0) > 0
+    }
+
+    /// Calls the level's handlers for `item`, in the order they registered, each awaited before the next; the first
+    /// that threw or rejected, or why the call never finished.
+    func handle(_ item: ScriptStreamItem) -> ScriptError? {
+        uncaught = nil
+        settlement = nil
+        callError = nil
+        runtimeCall("runCall", [Self.handlerKind(of: item), Self.description(of: item)])
+        let failure = drain(neverFinished: "A handler awaited something that never finished.")
+        timers.removeAll()
+        return failure ?? callError
+    }
+
+    func handlerFailed(_ error: JSValue) {
+        if callError == nil {
+            callError = scriptError(from: error)
+        }
+    }
+
+    /// Which handlers take `item`, as the runtime lists them: `rq.onEvent`'s or `rq.onMessage`'s.
+    private static func handlerKind(of item: ScriptStreamItem) -> String {
+        if case .event = item.content {
+            return "event"
+        }
+        return "message"
+    }
+
+    /// What `runtime.js` builds the handlers' argument from, keyed by `shape`; absent values are `null`.
+    private static func description(of item: ScriptStreamItem) -> [String: Any] {
+        switch item.content {
+        case .event(let event):
+            [
+                "shape": "event", "id": ScriptResponseAccess.nullable(event.id), "event": ScriptResponseAccess.nullable(event.event),
+                "data": event.data, "retry": ScriptResponseAccess.nullable(event.retry)
+            ]
+        case .socketMessage(let message):
+            [
+                "shape": "socket", "direction": message.direction, "text": ScriptResponseAccess.nullable(message.text),
+                "base64": ScriptResponseAccess.nullable(message.base64)
+            ]
+        case .grpcMessage(let json):
+            ["shape": "grpc", "json": json]
+        }
+    }
+
+    @discardableResult
+    private func runtimeCall(_ name: String, _ arguments: [Any] = []) -> JSValue? {
+        context.objectForKeyedSubscript("__rq")?.invokeMethod(name, withArguments: arguments)
+    }
+
+    /// Fires timers until the level or call is done, or until nothing is left that could finish it.
+    private func drain(neverFinished: String) -> ScriptError? {
         while true {
             if let uncaught {
                 abandonPendingTests()
@@ -63,10 +129,7 @@ final class ScriptLevelHost {
             }
             guard let next = timers.next() else {
                 abandonPendingTests()
-                return settlement.map(\.failure) ?? ScriptError(
-                    name: "Error",
-                    message: "The script awaited something that never finished."
-                )
+                return settlement.map(\.failure) ?? ScriptError(name: "Error", message: neverFinished)
             }
             let wait = next.dueAt - ScriptTimers.now
             if wait > 0 {
@@ -84,12 +147,12 @@ final class ScriptLevelHost {
     }
 
     private var pendingTestCount: Int {
-        Int(context.objectForKeyedSubscript("__rq")?.invokeMethod("pendingTestCount", withArguments: [])?.toInt32() ?? 0)
+        Int(runtimeCall("pendingTestCount")?.toInt32() ?? 0)
     }
 
     /// Fails each test still waiting on a promise, so a level that ends early never drops one silently.
     private func abandonPendingTests() {
-        context.objectForKeyedSubscript("__rq")?.invokeMethod("abandonPendingTests", withArguments: [])
+        runtimeCall("abandonPendingTests")
     }
 
     /// An error from JavaScript, located in the script's own text: the first stack frame in the script, or the error's
