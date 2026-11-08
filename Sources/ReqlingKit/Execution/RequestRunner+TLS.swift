@@ -34,7 +34,34 @@ extension RequestRunner {
     /// Snapshots what TLS needs off the main actor (passphrases and Keychain references), then loads the identity and
     /// CAs for `host` and `port`. HTTP and gRPC both build their context here, so one host gets the same certificates.
     func tlsContext(host: String, port: Int?, verifiesServer: Bool, project: ProjectID, context: RunContext) throws(RunFailure) -> TLSContext {
-        let configuration = context.document.tls
+        try tlsContext(host: host, port: port, verifiesServer: verifiesServer, project: project, from: (context.document, context.paths))
+    }
+
+    /// The certificates a request sent outside a run uses, such as one a script sends, for its URL's host and port.
+    func tlsContext(
+        for prepared: PreparedHTTPRequest,
+        project: ProjectID,
+        document: ProjectDocument,
+        paths: ProjectPathResolver
+    ) throws(RunFailure) -> TLSContext {
+        let url = prepared.urlRequest.url
+        let port = url?.port ?? (url?.scheme?.lowercased() == "https" ? 443 : 80)
+        do {
+            return try tlsContext(host: url?.host ?? "", port: port, verifiesServer: prepared.verifyTLS, project: project, from: (document, paths))
+        } catch {
+            throw error.redacting(prepared.redaction)
+        }
+    }
+
+    /// `from` is where the project's TLS settings are read: its document, and its files' paths.
+    private func tlsContext(
+        host: String,
+        port: Int?,
+        verifiesServer: Bool,
+        project: ProjectID,
+        from source: (document: ProjectDocument, paths: ProjectPathResolver)
+    ) throws(RunFailure) -> TLSContext {
+        let configuration = source.document.tls
         let entries = configuration.clientCertificates
         let passphrases = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
             library.certificatePassphrase(for: entry.id, in: project).map { (entry.id, $0) }
@@ -44,7 +71,7 @@ extension RequestRunner {
         })
         let resolver = ProjectTLSResolver(
             configuration: configuration,
-            paths: context.paths,
+            paths: source.paths,
             passphrase: { passphrases[$0] },
             keychainIdentityReference: { references[$0] },
             keychain: keychain,

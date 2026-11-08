@@ -64,11 +64,14 @@ final class ScriptSession {
     /// report each time would grow with its console.
     private var shownCache: ScriptReport??
     private var pendingWrites: [VariableWrite] = []
-    private var pendingCookieWrites: [ScriptCookieWrite] = []
+    /// What scripts set or removed in the jar that `commit` hasn't applied yet.
+    private(set) var pendingCookieWrites: [ScriptCookieWrite] = []
     /// The stream phase, once the run's stream has opened.
     var stream: ScriptStreamRun?
     /// The project's jar, through `RequestRunner.cookieJar(for:creating:)`; `creating` only to commit.
     private let cookieJar: @MainActor (_ creating: Bool) -> ProjectCookieJar?
+    /// Sends the requests scripts send (`ScriptSession+Fetches.swift`); without one, each fails.
+    let fetchPerformer: ScriptFetchPerformer?
 
     init(
         project: ProjectID,
@@ -81,10 +84,12 @@ final class ScriptSession {
         iteration: Int = 0,
         iterationCount: Int = 1,
         carriedSecrets: Set<String> = [],
-        cookieJar: @escaping @MainActor (_ creating: Bool) -> ProjectCookieJar?
+        cookieJar: @escaping @MainActor (_ creating: Bool) -> ProjectCookieJar?,
+        fetchPerformer: ScriptFetchPerformer? = nil
     ) {
         self.project = project
         self.cookieJar = cookieJar
+        self.fetchPerformer = fetchPerformer
         self.item = item
         self.mode = mode
         self.environments = environments
@@ -130,8 +135,9 @@ final class ScriptSession {
         report.phases.append(ScriptPhaseReport(phase: phase, levels: levelReports(phase), skipReason: reason))
     }
 
-    /// Runs a phase in the helper, applying its events as they arrive. Cancelling the task awaiting this kills the
-    /// helper.
+    /// Runs a phase in the helper, applying its events as they arrive. Its report is in `report` from the start, as a
+    /// stream phase's is, so the requests its scripts send can log their lines as they finish. Cancelling the task
+    /// awaiting this kills the helper.
     func run(
         _ phase: ScriptPhase,
         response: (snapshot: ScriptResponseSnapshot, blobs: [Data])?,
@@ -143,37 +149,47 @@ final class ScriptSession {
         }
         let input = input(phase, levels: phaseLevels, response: response?.snapshot)
         let execution = runner.run(input, blobs: response?.blobs ?? [], timeLimit: timeLimit)
-        var phaseReport = ScriptPhaseReport(phase: phase, levels: levelReports(phase))
+        let index = beginPhase(ScriptPhaseReport(phase: phase, levels: levelReports(phase)))
+        let log: @MainActor (ScriptConsoleEntry) -> Void = { [weak self] entry in
+            self?.updatePhase(at: index) { $0.console.append(entry) }
+        }
+        let fetches = fetchQueue(reply: execution.reply, log: log)
         await withTaskCancellationHandler {
             for await event in execution.events {
-                if case .fetch(let id, _, _) = event {
-                    execution.reply(Self.unansweredFetch(id), Data())
-                    continue
+                switch event {
+                case .fetch(let id, let level, let fetch):
+                    fetches.add(ScriptFetchQueue.Pending(id: id, level: level, fetch: fetch, group: level))
+                case .levelFinished(let level), .levelFailed(let level, _):
+                    updatePhase(at: index) { apply(event, in: phase, to: &$0) }
+                    endFetches(fetches, group: level, log: log)
+                default:
+                    updatePhase(at: index) { apply(event, in: phase, to: &$0) }
                 }
-                apply(event, in: phase, to: &phaseReport)
             }
         } onCancel: {
             execution.cancel()
         }
+        closeFetches(fetches, log: log)
         let termination = await execution.termination()
-        var outcome: PhaseOutcome = phaseReport.levels.contains { $0.error != nil } ? .failed : .finished
+        var outcome: PhaseOutcome = report.phases[index].levels.contains { $0.error != nil } ? .failed : .finished
         switch termination {
         case .finished:
             break
         case .timedOut:
             let seconds = Int(timeLimit / .seconds(1))
-            phaseReport.error = ScriptError(
-                name: "TimeoutError",
-                message: "The \(phase.title.lowercased()) scripts didn't finish within \(seconds) s, the time limit in Settings ▸ Requests."
-            )
+            updatePhase(at: index) { phaseReport in
+                phaseReport.error = ScriptError(
+                    name: "TimeoutError",
+                    message: "The \(phase.title.lowercased()) scripts didn't finish within \(seconds) s, the time limit in Settings ▸ Requests."
+                )
+            }
             outcome = .failed
         case .cancelled:
             outcome = .cancelled
         case .failed(let message):
-            phaseReport.error = ScriptError(message: message)
+            updatePhase(at: index) { $0.error = ScriptError(message: message) }
             outcome = .failed
         }
-        report.phases.append(phaseReport)
         secretSink?.collect(secretValues)
         return outcome
     }
@@ -261,7 +277,7 @@ final class ScriptSession {
                 requestName: item.name,
                 requestID: item.id.description,
                 protocolName: item.kind.name.rawValue,
-                environmentName: environments.active?.name ?? environments.defaultEnvironment.name,
+                environmentName: environmentName,
                 defaultEnvironmentName: environments.defaultEnvironment.name,
                 iteration: iteration,
                 iterationCount: iterationCount
@@ -270,7 +286,7 @@ final class ScriptSession {
             response: response,
             stream: stream,
             // Taken now: after the request, the jar already holds its response's `Set-Cookie`s.
-            cookies: cookieJar(false)?.cookies(in: nil) ?? [],
+            cookies: projectCookies(),
             runtimeDirectory: ""
         )
     }
@@ -333,13 +349,42 @@ final class ScriptSession {
         return report.phases.count - 1
     }
 
-    func levelReports(_ phase: ScriptPhase) -> [ScriptLevelReport] {
-        (levels[phase] ?? []).map { ScriptLevelReport(kind: $0.kind, name: $0.name) }
+    /// Every cookie in the project's jar, which holds none before the project sends anything.
+    func projectCookies() -> [ScriptCookie] {
+        projectCookieJar?.cookies(in: nil) ?? []
     }
 
-    /// What a request a script sends gets until Reqling sends them.
-    static func unansweredFetch(_ id: Int) -> ScriptFetchReply {
-        ScriptFetchReply(id: id, outcome: .failed("Reqling can't send scripts' requests yet."))
+    /// The project's jar, `nil` before the project sends anything.
+    var projectCookieJar: ProjectCookieJar? {
+        cookieJar(false)
+    }
+
+    /// Applies the cookies scripts set or removed to the jar now rather than after the phase, so a request they send
+    /// carries them, as the scripts see it. A preview's never are.
+    func commitCookies() {
+        guard mode == .run, !pendingCookieWrites.isEmpty else {
+            return
+        }
+        cookieJar(true)?.apply(pendingCookieWrites)
+        pendingCookieWrites = []
+    }
+
+    /// Holds cookies a preview's request received as though a script set them: the scripts' later reads see them, as
+    /// a run's would, while the preview's `commit`, which keeps nothing, drops them.
+    func holdPreviewCookies(_ cookies: [ScriptCookie]) {
+        guard mode == .preview else {
+            return
+        }
+        pendingCookieWrites += cookies.map(ScriptCookieWrite.set)
+    }
+
+    /// The environment's name, as `rq.info` reports it.
+    var environmentName: String {
+        environments.active?.name ?? environments.defaultEnvironment.name
+    }
+
+    func levelReports(_ phase: ScriptPhase) -> [ScriptLevelReport] {
+        (levels[phase] ?? []).map { ScriptLevelReport(kind: $0.kind, name: $0.name) }
     }
 
     private static func masked(_ error: ScriptError, _ redaction: SecretRedaction) -> ScriptError {

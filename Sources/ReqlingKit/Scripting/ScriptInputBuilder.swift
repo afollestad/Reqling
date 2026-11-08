@@ -76,16 +76,23 @@ enum ScriptInputBuilder {
                 responseTime: time
             )), [])
         }
+        let (snapshot, body) = fetched(response)
+        return (.http(snapshot), [body])
+    }
+
+    /// An HTTP response as a script reads it, with its body cut to `ScriptLimits.responseBodyLength`: a post-response
+    /// script's `rq.response`, or what a request a script sent got back, whose body travels as blob 0 after its reply.
+    static func fetched(_ response: HTTPResponseRecord) -> (ScriptHTTPResponse, Data) {
         let body = response.body.prefix(ScriptLimits.responseBodyLength)
-        return (.http(ScriptHTTPResponse(
+        return (ScriptHTTPResponse(
             code: response.statusCode,
             status: response.reasonPhrase,
-            headers: headers,
+            headers: scriptRows(response.headers),
             body: ScriptBlob(index: 0, size: body.count),
             size: response.body.count,
             truncated: body.count < response.body.count,
-            responseTime: time
-        )), [Data(body)])
+            responseTime: response.duration * 1_000
+        ), Data(body))
     }
 
     private static func webSocket(_ record: WebSocketRecord) -> ScriptWebSocketResponse {

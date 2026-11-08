@@ -99,6 +99,8 @@ public enum HTTPBuildError: Error, Equatable, LocalizedError {
     case missingFile(String)
     case invalidGraphQLVariables(String)
     case templateTooLarge
+    /// A request built as given (`prepareLiteral`) had a body its method never sends (`HTTPMethod.bodyPolicy`).
+    case bodyNotAllowed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -112,6 +114,8 @@ public enum HTTPBuildError: Error, Equatable, LocalizedError {
             "The GraphQL variables are not a JSON object: \(detail)"
         case .templateTooLarge:
             "The request’s variables expand to too much text. Check for variables that reference each other many times."
+        case .bodyNotAllowed(let method):
+            "A \(method) request can’t send a body."
         }
     }
 }
@@ -326,7 +330,7 @@ public enum HTTPRequestBuilder {
         return "\(contentType.trimmingCharacters(in: .whitespaces)); boundary=\(boundary)"
     }
 
-    private static func buildURL(_ resolved: String, query: [(String, String)]) throws(HTTPBuildError) -> URL {
+    static func buildURL(_ resolved: String, query: [(String, String)]) throws(HTTPBuildError) -> URL {
         guard !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw .invalidURL("")
         }

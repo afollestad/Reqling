@@ -34,7 +34,7 @@ public final class RequestRunner {
     /// Every recorded run. Only `record` adds to it; clearing goes through this runner too, so `latest` never shows a
     /// run its history no longer has.
     @ObservationIgnored public let history: RunHistory
-    @ObservationIgnored private let userAgent: String
+    @ObservationIgnored let userAgent: String
     @ObservationIgnored let dynamic: DynamicVariables
     @ObservationIgnored private let makeExecutor: @MainActor () -> HTTPExecutor
     /// `nil` only where gRPC is never run; its requests then fail with an explanation. Public so the editor's Refresh

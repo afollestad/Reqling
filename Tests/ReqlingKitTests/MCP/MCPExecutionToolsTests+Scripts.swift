@@ -44,6 +44,23 @@ extension MCPExecutionToolsTests {
         XCTAssertEqual(runs["runs"]?.arrayValue?.first?["outcome"], "failed", "A failed test fails the run")
     }
 
+    func testARunListsTheRequestsItsScriptsSentInItsConsoleMasked() async throws {
+        try await setScripts(preRequest: """
+        const res = await rq.sendRequest(rq.variables.replaceIn("{{baseUrl}}/side?key={{token}}"))
+        console.log(res.text())
+        """)
+
+        let result = try await execute()
+
+        let console = result["console"]?.arrayValue ?? []
+        XCTAssertEqual(console.count, 2)
+        XCTAssertEqual(console.first?["severity"], "info")
+        let line = console.first?["text"]?.stringValue ?? ""
+        XCTAssertTrue(line.hasPrefix("→ GET \(server.baseURL)/side?key=•••••• · 200 OK · "), line)
+        XCTAssertEqual(console.last?["text"], "/side?key=•••••• auth=-")
+        XCTAssertFalse(MCPJSON.text(.object(result)).contains("t0ken-secret"))
+    }
+
     func testAPreviewRunsPreRequestScriptsOnlyWhenTheProjectIsTrusted() async throws {
         try await setScripts(preRequest: """
         rq.environment.set("seen", "1")

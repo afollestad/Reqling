@@ -46,7 +46,10 @@ extension RequestRunner {
             iteration: step?.iteration ?? 0,
             iterationCount: step?.iterationCount ?? 1,
             carriedSecrets: step?.carriedSecrets ?? [],
-            cookieJar: { [weak self] creating in self?.cookieJar(for: project, creating: creating) }
+            cookieJar: { [weak self] creating in self?.cookieJar(for: project, creating: creating) },
+            fetchPerformer: { [weak self] fetch, session in
+                await self?.performFetch(fetch, for: session) ?? ScriptFetchCompletion(outcome: .failed("Reqling stopped sending requests."))
+            }
         )
     }
 

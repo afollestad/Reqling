@@ -25,14 +25,28 @@ extension ScriptSession {
         ))
         let run = ScriptStreamRun(execution: execution, reportIndex: index, hooks: hooks)
         stream = run
+        let log: @MainActor (ScriptConsoleEntry) -> Void = { [weak self, unowned run] entry in
+            self?.log(entry, in: run)
+        }
+        let fetches = fetchQueue(reply: execution.reply, log: log)
         run.driver = Task {
             for await event in execution.events {
-                if case .fetch(let id, _, _) = event {
-                    execution.reply(Self.unansweredFetch(id), Data())
-                    continue
+                switch event {
+                case .fetch(let id, let level, let fetch):
+                    let group = run.currentItem ?? ScriptFetchQueue.topLevel
+                    fetches.add(ScriptFetchQueue.Pending(id: id, level: level, fetch: fetch, group: group))
+                // Before the event publishes the call's results, so they show what it left out.
+                case .registered:
+                    self.endFetches(fetches, group: ScriptFetchQueue.topLevel, log: log)
+                    self.apply(event, in: run)
+                case .callFinished(let item):
+                    self.endFetches(fetches, group: item, log: log)
+                    self.apply(event, in: run)
+                default:
+                    self.apply(event, in: run)
                 }
-                self.apply(event, in: run)
             }
+            self.closeFetches(fetches, log: log)
             return self.streamEnded(await execution.termination(), in: run, timeLimit: timeLimit)
         }
     }

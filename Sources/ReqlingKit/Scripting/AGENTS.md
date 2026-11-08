@@ -4,6 +4,7 @@ These instructions cover `Sources/ReqlingKit/Scripting/`: running scripts throug
 
 - **Run scripts only through a `ScriptRunning`** (`HelperScriptRunner` in the app), never in this process: the helper is what a time limit can kill. `ScriptSyntaxChecker` is the one JavaScriptCore use here, and it only parses.
 - **Run a request's scripts only through the `ScriptSession` `RequestRunner` takes at the start of a run or preview.** It alone applies the helper's events, commits current values and cookie changes, and masks the report, so the window, history, and MCP all see the same masked result.
+- **Send scripts' requests only through `RequestRunner.performFetch`, each `ScriptSession`'s performer, never `run`.** A run would replace the named request's own run, land in its history, and run its scripts.
 - **Never await scripts from a transport's `receive`.** Hand each event or message to `ScriptSession.deliver`, which returns at once; awaiting there stalls the stream and makes `LiveEventBuffer` drop what arrives.
 - **Send `rq.send`'s messages only through `WebSocketLive.send(scripted:)` and `GRPCLiveCall.send(scriptedJSON:)`**, never the template-resolving `send`: scripts treat `{{name}}` as plain text.
 - **Set `RunOptions.mayPromptForTrust` only for runs the person started** (Send, re-run from history, and a folder or project run through `BatchRunner.begin(_:mayPromptForTrust:)`). An agent's run or a background fetch must never ask, so nothing but the person at the Mac grants a project's scripts trust.
