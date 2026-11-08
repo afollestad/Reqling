@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Edits a request's, folder's, or project's scripts, one phase at a time: whether the owner runs the scripts around
 /// it, which of those run first (each a link to its scripts), and the script itself, with completion, hover, and its
-/// problems (`ScriptsEditorModel+Assistant`). Read-only, the phases and links stay browsable; only the script and the
-/// toggle take no edits.
+/// problems (`ScriptsEditorModel+Assistant`), and a menu of snippets to insert (`ScriptsPaneSnippetMenu`). Read-only,
+/// the phases and links stay browsable; only the script, the snippets, and the toggle take no edits.
 struct ScriptsPane: View {
     @Bindable var scripts: ScriptsEditorModel
     let isReadOnly: Bool
@@ -19,6 +19,8 @@ struct ScriptsPane: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 SectionPicker("Phase", selection: $scripts.phase, options: ScriptPhase.allCases) { $0.title }
+                ScriptsPaneSnippetMenu(scripts: scripts, handle: handle)
+                    .disabled(isReadOnly)
                 Spacer(minLength: 0)
                 if diagnostics.text == scripts.source, !diagnostics.items.isEmpty {
                     CodeProblemsMenu(diagnostics: diagnostics.items, handle: handle, subject: "the script")

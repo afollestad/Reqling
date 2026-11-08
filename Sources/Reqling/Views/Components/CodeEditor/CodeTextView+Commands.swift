@@ -1,8 +1,9 @@
 import AppKit
+import ReqlingKit
 
 /// Edits and searches the app's menus and buttons ask of an editor: Find in multi-line editors, completion and
-/// parameter hints, and whole-text replacements the user asked for (Beautify), which unlike outside changes are
-/// undoable.
+/// parameter hints, and edits the user asked for from outside the text view (Beautify, a script snippet), which unlike
+/// outside changes are undoable.
 extension CodeTextView {
     /// Opens the completion list in `window`'s focused editor, as ⌃Space does (Edit ▸ Show Completions), returning
     /// false when no editor with an assistant has focus. Whichever of the menu and the editor's own key handling sees
@@ -73,12 +74,41 @@ extension CodeTextView {
         guard edit.range.length > 0 || !edit.replacement.isEmpty else {
             return true
         }
-        let selection = edit.mapping(selectedRange())
-        breakUndoCoalescing()
-        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else {
+        return applyUserEdit(edit.range, with: edit.replacement, in: storage, selecting: edit.mapping(selectedRange()), actionName: actionName)
+    }
+
+    /// Inserts whole lines of code as typing would, one undo step, placed by `CodeIndent.insertion`: on the cursor's
+    /// line when it is blank, otherwise on a new line after it, never over the selection. Selects `placeholder` within
+    /// `code`, or puts the cursor after it, and focuses the editor so typing replaces it. Returns false when it can't
+    /// edit (disabled, or an input method is composing).
+    @discardableResult
+    func insertLinesAsUserEdit(_ code: String, placeholder: NSRange?, actionName: String) -> Bool {
+        guard isEditable, !hasMarkedText(), let storage = textStorage else {
             return false
         }
-        storage.replaceCharacters(in: edit.range, with: NSAttributedString(string: edit.replacement, attributes: baseAttributes))
+        let insertion = CodeIndent.insertion(of: code, placeholder: placeholder, in: string, selection: selectedRange(), language: language)
+        let selection = NSRange(location: insertion.range.location + insertion.selection.location, length: insertion.selection.length)
+        guard applyUserEdit(insertion.range, with: insertion.replacement, in: storage, selecting: selection, actionName: actionName) else {
+            return false
+        }
+        window?.makeFirstResponder(self)
+        scrollRangeToVisible(selection)
+        return true
+    }
+
+    /// One named undo step, reported through the binding and owning the history (`shouldChangeText` claims it).
+    private func applyUserEdit(
+        _ range: NSRange,
+        with replacement: String,
+        in storage: NSTextStorage,
+        selecting selection: NSRange,
+        actionName: String
+    ) -> Bool {
+        breakUndoCoalescing()
+        guard shouldChangeText(in: range, replacementString: replacement) else {
+            return false
+        }
+        storage.replaceCharacters(in: range, with: NSAttributedString(string: replacement, attributes: baseAttributes))
         setSelectedRange(selection)
         didChangeText()
         undoManager?.setActionName(actionName)
@@ -87,7 +117,8 @@ extension CodeTextView {
     }
 }
 
-/// A handle a view keeps to its `CodeEditor`'s text view, for button actions that edit as the user (Beautify).
+/// A handle a view keeps to its `CodeEditor`'s text view, for button and menu actions that edit as the user (Beautify,
+/// a script snippet).
 @MainActor
 final class CodeEditorHandle {
     weak var textView: CodeTextView?
@@ -101,6 +132,19 @@ final class CodeEditorHandle {
             return false
         }
         if !textView.replaceAllAsUserEdit(with: text, actionName: actionName) {
+            NSSound.beep()
+        }
+        return true
+    }
+
+    /// Inserts lines of code as an undoable user edit (`CodeTextView.insertLinesAsUserEdit`), beeping when the editor
+    /// can't take it right now. Returns false only when there is no text view yet, as `replaceAll` does.
+    @discardableResult
+    func insertLines(_ code: String, placeholder: NSRange?, actionName: String) -> Bool {
+        guard let textView else {
+            return false
+        }
+        if !textView.insertLinesAsUserEdit(code, placeholder: placeholder, actionName: actionName) {
             NSSound.beep()
         }
         return true

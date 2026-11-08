@@ -98,7 +98,7 @@ public enum CodeIndent {
     private static let closeBracket = unichar(UInt8(ascii: "]"))
     private static let quote = unichar(UInt8(ascii: "\""))
     private static let backslash = unichar(UInt8(ascii: "\\"))
-    private static let lineBreaks: Set<unichar> = [unichar(UInt8(ascii: "\n")), unichar(UInt8(ascii: "\r"))]
+    static let lineBreaks: Set<unichar> = [unichar(UInt8(ascii: "\n")), unichar(UInt8(ascii: "\r"))]
     private static let closers: [unichar: unichar] = [openBrace: closeBrace, openBracket: closeBracket]
 
     /// Plain comparisons rather than a set: every Return scans the whole document, which can be megabytes.
@@ -112,7 +112,7 @@ public enum CodeIndent {
 
     /// The opening bracket that ends the code before the cursor on its line; never the second `{` of a `{{` still
     /// being typed, which opens a variable, where `opensTemplates` says the language has them.
-    private static func opener(_ last: (unit: unichar, index: Int)?, in units: NSString, opensTemplates: Bool) -> unichar? {
+    static func opener(_ last: (unit: unichar, index: Int)?, in units: NSString, opensTemplates: Bool) -> unichar? {
         guard let last, closers[last.unit] != nil else {
             return nil
         }
@@ -123,7 +123,7 @@ public enum CodeIndent {
     }
 
     /// The line's leading spaces and tabs, stopping at the cursor when it sits inside them.
-    private static func leadingWhitespace(in units: NSString, from start: Int, upTo cursor: Int) -> String {
+    static func leadingWhitespace(in units: NSString, from start: Int, upTo cursor: Int) -> String {
         var end = start
         while end < cursor, isBlank(units.character(at: end)) {
             end += 1
@@ -132,7 +132,7 @@ public enum CodeIndent {
     }
 
     /// Where the line's text ends, before its line break.
-    private static func contentEnd(of line: NSRange, in units: NSString) -> Int {
+    static func contentEnd(of line: NSRange, in units: NSString) -> Int {
         var end = NSMaxRange(line)
         while end > line.location, lineBreaks.contains(units.character(at: end - 1)) {
             end -= 1
@@ -151,7 +151,7 @@ public enum CodeIndent {
     /// What one pass over the document finds: where the cursor sits, the code character that ends the text before it
     /// on its line, the brackets still open at the cursor, and how many of each bracket there are, all outside strings
     /// and comments.
-    private struct Context {
+    struct Context {
         private(set) var cursorIsInString = false
         private(set) var cursorIsInComment = false
         /// The last character of code before the cursor on its line; for GraphQL, only when it is a bracket.
