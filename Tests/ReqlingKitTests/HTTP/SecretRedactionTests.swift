@@ -22,6 +22,29 @@ final class SecretRedactionTests: XCTestCase {
         XCTAssertTrue(masked.hasSuffix("?key=\(TemplateResolver.mask)&page=2&q=a+b"))
     }
 
+    /// Masking scans for where a value may start rather than searching once per value; it must mask exactly what that
+    /// search would, whatever the case, overlap, encoding, or characters.
+    func testMaskingMatchesSearchingForEveryValue() {
+        let secrets = [
+            "a": "Tok3n-Value", "b": "tok3n", "c": "p@ss word", "d": "ünïcode-key", "e": "kelvin-key", "f": "api.internal:8443",
+            "g": "xyz", "h": "•••mask"
+        ]
+        let redaction = redaction(secrets)
+        let texts = [
+            "Bearer TOK3N-VALUE and tok3n-value", "a short tok3n", "p%40ss%20word and p@ss+word", "ÜNÏCODE-KEY sent",
+            "\u{212A}elvin-key folds to kelvin-key", "dial API.INTERNAL:8443 then", "xy", "XYZ xyz Xy", "•••MASK", "nothing here",
+            "tok3n-Value tok3n-valuE", ""
+        ]
+
+        for text in texts {
+            let searched = redaction.values.reduce(text) {
+                $0.replacingOccurrences(of: $1, with: TemplateResolver.mask, options: .caseInsensitive)
+            }
+            XCTAssertEqual(redaction.apply(text), searched, text)
+        }
+        XCTAssertEqual(redaction.apply("Bearer TOK3N-VALUE"), "Bearer \(TemplateResolver.mask)")
+    }
+
     func testOnlyHostLikeSecretsMaskTheirHost() {
         let redaction = redaction(["a": "pw@server", "b": "prod/xyz", "c": "admin:secret", "d": "api.internal:8443/v1"])
 
