@@ -16,6 +16,12 @@ public enum PostmanFile: Sendable {
         return try read(data, named: url.lastPathComponent)
     }
 
+    /// Each file read, in order, or why it couldn't be; for a batch the person chose, which off the main actor stays
+    /// responsive while a large export decodes.
+    public static func read(_ urls: [URL]) -> [(url: URL, result: Result<PostmanFile, PostmanImportError>)] {
+        urls.map { url in (url, Result { () throws(PostmanImportError) in try read(url) }) }
+    }
+
     /// `name` is the file's, for messages.
     public static func read(_ data: Data, named name: String) throws(PostmanImportError) -> PostmanFile {
         guard let root = try? JSONDecoder().decode(PostmanJSON.self, from: data), root.object != nil else {

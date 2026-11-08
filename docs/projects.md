@@ -24,6 +24,18 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.
 - **Filter the sidebar** by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
 
+## Importing from Postman
+
+Choose **File ▸ Import Postman Collection…**, also in the sidebar's add menu, and pick a collection exported from Postman (Collection v2.1 or v2.0) with any of its environment and globals exports. Reqling makes a new project from them, then sums up what came over and what needs changes.
+
+- **Requests and folders** keep their order, with their methods, URLs, query parameters, headers, and bodies: raw, sent as the type Postman sent it as, form-data, URL-encoded, binary, and GraphQL. Turned-off rows stay turned off.
+- **Auth.** Basic, bearer, and API key auth carry over: the collection's becomes the project's, and each folder's its own. A password, token, or key typed into Postman's auth becomes a secret variable in Default, such as `{{bearerToken}}`, so it's kept in your Keychain rather than the project's files. Other auth types become none, and the summary lists them.
+- **Variables.** The collection's variables go into Default, each environment becomes the project's, and a globals export joins Global. Path variables such as `:id` become `{{id}}`, and the summary lists the values Postman gave them.
+- **Files** for bodies are found where Postman had them, beside the collection, or in Postman's files folder. One inside the project's repository is shared by a relative path, and any other is kept on this Mac only. One that isn't found is left for you to choose.
+- **Scripts** become each level's own, the collection's the project's, and run as they are ([Scripts from Postman](scripts.md#scripts-from-postman)). Since someone else wrote them, the project asks before running them. The summary lists what in them needs changes, as the editor underlines it.
+- **Not imported:** descriptions, saved example responses, folders' and requests' own variables, and settings Reqling doesn't have.
+- **Into a project you have.** To bring Postman environments or globals into an existing project, choose the import button under the list in its Environments sheet. Each merges into the environment of its name: Postman's values replace the saved ones, except that an empty value never blanks one and a secret stays secret. Done saves them.
+
 ## Environments
 
 - **Default.** Every project has its own. Add others (Staging, Production) to override its variables by key, and pick the active one from the toolbar.

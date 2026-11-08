@@ -34,18 +34,7 @@ struct NewProjectSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .labelsHidden()
                 }
-                LabeledRow("Location") {
-                    HStack {
-                        Text(location?.abbreviatedPath ?? "Reqling's projects folder")
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Button("Choose…") {
-                            location = model.system.chooseDirectory(prompt: "Choose") ?? location
-                        }
-                    }
-                }
+                ProjectLocationRow(location: $location, system: model.system)
             }
             Text("""
                 Choose a folder inside your API's repository to share the project, and its environments, through git. \

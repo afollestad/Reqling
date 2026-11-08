@@ -15,7 +15,7 @@ struct EnvironmentEditorSheet: View {
                 EnvironmentDetail(editor: editor)
                     .frame(minWidth: 420)
             }
-            SheetFooter(note: editor.reservedNameProblem ?? Self.note, isPrimaryEnabled: editor.reservedNameProblem == nil) {
+            SheetFooter(note: footerNote, isPrimaryEnabled: editor.reservedNameProblem == nil) {
                 dismiss()
             } onPrimary: {
                 if editor.save() {
@@ -24,6 +24,11 @@ struct EnvironmentEditorSheet: View {
             }
         }
         .frame(width: 760, height: 480)
+    }
+
+    /// A reserved name blocking Done first, then what a Postman import added to the draft.
+    private var footerNote: String {
+        editor.reservedNameProblem ?? editor.postmanImportNote ?? Self.note
     }
 
     private static let note = "Default overrides Global, and the active environment overrides Default. "
@@ -62,6 +67,13 @@ private struct EnvironmentList: View {
                 .help("Delete the selected environment")
                 .accessibilityLabel("Delete the selected environment")
                 Spacer()
+                Button {
+                    Task { await editor.importPostmanEnvironments() }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("Import Postman environments or globals")
+                .accessibilityLabel("Import Postman environments or globals")
             }
             .buttonStyle(IconButtonStyle())
             // The icon tiles carry their own padding, so the bar adds only a little.

@@ -9,6 +9,8 @@ protocol SystemIntegration {
     func chooseDirectory(prompt: String) -> URL?
     /// `message` says what the panel is for when its button prompt alone can't, as when a second panel follows another.
     func chooseFile(prompt: String, message: String?, allowedTypes: [UTType]) -> URL?
+    /// Several files at once; empty means cancelled.
+    func chooseFiles(prompt: String, message: String?, allowedTypes: [UTType]) -> [URL]
     func chooseSaveLocation(suggestedName: String) -> URL?
     func reveal(_ url: URL)
     func copyToPasteboard(_ string: String)
@@ -50,6 +52,17 @@ struct AppKitSystemIntegration: SystemIntegration {
     }
 
     func chooseFile(prompt: String, message: String?, allowedTypes: [UTType]) -> URL? {
+        let panel = Self.filePanel(prompt: prompt, message: message, allowedTypes: allowedTypes)
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    func chooseFiles(prompt: String, message: String?, allowedTypes: [UTType]) -> [URL] {
+        let panel = Self.filePanel(prompt: prompt, message: message, allowedTypes: allowedTypes)
+        panel.allowsMultipleSelection = true
+        return panel.runModal() == .OK ? panel.urls : []
+    }
+
+    private static func filePanel(prompt: String, message: String?, allowedTypes: [UTType]) -> NSOpenPanel {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -59,7 +72,7 @@ struct AppKitSystemIntegration: SystemIntegration {
         if !allowedTypes.isEmpty {
             panel.allowedContentTypes = allowedTypes
         }
-        return panel.runModal() == .OK ? panel.url : nil
+        return panel
     }
 
     func chooseSaveLocation(suggestedName: String) -> URL? {

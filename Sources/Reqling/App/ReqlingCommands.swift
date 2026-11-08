@@ -24,6 +24,7 @@ struct ReqlingCommands: Commands {
                 .keyboardShortcut("n", modifiers: [.command, .option])
             Button("Add Project Folder…") { model.openProjectFolder() }
                 .keyboardShortcut("o", modifiers: .command)
+            Button("Import Postman Collection…") { model.sheet = .importPostman }
         }
         CommandGroup(after: .pasteboard) {
             Divider()

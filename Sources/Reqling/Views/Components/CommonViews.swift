@@ -3,6 +3,8 @@ import SwiftUI
 /// A sheet's bottom bar: an optional note, then Cancel and the primary action, bound to Escape and Return.
 struct SheetFooter: View {
     var note: String?
+    /// `nil` leaves only the primary action, for a sheet whose work is done and has nothing left to cancel.
+    var cancelTitle: String? = "Cancel"
     var primaryTitle = "Done"
     var isPrimaryEnabled = true
     let onCancel: () -> Void
@@ -19,8 +21,10 @@ struct SheetFooter: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("Cancel", role: .cancel, action: onCancel)
-                    .keyboardShortcut(.cancelAction)
+                if let cancelTitle {
+                    Button(cancelTitle, role: .cancel, action: onCancel)
+                        .keyboardShortcut(.cancelAction)
+                }
                 Button(primaryTitle, action: onPrimary)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isPrimaryEnabled)

@@ -23,6 +23,7 @@ enum SidebarItem: Hashable {
 
 enum AppSheet: Identifiable, Hashable {
     case newProject
+    case importPostman
     case environments(ProjectID)
     case projectSettings(ProjectID)
     case batchRun(BatchRunScope)

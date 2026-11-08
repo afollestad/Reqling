@@ -169,6 +169,8 @@ private struct AppSheetView: View {
         switch sheet {
         case .newProject:
             NewProjectSheet(model: model)
+        case .importPostman:
+            PostmanImportSheet(importer: PostmanImportModel(app: model))
         case .environments(let project):
             EnvironmentEditorSheet(editor: EnvironmentEditorModel(projectID: project, app: model))
         case .projectSettings(let project):

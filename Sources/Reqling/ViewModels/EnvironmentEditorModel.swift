@@ -20,6 +20,9 @@ final class EnvironmentEditorModel {
     var stagedCurrentValueResets: [EnvironmentID: Set<String>] = [:]
     /// Environments whose every current value Reset All is to drop on Done, including any a script sets meanwhile.
     var stagedCurrentValueResetAll: Set<EnvironmentID> = []
+    /// What the last Postman import put in the draft, for the footer until Done saves it
+    /// (`EnvironmentEditorModel+PostmanImport.swift`).
+    var postmanImportNote: String?
 
     @ObservationIgnored unowned let app: AppModel
     /// The environments as loaded or last saved: the base of Done's merge.

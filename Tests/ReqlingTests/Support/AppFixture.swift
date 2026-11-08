@@ -83,6 +83,14 @@ final class StubSystemIntegration: SystemIntegration {
         return filesToChoose.isEmpty ? fileToChoose : filesToChoose.removeFirst()
     }
 
+    /// Answers `chooseFiles` calls in order, an empty batch cancelling one, and nothing once it runs out.
+    var fileBatchesToChoose: [[URL]] = []
+
+    func chooseFiles(prompt: String, message: String?, allowedTypes: [UTType]) -> [URL] {
+        fileMessages.append(message)
+        return fileBatchesToChoose.isEmpty ? [] : fileBatchesToChoose.removeFirst()
+    }
+
     func chooseSaveLocation(suggestedName: String) -> URL? {
         saveLocation
     }
