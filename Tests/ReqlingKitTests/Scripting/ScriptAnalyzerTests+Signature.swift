@@ -37,6 +37,7 @@ extension ScriptAnalyzerTests {
 
     func testArgumentsBuiltFromLiteralsAndGroupsKeepTheirCall() {
         XCTAssertEqual(hint(#"rq.cookies.set("a", 1, { path: "/", se|"#)?.active, "options", "an object literal")
+        XCTAssertEqual(hint("rq.sendRequest({\n  url: \"x\",\n  |\n})")?.active, "request", "lines down an options literal")
         XCTAssertEqual(hint("rq.expect(1).to.be.oneOf([1, 2|")?.active, "values", "an array")
         XCTAssertEqual(hint(#"rq.environment.get(`${rq.info.environment}-|`)"#)?.active, "name", "template text")
         XCTAssertEqual(hint(#"rq.test("works", (a, b|"#)?.active, "callback", "an arrow function's parameters")

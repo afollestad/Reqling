@@ -99,6 +99,22 @@ extension ScriptAnalyzerTests {
         XCTAssertEqual(keys("const res = await rq.sendRequest('x')\nres.json()."), [])
     }
 
+    /// A cookie's `sameSite` takes only its three values, in any case; an HTTP method's are suggestions, and a value
+    /// built at run time is the runtime's to check.
+    func testAValueOutsideAPropertysOnlyChoicesIsWarnedAbout() throws {
+        let context = ScriptAnalysisContext(phase: .preRequest, protocols: ScriptAnalysisContext.protocols(for: .http))
+        let text = [
+            #"rq.cookies.set("a", "b", { sameSite: "laxx" })"#,
+            #"rq.cookies.set("a", "b", { sameSite: "Strict", secure: true })"#,
+            #"rq.cookies.set("a", "b", { sameSite: "l" + "ax" })"#,
+            #"rq.sendRequest({ url: "x", method: "PURGE" })"#
+        ].joined(separator: "\n")
+        let warnings = ScriptAnalyzer(text: text, context: context).diagnostics()
+
+        XCTAssertEqual(warnings.map(\.message), ["rq.cookies.set's sameSite is lax, strict, or none, not “laxx”."])
+        XCTAssertEqual(warnings.first?.range, (text as NSString).range(of: #""laxx""#))
+    }
+
     func testAKeyAnOptionsTypeLacksIsWarnedAbout() {
         let context = ScriptAnalysisContext(phase: .preRequest, protocols: ScriptAnalysisContext.protocols(for: .http))
         let text = "rq.sendRequest({ url: \"x\", hedaers: {}, \"tiemout\": 1, headers: { anything: 1 } })\n"

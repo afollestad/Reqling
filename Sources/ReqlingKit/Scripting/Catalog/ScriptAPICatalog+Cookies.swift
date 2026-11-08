@@ -33,7 +33,7 @@ extension ScriptAPICatalog {
                 + "already past removes the cookie."),
             .property("secure", .boolean, "Sends it only over HTTPS, and to localhost."),
             .property("httpOnly", .boolean, "Marks it `HttpOnly`."),
-            .property("sameSite", .string, "`lax`, `strict`, or `none`.", completion: .choices(["lax", "strict", "none"]))
+            .property("sameSite", .string, "`lax`, `strict`, or `none`.", completion: .choices(["lax", "strict", "none"], exhaustive: true))
         ])
     ]
 

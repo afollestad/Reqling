@@ -4,8 +4,8 @@ import ReqlingScriptProtocol
 /// Object literals a script passes where a parameter takes an options type, as `rq.sendRequest({ method, url })` and
 /// `rq.cookies.set(name, value, { secure: true })` do: completion offers the type's keys not yet written, and in a
 /// string written as a key's value, the values its property names (`ScriptArgumentCompletion.choices`); hover describes
-/// a key, and diagnostics warn of one the type lacks. Only a literal passed whole as the argument counts, so one nested
-/// in it (`headers: { … }`) offers nothing of its parent's.
+/// a key, and diagnostics warn of one the type lacks, or of a string value its property's exhaustive choices lack. Only a
+/// literal passed whole as the argument counts, so one nested in it (`headers: { … }`) offers nothing of its parent's.
 ///
 /// Keys are found from the tokens alone, so they complete wherever the editor's pairs and indentation leave the
 /// cursor: between `({` and `})`, on a line Return indented, or before a `}` moved back to its opener's line.
@@ -39,7 +39,7 @@ extension ScriptAnalyzer {
         guard index >= 3, tokens[index - 1].isPunctuator(":"), let key = keyName(tokens[index - 2]),
               let brace = literalOpening(at: index - 3), let type = optionsType(ofLiteralAt: brace)?.type,
               let member = type.members.first(where: { !$0.isMethod && $0.name == key }),
-              case .choices(let values)? = member.completion else {
+              case .choices(let values, _)? = member.completion else {
             return nil
         }
         let token = tokens[index]
@@ -72,13 +72,37 @@ extension ScriptAnalyzer {
             guard let (type, callee) = optionsType(ofLiteralAt: brace) else {
                 continue
             }
-            let names = Set(type.members.filter { !$0.isMethod }.map(\.name))
-            for key in writtenKeys(inLiteralAt: brace) where !names.contains(key.name) {
-                let message = "\(callee)'s options have no “\(key.name)”."
-                found.append(ScriptDiagnostic(range: tokens[key.index].range, message: message, severity: .warning))
+            let properties = Dictionary(type.members.filter { !$0.isMethod }.map { ($0.name, $0) }) { first, _ in first }
+            for key in writtenKeys(inLiteralAt: brace) {
+                guard let property = properties[key.name] else {
+                    let message = "\(callee)'s options have no “\(key.name)”."
+                    found.append(ScriptDiagnostic(range: tokens[key.index].range, message: message, severity: .warning))
+                    continue
+                }
+                if let unknown = unknownChoice(of: property, valueAfter: key.index, in: callee) {
+                    found.append(unknown)
+                }
             }
         }
         return found
+    }
+
+    /// A warning for the string the key at `index` is given, when that string is its whole value and isn't among the
+    /// property's exhaustive choices; a value built any other way is the runtime's to check.
+    private func unknownChoice(of property: ScriptMember, valueAfter index: Int, in callee: String) -> ScriptDiagnostic? {
+        let tokens = expressions.tokens
+        guard case .choices(let values, exhaustive: true)? = property.completion, index + 2 < tokens.count,
+              tokens[index + 1].isPunctuator(":"), case .string(terminated: true) = tokens[index + 2].kind,
+              index + 3 >= tokens.count || tokens[index + 3].isPunctuator(",") || tokens[index + 3].isPunctuator("}") else {
+            return nil
+        }
+        let value = expressions.stringContents(tokens[index + 2])
+        guard !values.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else {
+            return nil
+        }
+        let listed = values.count > 1 ? values.dropLast().joined(separator: ", ") + ", or " + (values.last ?? "") : values.joined()
+        let message = "\(callee)'s \(property.name) is \(listed), not “\(value)”."
+        return ScriptDiagnostic(range: tokens[index + 2].range, message: message, severity: .warning)
     }
 
     /// The `{` of the literal a key after `index` belongs to, when `index` is that `{` or a `,` at its own depth; `nil`
