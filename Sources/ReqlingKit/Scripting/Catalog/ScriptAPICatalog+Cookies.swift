@@ -25,6 +25,15 @@ extension ScriptAPICatalog {
             .property("httpOnly", .boolean, "Marked `HttpOnly`."),
             .property("sameSite", .optional(.string), "`lax`, `strict`, `none`, or `null`."),
             .property("hostOnly", .boolean, "Sent only to `domain` itself, not to its subdomains.")
+        ]),
+        ScriptType("CookieOptions", "How `set` sets a cookie.", members: [
+            .property("path", .string, "The path it's sent under; `/` when left out."),
+            .property("domain", .string, "A domain it goes to with its subdomains; this host alone when left out."),
+            .property("expires", .any, "A `Date`, a date string, or milliseconds since 1970; until Reqling quits when left out. One "
+                + "already past removes the cookie."),
+            .property("secure", .boolean, "Sends it only over HTTPS, and to localhost."),
+            .property("httpOnly", .boolean, "Marks it `HttpOnly`."),
+            .property("sameSite", .string, "`lax`, `strict`, or `none`.", completion: .choices(["lax", "strict", "none"]))
         ])
     ]
 
@@ -36,7 +45,7 @@ extension ScriptAPICatalog {
         let value = ScriptParameter("value", .any, "Its value; anything but a string is written as JSON.")
         let options = ScriptParameter(
             "options",
-            .object,
+            .named("CookieOptions"),
             "`{ path, domain, expires, secure, httpOnly, sameSite }`; path `/`, this host alone, until Reqling quits by default.",
             isOptional: true
         )

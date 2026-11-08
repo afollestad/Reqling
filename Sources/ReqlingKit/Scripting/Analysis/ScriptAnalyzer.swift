@@ -114,6 +114,11 @@ extension ScriptAnalyzer {
             case .parameter(let argument, let position):
                 value = callbackParameter(of: value, receiver: steps.last?.receiver, argument: argument, position: position)
                     .map { .typed($0.type) } ?? .unknown
+            case .awaited:
+                // Awaiting anything but a promise gives the value itself.
+                if case .typed(.promise(let settled)) = value {
+                    value = .typed(settled)
+                }
             }
         }
         return (value, steps)

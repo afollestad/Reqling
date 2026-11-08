@@ -45,6 +45,9 @@ extension ScriptAPICatalog {
             .property("variables", .string, "The variables, as JSON text."),
             .property("operationName", .optional(.string), "The operation to run, when the query has several.")
         ]),
+        ScriptType("VariableOptions", "How `set` stores a variable's value.", members: [
+            .property("secret", .boolean, "Keeps the value in the Keychain, and masks it wherever it would show.")
+        ]),
         ScriptType("Crypto", "Hashes and HMACs. Output is hex unless `{ encoding: \"base64\" }`; input is UTF-8 text unless "
             + "`{ inputEncoding: \"hex\" | \"base64\" }`.", members: cryptoMembers),
         ScriptType("Expectation", "A Chai-style assertion: chain words such as `to`, `be`, and `have`, `.not`, `.deep`, and "
@@ -130,7 +133,8 @@ extension ScriptAPICatalog {
     private static func variableType(_ name: String, _ summary: String, source: ScriptVariableSource, named: Bool) -> ScriptType {
         let key = ScriptParameter("name", .string, "The variable's name.", completion: .variableName(source))
         let value = ScriptParameter("value", .any, "Its new value; anything but a string is stored as JSON.")
-        let options = ScriptParameter("options", .object, "`{ secret: true }` keeps the value in the Keychain and masked.", isOptional: true)
+        let options = ScriptParameter("options", .named("VariableOptions"), "`{ secret: true }` keeps the value in the Keychain and masked.",
+                                      isOptional: true)
         var members: [ScriptMember] = [
             .method("get", [key], returns: .optional(.string), "The variable's value, or `undefined`."),
             .method("set", [key, value, options], returns: .void,

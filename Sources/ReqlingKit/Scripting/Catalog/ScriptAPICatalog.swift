@@ -77,6 +77,9 @@ public struct ScriptMember: Sendable, Hashable {
     /// `nil` for every protocol.
     public let protocols: ScriptProtocols?
     public let availability: Availability
+    /// What completion offers in a string written as this property's value, in an options object a script passes
+    /// (`{ method: "…" }`).
+    public let completion: ScriptArgumentCompletion?
 
     init(
         name: String,
@@ -86,7 +89,8 @@ public struct ScriptMember: Sendable, Hashable {
         summary: String,
         phases: Set<ScriptPhase> = Set(ScriptPhase.allCases),
         protocols: ScriptProtocols? = nil,
-        availability: Availability = .supported
+        availability: Availability = .supported,
+        completion: ScriptArgumentCompletion? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -96,6 +100,7 @@ public struct ScriptMember: Sendable, Hashable {
         self.phases = phases
         self.protocols = protocols
         self.availability = availability
+        self.completion = completion
     }
 
     public var isMethod: Bool {
@@ -183,10 +188,12 @@ public struct ScriptParameter: Sendable, Hashable {
     }
 }
 
-/// Names completion offers inside a string argument.
+/// What completion offers inside a string: an argument's, or a value in an options object.
 public enum ScriptArgumentCompletion: Sendable, Hashable {
     /// Variable names from where the receiver reads.
     case variableName(ScriptVariableSource)
+    /// These values, as an enum's, such as HTTP methods.
+    case choices([String])
 }
 
 /// Where a variable accessor reads.
@@ -267,9 +274,13 @@ extension ScriptMember {
         _ summary: String,
         phases: Set<ScriptPhase> = Set(ScriptPhase.allCases),
         protocols: ScriptProtocols? = nil,
-        availability: Availability = .supported
+        availability: Availability = .supported,
+        completion: ScriptArgumentCompletion? = nil
     ) -> ScriptMember {
-        ScriptMember(name: name, kind: .property, type: type, summary: summary, phases: phases, protocols: protocols, availability: availability)
+        ScriptMember(
+            name: name, kind: .property, type: type, summary: summary, phases: phases, protocols: protocols, availability: availability,
+            completion: completion
+        )
     }
 
     static func method(
@@ -304,7 +315,8 @@ extension ScriptMember {
             summary: summary,
             phases: phases,
             protocols: protocols,
-            availability: .compatibility(rqEquivalent: equivalent)
+            availability: .compatibility(rqEquivalent: equivalent),
+            completion: completion
         )
     }
 

@@ -5,7 +5,7 @@ import ReqlingScriptProtocol
 extension ScriptAPICatalog {
     static let fetchTypes: [ScriptType] = [
         ScriptType("OutgoingRequest", "A request for `rq.sendRequest` to send, as given.", members: [
-            .property("method", .string, "The HTTP method; `GET` when left out."),
+            .property("method", .string, "The HTTP method; `GET` when left out.", completion: .choices(httpMethods)),
             .property("url", .string, "The URL, as given; `rq.variables.replaceIn` resolves `{{variables}}` first."),
             .property("headers", .object, "An object of names and values, or `[name, value]` pairs."),
             .property("body", .any, "Text, an `ArrayBuffer` or typed array, or any other value as JSON, which adds a JSON "
@@ -26,4 +26,7 @@ extension ScriptAPICatalog {
             .method("base64", returns: .string, "The body's bytes, base64.")
         ])
     ]
+
+    /// What `OutgoingRequest.method` completes; any other method token works too.
+    private static let httpMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 }

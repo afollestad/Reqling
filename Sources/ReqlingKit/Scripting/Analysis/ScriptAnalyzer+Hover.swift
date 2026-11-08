@@ -10,14 +10,19 @@ public struct ScriptHover: Hashable, Sendable {
     public let note: String?
 }
 
-/// What a global or member under the pointer is, from the catalog, `pm`'s included: a script brought from Postman reads
-/// best with each name's Reqling equivalent beside it.
+/// What a global, member, or options literal's key under the pointer is, from the catalog, `pm`'s included: a script
+/// brought from Postman reads best with each name's Reqling equivalent beside it.
 extension ScriptAnalyzer {
     public func hover(at offset: Int) -> ScriptHover? {
         let tokens = expressions.tokens
         guard let index = tokens.firstIndex(where: { NSLocationInRange(offset, $0.range) }),
-              ScriptExpressions.isMemberName(tokens[index]),
-              let chain = expressions.chain(endingAt: index) else {
+              ScriptExpressions.isMemberName(tokens[index]) else {
+            return nil
+        }
+        if let key = optionKeyHover(at: index) {
+            return key
+        }
+        guard let chain = expressions.chain(endingAt: index) else {
             return nil
         }
         let token = tokens[index]

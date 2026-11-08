@@ -11,6 +11,9 @@ struct ScriptMemberChain: Equatable, Sendable {
         /// in its list: `rq.onEvent(event => …)` binds `event` to `rq.onEvent` and `.parameter(argument: 0,
         /// position: 0)`. Only a parameter's binding ends with one (`ScriptExpressions.readParameters`).
         case parameter(argument: Int, position: Int)
+        /// What a promise the chain so far gives settles with: a declaration's value written after `await`, as in
+        /// `const res = await rq.sendRequest(…)`.
+        case awaited
     }
 
     var root: String
@@ -261,10 +264,10 @@ struct ScriptExpressions {
             let isAssigned = { (index: Int) in index < self.tokens.count && self.tokens[index].isPunctuator("=") }
             var bound: [String: ScriptMemberChain] = [:]
             if tokens[index].kind == .identifier {
-                let value = isAssigned(index + 1) ? chain(startingAt: skippingAwait(index + 2))?.chain : nil
+                let value = isAssigned(index + 1) ? declaredValue(startingAt: index + 2) : nil
                 bound[tokens[index].text] = value ?? Self.unknown(at: tokens[index].range)
             } else if tokens[index].isPunctuator("{"), let close = closer(of: index, open: "{", close: "}") {
-                let value = isAssigned(close + 1) ? chain(startingAt: skippingAwait(close + 2))?.chain : nil
+                let value = isAssigned(close + 1) ? declaredValue(startingAt: close + 2) : nil
                 destructure(from: index + 1, to: close, of: value ?? Self.unknown(at: tokens[index].range), into: &bound)
             }
             declarations += bound.map { Declaration(location: token.range.location, name: $0.key, value: $0.value) }
@@ -299,6 +302,15 @@ struct ScriptExpressions {
 
     private func isTerminated(_ token: JavaScriptToken) -> Bool {
         token.kind == .string(terminated: true)
+    }
+
+    /// The chain a declaration's value starts with at `index`, ending in `.awaited` when `await` comes first.
+    private func declaredValue(startingAt index: Int) -> ScriptMemberChain? {
+        let start = skippingAwait(index)
+        guard let value = chain(startingAt: start)?.chain else {
+            return nil
+        }
+        return start == index ? value : value.appending(.awaited)
     }
 
     private func skippingAwait(_ index: Int) -> Int {

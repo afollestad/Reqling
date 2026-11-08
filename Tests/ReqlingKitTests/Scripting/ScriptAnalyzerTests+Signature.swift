@@ -18,7 +18,7 @@ extension ScriptAnalyzerTests {
 
     func testTheArgumentAtTheCursorIsActive() throws {
         let opened = try XCTUnwrap(hint("rq.cookies.set(|"))
-        XCTAssertEqual(opened.signature, "RequestCookies.set(name: string, value: any, options?: object): void")
+        XCTAssertEqual(opened.signature, "RequestCookies.set(name: string, value: any, options?: CookieOptions): void")
         XCTAssertEqual(opened.active, "name")
         XCTAssertEqual(hint(#"rq.cookies.set("a", |"#)?.active, "value")
         XCTAssertEqual(hint(#"rq.cookies.set("a", 1, |)"#)?.active, "options")

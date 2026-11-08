@@ -1,6 +1,6 @@
 # Scripts
 
-JavaScript that runs before a request is sent, as an event stream, WebSocket, or gRPC call delivers each event or message, and after its response comes back, for HTTP, GraphQL, gRPC, and WebSocket requests alike. Use scripts to compute a signature or timestamp, to save a token from a login's response for the requests after it, to test what came back, and to answer a server's messages.
+JavaScript that runs before a request is sent, as an event stream, WebSocket, or gRPC call delivers each event or message, and after its response comes back, for HTTP, GraphQL, gRPC, and WebSocket requests alike. Use scripts to compute a signature or timestamp, to save a token from a login's response for the requests after it, to refresh an expired token before the request that needs it, to test what came back, and to answer a server's messages.
 
 ## Where scripts live
 
@@ -106,12 +106,43 @@ rq.cookies.for("example.com").clear()
 - **gRPC** calls go to no URL, so their scripts reach the jar only through `rq.cookies.for(…)`.
 - **A typed `Cookie` header** stands in for the jar on that request: the jar's cookies don't go with it, and its response's `Set-Cookie`s aren't stored, so read those from `rq.response.headers`. A script's changes still land in the jar for the requests after it.
 - **Previews** keep no cookie a script sets, so GraphQL introspection sends the jar as it was.
+- **Requests scripts send** carry the cookies the scripts set, and `rq.cookies` reads what their responses stored ([Sending requests](#sending-requests)).
 - **Postman.** `pm.cookies` reads the request's cookies, and `pm.cookies.jar()` reaches any URL's; its callbacks run before the call returns.
 - **History** lists which cookies scripts set or removed, never their values. A cookie's value that a script prints isn't masked.
 
+## Sending requests
+
+Scripts can send requests of their own, such as refreshing a token before the request that needs it. Reqling sends each one, with the project's cookies and certificates:
+
+```js
+// Pre-request: refresh the token once it has expired.
+if (Date.now() > Number(rq.environment.get("tokenExpires") || 0)) {
+  const res = await rq.sendRequest({
+    method: "POST",
+    url: rq.variables.replaceIn("{{authUrl}}/token"),
+    body: { refresh_token: rq.environment.get("refreshToken") },
+  })
+  rq.environment.set("token", res.json().access_token, { secret: true })
+  rq.environment.set("tokenExpires", Date.now() + res.json().expires_in * 1000)
+}
+
+// Send a saved request, resolved and authenticated as a run would be.
+const login = await rq.runRequest("Login", { variables: { user: "ada" } })
+rq.test("logged in", () => rq.expect(login.code).to.equal(200))
+```
+
+- **`rq.sendRequest`** takes a URL, or `{ method, url, headers, body }`, and sends it as given: `{{name}}` in it is plain text, so resolve one with `rq.variables.replaceIn`, and no auth is added. A body that isn't text, an `ArrayBuffer`, or a typed array goes as JSON.
+- **`rq.runRequest`** sends a saved HTTP or GraphQL request, by name or ID, as a run would: with its auth, and with the variables scripts have set so far, which `{ variables }` beat. Its own scripts don't run, and it isn't kept in its history. A name more than one request has, or a gRPC or WebSocket request, is refused.
+- **Responses.** Both resolve with the response, whatever its status: `code`, `status`, `headers`, `text()`, `json()`, and `base64()`. They reject when no response comes back. An event stream is read until it ends.
+- **Console.** Each request is listed in the Tests tab's console with its method, URL, status, and time, secrets masked, as agents see it too. One that failed or didn't finish says so.
+- **Time limit.** Requests count toward the script's time limit, and a script waits for the ones it sent, awaited or not, before it ends. One still out when its script ends is stopped.
+- **Cookies.** A request carries the cookies scripts set, and what its response sets lands in the project's jar, which `rq.cookies` then reads.
+- **Previews** send scripts' requests too, so Copy as cURL and GraphQL introspection get what a send would, but keep no cookie they receive.
+- **Bounds.** Only http and https URLs go out, and a phase, or a stream handler on one event, can send 100 requests. Reqling sends six of a phase's at once.
+
 ## Results
 
-- **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console. Objects print as indented JSON. While a stream is open, it updates as its handlers finish each event.
+- **Tests tab.** A run with scripts gains a **Tests** tab beside the response. It shows each script's tests, passed, failed, or skipped, with any error it threw, then everything the scripts printed in the console, with the requests they sent. Objects print as indented JSON. While a stream is open, it updates as its handlers finish each event.
 - **Stream scripts.** A test a handler runs on every event shows once, as **Passed 498 of 500**, with its first failure's message and the event it failed on. A handler that throws shows its first error, the event it threw on, and how many events it threw for. Events that reached no handler are counted, with why, and the console keeps its newest 1,000 entries.
 - **Status bar.** **Tests 2/3** counts the tests that passed of those that ran, a stream script's each once. It's green when all of them passed and no script threw, and red otherwise.
 - **Failures.** A failed test, or a stream or post-response script that throws, marks the run failed even when the server answered 200. A pre-request script that throws stops the run before anything is sent, and the response pane shows its error and console instead.
@@ -121,16 +152,16 @@ rq.cookies.for("example.com").clear()
 
 ## Editor help
 
-- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, the keys of this request's latest JSON response after `rq.response.json().`, and a handler's parameter, as in `rq.onEvent(event => event.`, as the event or message it gets. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
+- **Completion.** Typing a name, a `.`, or a quote offers what fits there: Reqling's API for the phase and the request's protocol, the names a script declared, variable names inside a call such as `rq.environment.get("…")`, the keys of this request's latest JSON response after `rq.response.json().`, an options object's keys and values, as in `rq.sendRequest({ method: "`, a request's response after `await`, and a handler's parameter, as in `rq.onEvent(event => event.`, as the event or message it gets. The highlighted suggestion is described beneath the list: what an API member or keyword does, which environments hold a variable or which scripts set it, and where a key sits in the response. Accepting a method adds its parentheses, with the cursor between them when it takes arguments. Press ⌃Space, ⌥Esc, or F5, or choose Edit ▸ Show Completions, to open it anywhere.
 - **Parameter hints.** Typing `(` or `,` in a call shows the method's parameters above the line, with the one being typed highlighted and described, and what the method does. The highlight follows the cursor from argument to argument, and the hints close when it leaves the call or on Escape. Press ⇧⌘Space or ⌘P, or choose Edit ▸ Show Parameter Hints, to show them again inside a call. A function the script declares shows its parameters as written, with what a `/** … */` comment right above it says: its description, and `@param {type} name description` for each parameter.
 - **Brackets and quotes.** Typing `(`, `[`, `{`, or a quote adds its closer with the cursor between them, unless a name follows it (or, for a quote, comes right before it, as in `don't`). `${` in a template string closes as `${}`. A closer typed before the one already there steps over it, and Backspace between an empty pair removes both. Inside strings and comments, brackets and quotes type as they are.
-- **Hover.** Pointing at a name shows what it is. A Postman `pm` name also shows its Reqling equivalent.
+- **Hover.** Pointing at a name, or an options object's key, shows what it is. A Postman `pm` name also shows its Reqling equivalent.
 - **Problems.** Syntax errors are underlined in red. Names that don't work where the script runs are underlined in yellow: a member that doesn't exist, one of another phase, or one of another protocol. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
 
 ## Scripts from Postman
 
-Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. A few can't work in Reqling and throw a clear error: `pm.sendRequest`, `pm.vault`, and `pm.visualizer`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
+Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. `pm.sendRequest`, with a callback or as a promise, and `pm.execution.runRequest` send requests as their Reqling equivalents do ([Sending requests](#sending-requests)). A few can't work in Reqling and throw a clear error: `pm.vault`, `pm.visualizer`, and a `pm.sendRequest` with a file or its own `auth`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
 
 ## Trust
 
@@ -146,7 +177,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 
 - **Built in:** `rq.crypto` for MD5, SHA, and HMAC digests, `btoa` and `atob`, `crypto.getRandomValues` and `crypto.randomUUID`, `console`, `setTimeout`, and `setInterval`.
 - **Libraries:** crypto-js as `CryptoJS` and lodash as `_`, also through `require("crypto-js")` and `require("lodash")`.
-- **Not available:** network calls and files.
+- **Not available:** files. Requests go out only through Reqling ([Sending requests](#sending-requests)).
 - **Time limit.** Each phase may run for 10 seconds by default, and so may a stream script's top level and its handlers on each event; change it in **Settings ▸ Requests**. Scripts run in a separate process, which Reqling stops at the limit. Handlers past it stop the stream scripts there, naming the event, while the stream itself goes on.
 - **Responses** reach scripts whole, up to 64 MB.
 
@@ -261,7 +292,7 @@ Where this script runs.
 The active environment's variables: its saved values, with this Mac's current values over them.
 
 - `get(name: string): string | null`: The variable's value, or `undefined`.
-- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `set(name: string, value: any, options?: VariableOptions): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
 - `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
 - `has(name: string): boolean`: Whether the variable has a value.
 - `isSecret(name: string): boolean`: Whether the variable's value is secret.
@@ -273,7 +304,7 @@ The active environment's variables: its saved values, with this Mac's current va
 The project's Default environment's variables.
 
 - `get(name: string): string | null`: The variable's value, or `undefined`.
-- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `set(name: string, value: any, options?: VariableOptions): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
 - `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
 - `has(name: string): boolean`: Whether the variable has a value.
 - `isSecret(name: string): boolean`: Whether the variable's value is secret.
@@ -285,7 +316,7 @@ The project's Default environment's variables.
 The Global environment's variables, which every project shares.
 
 - `get(name: string): string | null`: The variable's value, or `undefined`.
-- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `set(name: string, value: any, options?: VariableOptions): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
 - `unset(name: string): void`: Hides the variable until its current value is reset in the Environments sheet.
 - `has(name: string): boolean`: Whether the variable has a value.
 - `isSecret(name: string): boolean`: Whether the variable's value is secret.
@@ -297,7 +328,7 @@ The Global environment's variables, which every project shares.
 Every variable as `{{name}}` resolves it; values set here last only for this run.
 
 - `get(name: string): string | null`: The variable's value, or `undefined`.
-- `set(name: string, value: any, options?: object): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
+- `set(name: string, value: any, options?: VariableOptions): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.
 - `unset(name: string): void`: Drops a value set earlier in this run.
 - `has(name: string): boolean`: Whether the variable has a value.
 - `isSecret(name: string): boolean`: Whether the variable's value is secret.
@@ -342,7 +373,7 @@ The project's cookies that go to this request's URL. Pre-request changes go out 
 - `has(name: string): boolean`: Whether a cookie has the name. *(HTTP and WebSocket only)*
 - `all(): Cookie[]`: Every cookie, the most specific first. *(HTTP and WebSocket only)*
 - `toObject(): object`: Every cookie's value by name. *(HTTP and WebSocket only)*
-- `set(name: string, value: any, options?: object): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it. *(HTTP and WebSocket only)*
+- `set(name: string, value: any, options?: CookieOptions): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it. *(HTTP and WebSocket only)*
 - `remove(name: string): void`: Removes every cookie with the name. *(HTTP and WebSocket only)*
 - `clear(): void`: Removes every cookie. *(HTTP and WebSocket only)*
 - `for(target: string): Cookies`: The cookies for another URL, or every cookie for a bare domain such as `example.com`; `{{variables}}` resolve.
@@ -494,6 +525,12 @@ Hashes and HMACs. Output is hex unless `{ encoding: "base64" }`; input is UTF-8 
 - `hmac(algorithm: string, key: string, data: string, options?: object): string`: An HMAC with `md5`, `sha1`, `sha256`, `sha384`, or `sha512`; `{ keyEncoding }` reads the key as hex or base64.
 - `randomUUID(): string`: A random UUID.
 
+### `VariableOptions`
+
+How `set` stores a variable's value.
+
+- `secret: boolean`: Keeps the value in the Keychain, and masks it wherever it would show.
+
 ### `RequestBody`
 
 An HTTP request's body as typed.
@@ -529,6 +566,17 @@ One cookie.
 - `sameSite: string | null`: `lax`, `strict`, `none`, or `null`.
 - `hostOnly: boolean`: Sent only to `domain` itself, not to its subdomains.
 
+### `CookieOptions`
+
+How `set` sets a cookie.
+
+- `path: string`: The path it's sent under; `/` when left out.
+- `domain: string`: A domain it goes to with its subdomains; this host alone when left out.
+- `expires: any`: A `Date`, a date string, or milliseconds since 1970; until Reqling quits when left out. One already past removes the cookie.
+- `secure: boolean`: Sends it only over HTTPS, and to localhost.
+- `httpOnly: boolean`: Marks it `HttpOnly`.
+- `sameSite: string`: `lax`, `strict`, or `none`.
+
 ### `Cookies`
 
 The project's cookies for a URL, or every cookie for a domain.
@@ -537,7 +585,7 @@ The project's cookies for a URL, or every cookie for a domain.
 - `has(name: string): boolean`: Whether a cookie has the name.
 - `all(): Cookie[]`: Every cookie, the most specific first.
 - `toObject(): object`: Every cookie's value by name.
-- `set(name: string, value: any, options?: object): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it.
+- `set(name: string, value: any, options?: CookieOptions): void`: Sets a cookie for path `/` and this host alone, lasting until Reqling quits, unless `{ path, domain, expires, secure, httpOnly, sameSite }` say otherwise. An `expires` already past removes it.
 - `remove(name: string): void`: Removes every cookie with the name.
 - `clear(): void`: Removes every cookie.
 

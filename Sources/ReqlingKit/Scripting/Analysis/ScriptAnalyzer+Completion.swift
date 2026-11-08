@@ -12,6 +12,8 @@ public enum ScriptSymbolKind: Hashable, Sendable {
     case variable
     case jsonKey
     case keyword
+    /// One of the values a string takes, such as an HTTP method in `{ method: "…" }`.
+    case value
 }
 
 public struct ScriptCompletionItem: Hashable, Sendable {
@@ -33,9 +35,10 @@ public struct ScriptCompletionList: Hashable, Sendable {
     public let isVariableNames: Bool
 }
 
-/// Completion at the cursor: a receiver's members after a dot, the names a script starts from while typing one, and
-/// variable names inside the string argument of an accessor such as `rq.environment.get("…")`. Members are those that
-/// work in the script's phase and protocols; nothing is offered inside comments, other strings, or `pm` chains.
+/// Completion at the cursor: a receiver's members after a dot, the names a script starts from while typing one,
+/// variable names inside the string argument of an accessor such as `rq.environment.get("…")`, and an options literal's
+/// keys and values (`ScriptAnalyzer+Options.swift`). Members are those that work in the script's phase and protocols;
+/// nothing is offered inside comments, other strings, or `pm` chains.
 extension ScriptAnalyzer {
     /// The keywords a name may start, each with what the popup says about it.
     static let completionKeywords: KeyValuePairs<String, String> = [
@@ -72,12 +75,15 @@ extension ScriptAnalyzer {
         }
         let token = tokens[index]
         if case .string = token.kind, token.holds(cursor) {
-            return variableNames(inString: index, cursor: cursor)
+            return variableNames(inString: index, cursor: cursor) ?? optionChoices(inString: index, cursor: cursor)
         }
         if ScriptExpressions.isMemberName(token), token.end == cursor {
             let prefix = token.text
             if index >= 1, ScriptExpressions.isDot(tokens[index - 1]) {
                 return index >= 2 ? members(receiverEnd: index - 2, prefix: prefix, replacement: token.range) : nil
+            }
+            if index >= 1, let keys = optionKeys(after: index - 1, typing: index, prefix: prefix, replacement: token.range) {
+                return keys
             }
             return names(prefix: prefix, replacement: token.range)
         }
@@ -87,7 +93,8 @@ extension ScriptAnalyzer {
         // After a space or line break, whatever came before, a name may start; right after a value, such as a string
         // whose closing quote was just typed, none does.
         if token.end < cursor || (token.end == cursor && !Self.endsValue(token)) {
-            return names(prefix: "", replacement: NSRange(location: cursor, length: 0))
+            let replacement = NSRange(location: cursor, length: 0)
+            return optionKeys(after: index, typing: nil, prefix: "", replacement: replacement) ?? names(prefix: "", replacement: replacement)
         }
         return nil
     }
@@ -234,7 +241,7 @@ extension ScriptAnalyzer {
         return context.variables.values.flatMap { $0 }.filter { seen.insert($0).inserted }.sorted()
     }
 
-    private func list(_ items: [ScriptCompletionItem], prefix: String, replacement: NSRange) -> ScriptCompletionList {
+    func list(_ items: [ScriptCompletionItem], prefix: String, replacement: NSRange) -> ScriptCompletionList {
         let lowered = prefix.lowercased()
         let matching = lowered.isEmpty ? items : items.filter { $0.label.lowercased().hasPrefix(lowered) }
         return ScriptCompletionList(replacementRange: replacement, items: matching, isVariableNames: false)

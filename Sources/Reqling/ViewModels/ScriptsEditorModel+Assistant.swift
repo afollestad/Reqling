@@ -10,10 +10,17 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
     static let validationDelay: Duration = .milliseconds(300)
 
     func completions(in text: String, cursor: Int) -> CodeCompletionList? {
-        guard let list = analyzer(text).completions(at: cursor), !list.items.isEmpty else {
+        analyzer(text).completions(at: cursor).flatMap { list in
+            Self.completionList(list, describeVariable: list.isVariableNames ? variableDescriber() : nil)
+        }
+    }
+
+    /// The analyzer's list as the editor shows it, `nil` when it offers nothing; `describeVariable` sums up a variable
+    /// name the catalog doesn't describe.
+    static func completionList(_ list: ScriptCompletionList, describeVariable: ((String) -> String?)?) -> CodeCompletionList? {
+        guard !list.items.isEmpty else {
             return nil
         }
-        let describeVariable = list.isVariableNames ? variableDescriber() : nil
         let items = list.items.enumerated().map { index, item in
             CodeCompletionItem(
                 id: index,
@@ -57,6 +64,10 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
     /// A member after `.`, a name as it starts, and a variable name as a string starts: the analyzer offers names
     /// only in the string of an accessor that reads variables.
     func opensCompletion(_ typed: String, before cursor: Int, in text: NSString) -> Bool {
+        Self.opensScriptCompletion(typed, before: cursor, in: text)
+    }
+
+    static func opensScriptCompletion(_ typed: String, before cursor: Int, in text: NSString) -> Bool {
         guard typed.count == 1, let character = typed.first else {
             return false
         }
@@ -206,6 +217,7 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
         case .variable: .scriptVariable
         case .jsonKey: .jsonKey
         case .keyword: .keyword
+        case .value: .enumValue
         }
     }
 }
