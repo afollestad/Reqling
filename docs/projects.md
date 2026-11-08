@@ -33,7 +33,7 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 ## Variables
 
 - **Reference** one as `{{name}}` in the URL, parameters, headers, bodies, and auth.
-- **Built-ins** such as `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, and `{{$randomInt}}` generate a value on each send. Postman's `{{$guid}}` and `{{$randomUUID}}` work as `{{$uuid}}`.
+- **Built-ins** generate a value on each send: `{{$uuid}}`, `{{$timestamp}}` (Unix seconds), `{{$isoTimestamp}}`, and `{{$randomInt}}` (0 to 1,000), plus Postman's random values, such as `{{$randomEmail}}`, `{{$randomFullName}}`, `{{$randomIP}}`, `{{$randomPrice}}`, and `{{$randomDatePast}}`. Typing `{{$` lists them all. Postman's `{{$guid}}` and `{{$randomUUID}}` work as `{{$uuid}}`.
 - **Pills.** Variables render as pills, red when undefined, and typing `{{` offers completion.
 - **Secrets.** Mark a variable secret to keep its value in your Keychain instead of the project's files.
 

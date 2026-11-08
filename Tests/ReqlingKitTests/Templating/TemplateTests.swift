@@ -55,6 +55,18 @@ final class TemplateResolverTests: XCTestCase {
         randomInt: { 42 }
     )
 
+    /// `fixedDynamic`'s clock, with every random choice made by `random` and dates written in India's zone, whose
+    /// half-hour offset shows the zone is applied.
+    private func postmanDynamic(random: @escaping @Sendable (Range<Int>) -> Int) -> DynamicVariables {
+        DynamicVariables(
+            now: fixedDynamic.now,
+            uuid: fixedDynamic.uuid,
+            randomInt: fixedDynamic.randomInt,
+            random: random,
+            timeZone: TimeZone(identifier: "Asia/Kolkata")!
+        )
+    }
+
     private func document() -> (ProjectDocument, staging: EnvironmentID) {
         let staging = RequestEnvironment(name: "Staging", variables: [
             Variable(key: "host", value: "staging.example.com"),
@@ -165,7 +177,7 @@ final class TemplateResolverTests: XCTestCase {
 
         XCTAssertEqual(
             resolver.resolve("{{$uuid}} {{$timestamp}} {{$isoTimestamp}} {{$randomInt}}").value,
-            "00000000-0000-0000-0000-000000000001 1700000000 2023-11-14T22:13:20Z 42"
+            "00000000-0000-0000-0000-000000000001 1700000000 2023-11-14T22:13:20.000Z 42"
         )
     }
 
@@ -177,6 +189,47 @@ final class TemplateResolverTests: XCTestCase {
 
         XCTAssertEqual(resolution.value, "00000000-0000-0000-0000-000000000001 00000000-0000-0000-0000-000000000001")
         XCTAssertTrue(resolution.unresolved.isEmpty)
+    }
+
+    /// Postman's built-ins, at both ends of every random range, in the shapes Postman writes them.
+    func testPostmansBuiltInsAtTheEndsOfTheirRanges() {
+        let lowest = postmanDynamic { $0.lowerBound }
+        let highest = postmanDynamic { $0.upperBound - 1 }
+        let expected: KeyValuePairs<String, (lowest: String, highest: String)> = [
+            "$randomAlphaNumeric": ("a", "9"),
+            "$randomBoolean": ("false", "true"),
+            "$randomPassword": ("AAAAAAAAAAAAAAA", "999999999999999"),
+            "$randomHexColor": ("#000000", "#ffffff"),
+            "$randomIP": ("0.0.0.0", "255.255.255.255"),
+            "$randomIPV6": ("0000:0000:0000:0000:0000:0000:0000:0000", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+            "$randomMACAddress": ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"),
+            "$randomSemver": ("0.0.0", "9.9.9"),
+            "$randomLatitude": ("-90.0000", "90.0000"),
+            "$randomLongitude": ("-180.0000", "180.0000"),
+            "$randomPrice": ("1.00", "1000.00"),
+            "$randomDateFuture": ("Wed Nov 15 2023 03:43:21 GMT+0530 (India Standard Time)",
+                                  "Thu Nov 14 2024 03:43:20 GMT+0530 (India Standard Time)"),
+            "$randomDatePast": ("Wed Nov 15 2023 03:43:19 GMT+0530 (India Standard Time)",
+                                  "Tue Nov 15 2022 03:43:20 GMT+0530 (India Standard Time)"),
+            "$randomDateRecent": ("Wed Nov 15 2023 03:43:19 GMT+0530 (India Standard Time)",
+                                  "Tue Nov 14 2023 03:43:20 GMT+0530 (India Standard Time)"),
+            "$randomFirstName": ("Ada", "Zoe"),
+            "$randomLastName": ("Adams", "Zhang"),
+            "$randomFullName": ("Ada Adams", "Zoe Zhang"),
+            "$randomUserName": ("Ada0", "Zoe_Zhang99"),
+            "$randomEmail": ("Ada0@gmail.com", "Zoe_Zhang99@hotmail.com"),
+            "$randomPhoneNumber": ("000-000-0000", "999-999-9999"),
+            "$randomCity": ("Arlington", "Winchester"),
+            "$randomCompanyName": ("Adams Inc", "Zhang, Zhang and Zhang"),
+            "$randomLoremWord": ("lorem", "laborum"),
+            "$randomLoremSentence": ("Lorem lorem lorem.", "Laborum" + String(repeating: " laborum", count: 9) + ".")
+        ]
+
+        for (name, ends) in expected {
+            XCTAssertEqual(lowest.value(for: name), ends.lowest, name)
+            XCTAssertEqual(highest.value(for: name), ends.highest, name)
+        }
+        XCTAssertEqual(Set(DynamicVariables.names), Set(["$uuid", "$timestamp", "$isoTimestamp", "$randomInt"] + expected.map(\.key)))
     }
 
     func testPlainAndMaskedTextComeFromOnePass() {
