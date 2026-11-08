@@ -25,7 +25,10 @@ struct ScriptsPaneSnippetMenu: View, Equatable {
                 }
             }
         } label: {
+            // Named here too: after a pick, SwiftUI names the button from this image rather than the `accessibilityLabel`
+            // below, and the symbol's own name reads "Add List".
             Image(systemName: "text.badge.plus")
+                .accessibilityLabel("Insert a snippet")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
