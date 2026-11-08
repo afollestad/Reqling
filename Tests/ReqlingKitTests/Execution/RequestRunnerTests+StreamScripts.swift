@@ -179,6 +179,31 @@ extension RequestRunnerTests {
         XCTAssertEqual(recorded.scriptReport?.phase(.postResponse)?.skipReason, .quit)
     }
 
+    /// The stream ended, but its handlers haven't caught up: the run is recorded as it came back, at any moment from
+    /// there on.
+    func testQuittingAfterTheStreamEndsWhileHandlersCatchUpRecordsTheRun() async throws {
+        let setup = try await streamProject(stream: Self.busyHandler, postResponse: "rq.test(\"later\", () => {})")
+        let (project, key, feed) = (setup.project, setup.key, setup.feed)
+        let runner = makeRunner()
+
+        let run = Task { await runner.run(project.login.id, in: project.id) }
+        try await open(feed)
+        await waitUntil("the handlers are registered") { self.console(runner.latest[key]) == ["ready"] }
+        try await feed.send("data: 1\n\n")
+        await waitUntil("the event arrived") { runner.latest[key]?.response?.eventStream?.events.count == 1 }
+        try await feed.end()
+        await waitUntil("the stream ended") { !runner.eventStreams.contains(key) }
+        runner.recordLiveRuns()
+        _ = await run.value
+        runner.flushHistory()
+
+        let recorded = try XCTUnwrap(runner.history.latest(for: project.login.id, in: project.id))
+        XCTAssertEqual(recorded.response?.eventStream?.end, .closed)
+        XCTAssertEqual(streamPhase(recorded)?.stream?.isInterrupted, true)
+        XCTAssertEqual(recorded.scriptReport?.phase(.postResponse)?.skipReason, .quit)
+        XCTAssertEqual(runner.history.runs(for: project.login.id, in: project.id).count, 1, "Recorded once")
+    }
+
     /// A newer run of the request kills the older one's helper, which would otherwise wait out its handler's time limit.
     func testReplacingARunKillsItsStreamScripts() async throws {
         let setup = try await streamProject(stream: Self.busyHandler)

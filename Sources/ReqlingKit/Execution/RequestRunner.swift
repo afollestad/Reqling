@@ -66,7 +66,9 @@ public final class RequestRunner {
     /// Each run's post-response phase while it runs. Not the run's own task, so Stop on an event stream, which cancels
     /// that, lets the scripts run on what arrived; `cancel` and `detach` stop it too.
     @ObservationIgnored var scriptTasks: [RunKey: Task<ScriptSession.PhaseOutcome, Never>] = [:]
-    /// The exchange each run's post-response phase is running on, for `recordLiveRuns`.
+    /// Each run's exchange from the moment its transport ends until the run is recorded, so a quit while its stream or
+    /// post-response scripts finish, or before `run` takes it up, still records it (`recordLiveRuns`). Each transport
+    /// sets it as it drops its live record, in the same turn, so no quit falls between them; `run` and `detach` clear it.
     @ObservationIgnored var pendingPostExchanges: [RunKey: RequestExchange] = [:]
     /// What recorded runs' scripts made secret, kept in memory only (`RequestRunner+Scripts`).
     @ObservationIgnored var scriptSecrets = ScriptSecretMemory()
@@ -213,6 +215,7 @@ public final class RequestRunner {
         inFlight.remove(key)
         liveStamps[key] = nil
         scriptSessions[key] = nil
+        pendingPostExchanges[key] = nil
         return options.unsaved == nil ? record(exchange, step: step) : exchange
     }
 

@@ -99,12 +99,14 @@ extension RequestRunner {
         let outcome = await GRPCExecutor().execute(call) { event in
             await self.receive(event, on: live, key: key, publishes: publishes, session: session)
         }
+        session?.closeStreamSending()
+        let exchange = live.finished(outcome)
         if liveCalls[key] === live {
             liveCalls[key] = nil
             openStreams.remove(key)
+            pendingPostExchanges[key] = exchange
         }
-        session?.closeStreamSending()
-        return live.finished(outcome)
+        return exchange
     }
 
     /// `publishes` is false for an unsaved run, which records its events without showing them.

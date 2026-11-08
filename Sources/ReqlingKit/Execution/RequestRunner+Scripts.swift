@@ -181,7 +181,6 @@ extension RequestRunner {
                 }
                 scriptTasks[key] = post
                 scriptPhases[key] = .postResponse
-                pendingPostExchanges[key] = exchange
                 _ = await withTaskCancellationHandler {
                     await post.value
                 } onCancel: {
@@ -190,7 +189,6 @@ extension RequestRunner {
                 if scriptTasks[key] == post {
                     scriptTasks[key] = nil
                     scriptPhases[key] = nil
-                    pendingPostExchanges[key] = nil
                 }
                 session.commit(to: library)
             } else if exchange.failure?.kind == .skipped {
@@ -199,9 +197,6 @@ extension RequestRunner {
                 // A failed pre-request script, or a stop, already says why nothing came back.
                 session.skip(.postResponse, reason: .requestFailed)
             }
-        }
-        if pendingPostExchanges[key]?.id == exchange.id {
-            pendingPostExchanges[key] = nil
         }
         finished.scriptReport = session.shownReport
         return finished
@@ -215,8 +210,6 @@ extension RequestRunner {
         } else {
             session.endStream()
         }
-        // Set before waiting, so a quit while the handlers catch up still records the run.
-        pendingPostExchanges[key] = exchange
         let cancel = session.stream?.execution.cancel
         _ = await withTaskCancellationHandler {
             await session.finishStream()

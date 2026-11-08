@@ -160,12 +160,14 @@ extension RequestRunner {
         let outcome = await WebSocketExecutor(sleep: sleep).execute(preparation.connect, outbox: live.outbox) { event in
             await self.receive(event, on: live, key: key, publishes: publishes, session: session)
         }
+        session?.closeStreamSending()
+        let exchange = live.finished(outcome, stopped: Task.isCancelled)
         if liveSockets[key] === live {
             liveSockets[key] = nil
             openSockets.remove(key)
+            pendingPostExchanges[key] = exchange
         }
-        session?.closeStreamSending()
-        return live.finished(outcome, stopped: Task.isCancelled)
+        return exchange
     }
 
     /// `publishes` is false for an unsaved run, which records its events without showing them.

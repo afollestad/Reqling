@@ -75,6 +75,7 @@ extension RequestRunner {
         if liveStreams[key] === live {
             liveStreams[key] = nil
             eventStreams.remove(key)
+            pendingPostExchanges[key] = exchange
         }
         return exchange
     }
