@@ -4,8 +4,9 @@ import ReqlingScriptProtocol
 /// Object literals a script passes where a parameter takes an options type, as `rq.sendRequest({ method, url })` and
 /// `rq.cookies.set(name, value, { secure: true })` do: completion offers the type's keys not yet written, and in a
 /// string written as a key's value, the values its property names (`ScriptArgumentCompletion.choices`); hover describes
-/// a key, and diagnostics warn of one the type lacks, or of a string value its property's exhaustive choices lack. Only a
-/// literal passed whole as the argument counts, so one nested in it (`headers: { … }`) offers nothing of its parent's.
+/// a key, and diagnostics warn of one the type lacks or refuses, or of a string value its property's exhaustive choices
+/// lack. Only a literal passed whole as the argument counts, so one nested in it (`headers: { … }`) offers nothing of its
+/// parent's. A `pm` method's options are checked but never offered, as `pm`'s members aren't.
 ///
 /// Keys are found from the tokens alone, so they complete wherever the editor's pairs and indentation leave the
 /// cursor: between `({` and `})`, on a line Return indented, or before a `}` moved back to its opener's line.
@@ -14,7 +15,7 @@ extension ScriptAnalyzer {
     /// name being typed there, if any, whose own text isn't a key written already.
     func optionKeys(after index: Int, typing: Int?, prefix: String, replacement: NSRange) -> ScriptCompletionList? {
         let tokens = expressions.tokens
-        guard let brace = literalOpening(at: index), let type = optionsType(ofLiteralAt: brace)?.type else {
+        guard let brace = literalOpening(at: index), let type = optionsType(ofLiteralAt: brace)?.type, Self.isOffered(type) else {
             return nil
         }
         let written = Set(writtenKeys(inLiteralAt: brace).filter { $0.index != typing }.map(\.name))
@@ -37,9 +38,9 @@ extension ScriptAnalyzer {
     func optionChoices(inString index: Int, cursor: Int) -> ScriptCompletionList? {
         let tokens = expressions.tokens
         guard index >= 3, tokens[index - 1].isPunctuator(":"), let key = keyName(tokens[index - 2]),
-              let brace = literalOpening(at: index - 3), let type = optionsType(ofLiteralAt: brace)?.type,
+              let brace = literalOpening(at: index - 3), let type = optionsType(ofLiteralAt: brace)?.type, Self.isOffered(type),
               let member = type.members.first(where: { !$0.isMethod && $0.name == key }),
-              case .choices(let values, _)? = member.completion else {
+              case .choices(let values, _, _)? = member.completion else {
             return nil
         }
         let token = tokens[index]
@@ -64,7 +65,8 @@ extension ScriptAnalyzer {
     }
 
     /// A warning for each key an options literal's type lacks: a typo the runtime refuses when the script runs, or for
-    /// a variable's `{ secrets: true }`, ignores.
+    /// a variable's `{ secrets: true }`, ignores. A key the type lists as unsupported, such as `pm.sendRequest`'s
+    /// `auth`, is one the runtime refuses, named with why.
     func optionDiagnostics() -> [ScriptDiagnostic] {
         let tokens = expressions.tokens
         var found: [ScriptDiagnostic] = []
@@ -76,6 +78,11 @@ extension ScriptAnalyzer {
             for key in writtenKeys(inLiteralAt: brace) {
                 guard let property = properties[key.name] else {
                     let message = "\(callee)'s options have no “\(key.name)”."
+                    found.append(ScriptDiagnostic(range: tokens[key.index].range, message: message, severity: .warning))
+                    continue
+                }
+                if case .unsupported(let reason) = property.availability {
+                    let message = "\(callee)'s \(key.name) isn't supported in Reqling: \(reason)."
                     found.append(ScriptDiagnostic(range: tokens[key.index].range, message: message, severity: .warning))
                     continue
                 }
@@ -91,18 +98,30 @@ extension ScriptAnalyzer {
     /// property's exhaustive choices; a value built any other way is the runtime's to check.
     private func unknownChoice(of property: ScriptMember, valueAfter index: Int, in callee: String) -> ScriptDiagnostic? {
         let tokens = expressions.tokens
-        guard case .choices(let values, exhaustive: true)? = property.completion, index + 2 < tokens.count,
-              tokens[index + 1].isPunctuator(":"), case .string(terminated: true) = tokens[index + 2].kind,
-              index + 3 >= tokens.count || tokens[index + 3].isPunctuator(",") || tokens[index + 3].isPunctuator("}") else {
+        guard index + 2 < tokens.count, tokens[index + 1].isPunctuator(":"), case .string(terminated: true) = tokens[index + 2].kind,
+              index + 3 >= tokens.count || tokens[index + 3].isPunctuator(",") || tokens[index + 3].isPunctuator("}"),
+              let listed = Self.refusedChoice(expressions.stringContents(tokens[index + 2]), by: property.completion) else {
             return nil
         }
-        let value = expressions.stringContents(tokens[index + 2])
-        guard !values.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else {
-            return nil
-        }
-        let listed = values.count > 1 ? values.dropLast().joined(separator: ", ") + ", or " + (values.last ?? "") : values.joined()
-        let message = "\(callee)'s \(property.name) is \(listed), not “\(value)”."
+        let message = "\(callee)'s \(property.name) is \(listed), not “\(expressions.stringContents(tokens[index + 2]))”."
         return ScriptDiagnostic(range: tokens[index + 2].range, message: message, severity: .warning)
+    }
+
+    /// The exhaustive choices listed for a message (`lax, strict, or none`), when `value` isn't among them; `nil` when
+    /// it is, or when the choices are only suggestions.
+    static func refusedChoice(_ value: String, by completion: ScriptArgumentCompletion?) -> String? {
+        guard case .choices(let values, exhaustive: true, let matchesCase)? = completion else {
+            return nil
+        }
+        let isTaken = values.contains { matchesCase ? $0 == value : $0.caseInsensitiveCompare(value) == .orderedSame }
+        guard !isTaken else {
+            return nil
+        }
+        switch values.count {
+        case 0, 1: return values.joined()
+        case 2: return values.joined(separator: " or ")
+        default: return values.dropLast().joined(separator: ", ") + ", or " + (values.last ?? "")
+        }
     }
 
     /// The `{` of the literal a key after `index` belongs to, when `index` is that `{` or a `,` at its own depth; `nil`
@@ -190,6 +209,11 @@ extension ScriptAnalyzer {
             return expressions.stringContents(token)
         }
         return nil
+    }
+
+    /// Whether completion offers `type`'s keys: never a `pm` method's, since scripts written here use `rq`.
+    private static func isOffered(_ type: ScriptType) -> Bool {
+        !type.name.hasPrefix("Postman")
     }
 
     /// The named type a parameter takes, through an optional or among alternatives such as `string | OutgoingRequest`.

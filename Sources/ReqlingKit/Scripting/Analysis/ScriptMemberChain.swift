@@ -44,6 +44,10 @@ struct ScriptExpressions {
     let nonCode: [JavaScriptToken]
     /// Read once, so looking bindings up for each name a script uses stays linear.
     private var declarations: [Declaration] = []
+    /// Every name the script defines anywhere, whatever its scope: what `const`, `let`, and `var` declare, parameters,
+    /// `function` and `class` names, and names a bare `name =` assigns. A name the catalog doesn't know but the script
+    /// defines is the script's own, so warnings about missing globals skip it.
+    private(set) var declaredNames: Set<String> = []
 
     init(text: String) {
         self.text = text as NSString
@@ -64,6 +68,24 @@ struct ScriptExpressions {
         self.tokens = tokens
         self.nonCode = nonCode
         declarations = readDeclarations()
+        declaredNames = Set(declarations.map(\.name)).union(readDefinedNames())
+    }
+
+    /// `function name`, `class name`, and a bare `name =`, which in a script that isn't strict defines a global.
+    private func readDefinedNames() -> [String] {
+        tokens.indices.compactMap { index in
+            let token = tokens[index]
+            guard token.kind == .identifier else {
+                return nil
+            }
+            let previous = index >= 1 ? tokens[index - 1] : nil
+            if let previous, previous.kind == .keyword, previous.text == "function" || previous.text == "class" {
+                return token.text
+            }
+            let isMember = previous.map(Self.isDot) ?? false
+            let isAssigned = index + 1 < tokens.count && tokens[index + 1].isPunctuator("=")
+            return !isMember && isAssigned ? token.text : nil
+        }
     }
 
     /// Whether typing at `offset` would extend a comment, template text, or regex.

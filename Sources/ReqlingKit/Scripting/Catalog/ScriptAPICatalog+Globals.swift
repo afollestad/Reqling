@@ -23,7 +23,10 @@ extension ScriptAPICatalog {
             .method("setInterval", [callback, delay], returns: .number, "Runs the callback every delay milliseconds."),
             .method("clearTimeout", [id], returns: .void, "Cancels a timeout."),
             .method("clearInterval", [id], returns: .void, "Cancels an interval."),
-            .method("require", [ScriptParameter("name", .string, "`crypto-js` or `lodash`.")], returns: .any, "Loads `crypto-js` or `lodash`."),
+            // `ScriptRuntimeConformanceTests` checks these choices are the runner's vendored libraries.
+            .method("require", [ScriptParameter("name", .string, "`crypto-js` or `lodash`.",
+                                                completion: .choices(["crypto-js", "lodash"], exhaustive: true, matchesCase: true))],
+                    returns: .any, "Loads `crypto-js` or `lodash`."),
             .property("CryptoJS", .named("CryptoJS"), "crypto-js 4.2.0, loaded on first use."),
             .property("_", .named("Lodash"), "lodash 4.17.21, loaded on first use.")
         ]

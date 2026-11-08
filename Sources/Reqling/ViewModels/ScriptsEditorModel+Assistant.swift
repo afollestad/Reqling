@@ -193,14 +193,9 @@ extension ScriptsEditorModel: CodeEditorSignatureAssistant {
     }
 
     private nonisolated static func problems(in source: String, context: ScriptAnalysisContext) -> [CodeDiagnostic] {
-        var items: [CodeDiagnostic] = []
-        if let error = ScriptSyntaxChecker.shared.error(in: source) {
-            items.append(CodeDiagnostic(range: error.range, message: error.message, severity: .error))
+        ScriptProblem.find(in: source, context: context).map { problem in
+            CodeDiagnostic(range: problem.range, message: problem.message, severity: problem.severity == .error ? .error : .warning)
         }
-        items += ScriptAnalyzer(text: source, context: context).diagnostics().map { diagnostic in
-            CodeDiagnostic(range: diagnostic.range, message: diagnostic.message, severity: diagnostic.severity == .error ? .error : .warning)
-        }
-        return items
     }
 
     /// The catalog's text as the list and the hover card show it, which is plain: they'd show its Markdown backticks.

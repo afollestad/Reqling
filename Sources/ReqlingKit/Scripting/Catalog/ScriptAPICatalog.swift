@@ -192,10 +192,11 @@ public struct ScriptParameter: Sendable, Hashable {
 public enum ScriptArgumentCompletion: Sendable, Hashable {
     /// Variable names from where the receiver reads.
     case variableName(ScriptVariableSource)
-    /// These values, as an enum's. `exhaustive` when they're the only ones the runtime takes, compared ignoring case,
-    /// so the editor warns of any other a script writes (a cookie's `sameSite`); otherwise they're suggestions (an HTTP
-    /// method, where any token works).
-    case choices([String], exhaustive: Bool = false)
+    /// These values, as an enum's. `exhaustive` when they're the only ones the runtime takes, so the editor warns of any
+    /// other a script writes (a cookie's `sameSite`); otherwise they're suggestions (an HTTP method, where any token
+    /// works). They're compared ignoring case unless `matchesCase`, for a runtime that takes them exactly as written
+    /// (`require`'s library names).
+    case choices([String], exhaustive: Bool = false, matchesCase: Bool = false)
 }
 
 /// Where a variable accessor reads.

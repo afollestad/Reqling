@@ -48,6 +48,15 @@ extension ScriptAPICatalog {
             .property("body", .optional(.named("PostmanBody")), "The body.", protocols: .http).postman("rq.request.body")
         ]),
         ScriptType("PostmanList", "Headers or query parameters, as `{ key, value }`.", members: postmanListMembers),
+        // The keys `pm.js`'s `postmanRequestKeys` takes; it refuses any other, `auth` included.
+        ScriptType("PostmanOutgoingRequest", "A request for `pm.sendRequest` to send.", members: [
+            .property("url", .any, "The URL, or Postman's `{ raw }`.").postman("OutgoingRequest.url"),
+            .property("method", .string, "The HTTP method; `GET` when left out.").postman("OutgoingRequest.method"),
+            .property("header", .any, "`{ key, value }` entries, `Name: value` lines, or an object of names and values.")
+                .postman("OutgoingRequest.headers"),
+            .property("body", .any, "Postman's body: `raw`, `urlencoded`, `formdata`, or `graphql`.").postman("OutgoingRequest.body"),
+            .unsupported("auth", "a script's request goes without auth, so set its header instead")
+        ]),
         ScriptType("PostmanCookies", "The cookies for the request's URL.", members: [
             .method("get", [cookieName], returns: .optional(.string), "The cookie's value.", protocols: .withCookies)
                 .postman("rq.cookies.get"),
@@ -110,7 +119,8 @@ extension ScriptAPICatalog {
         .property("request", .named("PostmanRequest"), "The request as typed.").postman("rq.request"),
         .property("response", .named("PostmanResponse"), "The HTTP response.", phases: .post, protocols: [.http]).postman("rq.response"),
         .method("sendRequest", [
-            ScriptParameter("request", .any, "A URL, or a Postman request: `{ url, method, header, body }`."),
+            ScriptParameter("request", .oneOf([.string, .named("PostmanOutgoingRequest")]),
+                            "A URL, or a Postman request: `{ url, method, header, body }`."),
             ScriptParameter("callback", .callback([
                 ScriptParameter("error", .optional(.object), "Why the request failed, or `null`."),
                 ScriptParameter("response", .named("PostmanSentResponse"), "What came back.")

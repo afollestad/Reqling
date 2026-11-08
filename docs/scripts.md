@@ -11,7 +11,7 @@ JavaScript that runs before a request is sent, as an event stream, WebSocket, or
 
 ## Order
 
-In each phase, the project's script runs first, then each folder's from the outermost in, then the request's own. Each event or message goes through the stream scripts' handlers in that order too.
+In each phase, the project's script runs first, then each folder's from the outermost in, then the request's own. Each event or message goes through the stream scripts' handlers in that order too. Each script runs on its own, so a function or global one defines isn't there for the next; share values through variables.
 
 - **Runs after** lists the scripts that run before the one you're editing. Click one to open it.
 - **Run inherited scripts**, turned off on a request, runs only that request's own scripts. Turned off on a folder, it stops the scripts above that folder for every request inside it.
@@ -157,12 +157,12 @@ rq.test("logged in", () => rq.expect(login.code).to.equal(200))
 - **Parameter hints.** Typing `(` or `,` in a call shows the method's parameters above the line, with the one being typed highlighted and described, and what the method does. The highlight follows the cursor from argument to argument, and the hints close when it leaves the call or on Escape. Press ⇧⌘Space or ⌘P, or choose Edit ▸ Show Parameter Hints, to show them again inside a call. A function the script declares shows its parameters as written, with what a `/** … */` comment right above it says: its description, and `@param {type} name description` for each parameter.
 - **Brackets and quotes.** Typing `(`, `[`, `{`, or a quote adds its closer with the cursor between them, unless a name follows it (or, for a quote, comes right before it, as in `don't`). `${` in a template string closes as `${}`. A closer typed before the one already there steps over it, and Backspace between an empty pair removes both. Inside strings and comments, brackets and quotes type as they are.
 - **Hover.** Pointing at a name, or an options object's key, shows what it is. A Postman `pm` name also shows its Reqling equivalent.
-- **Problems.** Syntax errors are underlined in red. What doesn't work where the script runs is underlined in yellow: a member that doesn't exist, one of another phase or protocol, a key an options object doesn't take, or a value it doesn't, such as a cookie's `sameSite: "laxx"`. The problems menu above the script lists them.
+- **Problems.** Syntax errors are underlined in red. What doesn't work where the script runs is underlined in yellow: a member that doesn't exist, one of another phase or protocol, a key an options object doesn't take or a value it doesn't (such as a cookie's `sameSite: "laxx"`), a library `require` doesn't load, and Postman's old API. The problems menu above the script lists them.
 - **Variables scripts set.** A `{{name}}` that a script sets, such as a token a login's post-response script saves, isn't marked undefined, and its tooltip names the script. A name set with `rq.variables.set` counts only in requests whose own pre-request scripts set it.
 
 ## Scripts from Postman
 
-Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. `pm.sendRequest`, with a callback or as a promise, and `pm.execution.runRequest` send requests as their Reqling equivalents do ([Sending requests](#sending-requests)). A few can't work in Reqling and throw a clear error: `pm.vault`, `pm.visualizer`, and a `pm.sendRequest` with a file or its own `auth`. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
+Postman's `pm` names work as their Reqling equivalents do, so scripts brought from Postman run as they are: `pm.environment`, `pm.collectionVariables` (the Default environment), `pm.test`, `pm.expect`, `pm.response`, and the rest the [reference](#api-reference) lists. `pm.sendRequest`, with a callback or as a promise, and `pm.execution.runRequest` send requests as their Reqling equivalents do ([Sending requests](#sending-requests)). A few can't work in Reqling and throw a clear error: `pm.vault`, `pm.visualizer`, and a `pm.sendRequest` with a file or its own `auth`. Postman's old API, such as `postman.setEnvironmentVariable`, `tests["…"]`, and `responseBody`, isn't there either, nor are libraries besides `crypto-js` and `lodash`; the editor underlines each, with the `pm` name to use where there is one. The editor completes only `rq`, and hovering a `pm` name shows its Reqling equivalent.
 
 ## Trust
 

@@ -75,17 +75,8 @@ enum MCPScripts {
     }
 
     private static func problems(in source: String, context: ScriptAnalysisContext) -> [Value] {
-        let text = source as NSString
-        func line(_ offset: Int) -> Int {
-            text.substring(to: min(offset, text.length)).reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+        ScriptProblem.find(in: source, context: context).map { problem in
+            ["line": .int(problem.line), "severity": problem.severity == .error ? "error" : "warning", "message": .string(problem.message)]
         }
-        var items: [Value] = []
-        if let error = ScriptSyntaxChecker.shared.error(in: source) {
-            items.append(["line": .int(error.line), "severity": "error", "message": .string(error.message)])
-        }
-        for diagnostic in ScriptAnalyzer(text: source, context: context).diagnostics() {
-            items.append(["line": .int(line(diagnostic.range.location)), "severity": "warning", "message": .string(diagnostic.message)])
-        }
-        return items
     }
 }

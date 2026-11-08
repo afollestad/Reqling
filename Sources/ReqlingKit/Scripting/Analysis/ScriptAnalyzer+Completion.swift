@@ -75,7 +75,7 @@ extension ScriptAnalyzer {
         }
         let token = tokens[index]
         if case .string = token.kind, token.holds(cursor) {
-            return variableNames(inString: index, cursor: cursor) ?? optionChoices(inString: index, cursor: cursor)
+            return argumentCompletions(inString: index, cursor: cursor) ?? optionChoices(inString: index, cursor: cursor)
         }
         if ScriptExpressions.isMemberName(token), token.end == cursor {
             let prefix = token.text
@@ -212,25 +212,32 @@ extension ScriptAnalyzer {
         return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "$" }
     }
 
-    /// The names the accessor whose string argument holds the cursor reads, when the catalog says what it reads.
-    private func variableNames(inString index: Int, cursor: Int) -> ScriptCompletionList? {
+    /// What the string argument holding the cursor completes, when the catalog says: the names the accessor reads
+    /// (`rq.environment.get("…")`), or the parameter's choices (`require("…")`).
+    private func argumentCompletions(inString index: Int, cursor: Int) -> ScriptCompletionList? {
         let tokens = expressions.tokens
-        guard let (open, argument) = expressions.call(enclosing: index), open >= 1,
-              let callee = expressions.chain(endingAt: open - 1),
-              case .method(let method) = resolve(callee, bindings: expressions.bindings(before: tokens[open].range.location)).value,
-              argument < method.parameters.count,
-              case .variableName(let source)? = method.parameters[argument].completion else {
+        guard let (parameter, _) = parameter(forArgumentAt: index) else {
             return nil
         }
         let token = tokens[index]
         let start = token.range.location + 1
         let contents = expressions.stringContents(token) as NSString
-        let typed = contents.substring(to: min(contents.length, cursor - start))
-        let names = variables(from: source).map { name in
-            ScriptCompletionItem(label: name, kind: .variable, detail: nil, summary: nil, insertText: name, takesArguments: nil)
+        let typed = contents.substring(to: min(contents.length, max(cursor - start, 0))).lowercased()
+        let replacement = NSRange(location: start, length: contents.length)
+        switch parameter.completion {
+        case .variableName(let source)?:
+            let items = variables(from: source).filter { $0.lowercased().hasPrefix(typed) }.map { name in
+                ScriptCompletionItem(label: name, kind: .variable, detail: nil, summary: nil, insertText: name, takesArguments: nil)
+            }
+            return ScriptCompletionList(replacementRange: replacement, items: items, isVariableNames: true)
+        case .choices(let values, _, _)?:
+            let items = values.filter { $0.lowercased().hasPrefix(typed) }.map { value in
+                ScriptCompletionItem(label: value, kind: .value, detail: nil, summary: nil, insertText: value, takesArguments: nil)
+            }
+            return ScriptCompletionList(replacementRange: replacement, items: items, isVariableNames: false)
+        case nil:
+            return nil
         }
-        let items = names.filter { $0.label.lowercased().hasPrefix(typed.lowercased()) }
-        return ScriptCompletionList(replacementRange: NSRange(location: start, length: contents.length), items: items, isVariableNames: true)
     }
 
     private func variables(from source: ScriptVariableSource) -> [String] {

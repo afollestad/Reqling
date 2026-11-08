@@ -338,6 +338,12 @@ final class ScriptAPICatalogTests: XCTestCase {
         let manifest = try JSONDecoder().decode([String: VendoredLibrary].self, from: manifestData)
 
         XCTAssertEqual(Set(manifest.keys), ["crypto-js", "lodash"])
+        // `require`'s choices are what the editor warns against, so they must be exactly what the runner loads.
+        let require = try XCTUnwrap(ScriptAPICatalog.standard.globals.first { $0.name == "require" })
+        guard case .choices(let choices, exhaustive: true, matchesCase: true)? = require.parameters.first?.completion else {
+            return XCTFail("require should take exactly its vendored libraries' names")
+        }
+        XCTAssertEqual(Set(choices), Set(manifest.keys))
         for (name, library) in manifest {
             let data = try Data(contentsOf: vendor.appendingPathComponent(library.file))
             XCTAssertEqual(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), library.sha256, name)
