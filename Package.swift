@@ -42,6 +42,8 @@ let package = Package(
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         // GraphQL: SDL schemas, parsing, and spec validation (GraphQLSwift, a port of graphql-js).
         .package(url: "https://github.com/GraphQLSwift/GraphQL.git", exact: "4.3.0"),
+        // YAML: libyaml through Yams, for YAML responses and OpenAPI documents.
+        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
         // Test-only: a loopback GraphQL server. A separate package, so `scripts/build.sh`, which builds every root
         // product, never builds its executable; its pins must match these.
         .package(path: "Tools/GraphQLFixtureServer")
@@ -65,6 +67,7 @@ let package = Package(
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "MCP", package: "swift-sdk"),
                 "ReqlingGraphQLEngine",
+                "ReqlingYAML",
                 "ReqlingTemplating",
                 "ReqlingScriptProtocol"
             ],
@@ -80,6 +83,13 @@ let package = Package(
         .target(
             name: "ReqlingGraphQLEngine",
             dependencies: [.product(name: "GraphQL", package: "GraphQL")],
+            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")]
+        ),
+        // Yams behind Foundation types, imported implementation-only like `ReqlingGraphQLEngine`, so its extensions on
+        // Foundation and standard library types never change how ReqlingKit type-checks.
+        .target(
+            name: "ReqlingYAML",
+            dependencies: [.product(name: "Yams", package: "Yams")],
             swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")]
         ),
         .executableTarget(
@@ -103,6 +113,7 @@ let package = Package(
                 "ReqlingKit",
                 "ReqlingTemplating",
                 "ReqlingScriptProtocol",
+                "ReqlingYAML",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),

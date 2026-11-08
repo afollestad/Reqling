@@ -131,11 +131,12 @@ public enum ContentTypeLanguage {
         if mediaType.hasSuffix("+xml") || mediaType.hasSuffix("/xml") {
             return .xml
         }
+        if mediaType.hasSuffix("+yaml") || mediaType.hasSuffix("/yaml") || mediaType.hasSuffix("/x-yaml") {
+            return .yaml
+        }
         switch mediaType {
         case "text/html", "application/xhtml":
             return .html
-        case "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml":
-            return .yaml
         case "application/javascript", "text/javascript", "application/ecmascript":
             return .javascript
         case "text/css":

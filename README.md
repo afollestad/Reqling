@@ -63,6 +63,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `Sources/Reqling` | The app: lifecycle, dependency injection, view models, and views |
 | `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
 | `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |
+| `Sources/ReqlingYAML` | YAML read and written through [Yams](https://github.com/jpsim/Yams) (libyaml), the only module that imports it, for the same reason |
 | `Sources/ReqlingScriptProtocol` | What the app and the script runner exchange: the input, the events, and their framing |
 | `Sources/ReqlingScriptRunner` | A helper that runs pre-request, stream, and post-response scripts in JavaScriptCore, killed at its time limit, with its JavaScript runtime and the vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
 | `Sources/ReqlingPKCS12Probe` | A helper that opens each PKCS#12 file first, so a file that crashes Apple's importer can't take the app down |

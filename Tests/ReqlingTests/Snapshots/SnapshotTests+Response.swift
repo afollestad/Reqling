@@ -56,6 +56,22 @@ extension SnapshotTests {
         assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
     }
 
+    /// A YAML body's tree, with Tree, Pretty, and Raw to pick from and its keys bare, as YAML writes them.
+    func testResponseYAMLTree() throws {
+        let yaml = """
+        defaults: &defaults
+          fuel: ELEC
+          open: on
+        stations:
+          - name: Café
+            <<: *defaults
+          - name: Depot
+            fuel: CNG
+        """
+        let response = try jsonResponse(body: yaml, contentType: "application/yaml")
+        assertBothAppearances(ResponseView(response: response, model: fixture.model), size: Self.responseSize)
+    }
+
     /// A body that doesn't parse says where in Tree mode, with a way to the raw text.
     func testResponseTreeFailure() throws {
         let response = try jsonResponse(body: #"{"users": [1, 2,]}"#)

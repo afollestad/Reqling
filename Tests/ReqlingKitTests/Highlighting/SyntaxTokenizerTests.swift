@@ -65,6 +65,8 @@ final class SyntaxTokenizerTests: XCTestCase {
         XCTAssertEqual(ContentTypeLanguage.language(forContentType: "text/xml"), .xml)
         XCTAssertEqual(ContentTypeLanguage.language(forContentType: "TEXT/HTML"), .html)
         XCTAssertEqual(ContentTypeLanguage.language(forContentType: "application/x-yaml"), .yaml)
+        XCTAssertEqual(ContentTypeLanguage.language(forContentType: "application/openapi+yaml; version=3.1"), .yaml)
+        XCTAssertEqual(ContentTypeLanguage.language(forContentType: "text/yaml"), .yaml)
         XCTAssertEqual(ContentTypeLanguage.language(forContentType: "text/plain"), .plainText)
         XCTAssertEqual(ContentTypeLanguage.language(forContentType: nil), .plainText)
     }

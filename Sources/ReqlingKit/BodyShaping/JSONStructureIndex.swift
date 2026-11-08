@@ -11,6 +11,9 @@ public struct JSONStructureIndex: Sendable {
     public let data: Data
     /// Every top-level value's byte range: one for a document, one per value for newline-delimited JSON.
     public let roots: [Range<Int>]
+    /// What the body was written in: `.yaml` when this indexes the JSON a YAML body converts to, whose values copy
+    /// back as YAML (`YAMLFormatter.yaml(fromJSON:)`).
+    public internal(set) var sourceLanguage: SyntaxLanguage = .json
 
     /// Per container, in pre-order: the offset of its opening and closing bracket, how many values it holds, how many
     /// containers its subtree holds (itself included, so the next container outside it is `index + subtreeSize`), and

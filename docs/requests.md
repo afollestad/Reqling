@@ -10,8 +10,8 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 - **Bodies.** Raw with any Content-Type, form-data, x-www-form-urlencoded, binary, and GraphQL (a query and its variables, sent as the JSON body GraphQL servers expect).
 - **Auth.** Basic, Bearer, and API key (header or query), set per request or inherited from a folder or the project.
 - **Scripts.** JavaScript that runs before the request, on each event of an event stream, and after its response, in the **Scripts** tab ([Scripts](scripts.md)).
-- **Auto-indent.** JSON and JavaScript editors and the GraphQL query editor indent as you press Return:
-  - A new line keeps the indentation above, one level deeper after `{` or `[`.
+- **Auto-indent.** JSON, JavaScript, and YAML editors and the GraphQL query editor indent as you press Return:
+  - A new line keeps the indentation above, one level deeper after `{` or `[`, or in YAML after a line ending in `:`, a block scalar's `|` or `>`, or a bare `-`.
   - A bracket left open gets its closer on the next line, with the cursor between.
   - A `}` or `]` typed at the start of a line moves back to its opener's indentation, even when it steps over one a JavaScript editor already closed.
 - **Unticked rows.** Untick a parameter, header, form field, or variable to keep it but leave it out. Shift-click a checkbox to set every row between it and the last one you clicked, or use **Select All** and **Select None** above the rows.
@@ -23,8 +23,8 @@ HTTP requests, their responses, event streams, and run history. [GraphQL](graphq
 ## Responses
 
 - **Status, timing per phase, headers, and the body.**
-- **Trees.** JSON and XML open as collapsible trees, with any value, key, or path a right-click away.
-- **Pretty** re-indents JSON without reordering keys. **Raw** shows the body as sent.
+- **Trees.** JSON, XML, and YAML open as collapsible trees, with any value, key, or path a right-click away. A YAML tree shows its data: aliases and `<<` merge keys expanded, and values typed as YAML 1.2 types them, so `on` and `yes` are strings. Copying a value from it copies YAML.
+- **Pretty** re-indents JSON without reordering keys, and lays YAML out again in block style, without its comments. **Raw** shows the body as sent.
 - **Any size.** Bodies stay highlighted and scroll smoothly, and images preview.
 
 ## Event streams

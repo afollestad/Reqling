@@ -135,7 +135,7 @@ private struct Facets {
             }
         case .image:
             return .binary(response.body)
-        case .xml, .text:
+        case .xml, .yaml, .text:
             break
         }
         guard let text = String(data: response.body, encoding: .utf8) else {

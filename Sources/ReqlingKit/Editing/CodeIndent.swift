@@ -1,6 +1,6 @@
 import Foundation
 
-/// How a JSON, JavaScript, or GraphQL editor indents, worked out from the text alone. On Return the new line keeps the
+/// How a JSON, JavaScript, GraphQL, or YAML (`CodeIndent+YAML`) editor indents, worked out from the text alone. On Return the new line keeps the
 /// current one's indentation, one level deeper after `{` or `[`, and a bracket left open gets its closer on the line
 /// after, so the cursor lands between the two; a `}` or `]` typed, or stepped over, at the start of its line moves back
 /// to its opener's indentation. Brackets inside strings, comments, regexes, template text, and (outside scripts, where `{{` is plain
@@ -21,6 +21,9 @@ public enum CodeIndent {
     /// languages.
     public static func newline(in text: String, at cursor: Int, language: SyntaxLanguage) -> Edit? {
         let units = text as NSString
+        if language == .yaml {
+            return yamlNewline(in: units, at: cursor)
+        }
         guard let context = Context(language, text: text, units: units, cursor: cursor), !context.cursorIsInString else {
             return nil
         }

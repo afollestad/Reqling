@@ -38,6 +38,9 @@ extension BodyTreeCoordinator {
             case .string:
                 return index.string(entry.valueRange)
             case .object, .array:
+                if index.sourceLanguage == .yaml {
+                    return YAMLFormatter.yaml(fromJSON: index.text(entry.valueRange)) ?? index.text(entry.valueRange)
+                }
                 let slice = index.data[(index.data.startIndex + entry.valueRange.lowerBound)..<(index.data.startIndex + entry.valueRange.upperBound)]
                 let pretty = (try? JSONFormatter.pretty(Data(slice))).flatMap { $0 }
                 return pretty.flatMap { String(bytes: $0, encoding: .utf8) } ?? index.text(entry.valueRange)
@@ -107,7 +110,8 @@ extension BodyTreeCoordinator {
     private func jsonRow(_ entry: JSONEntry, item: BodyTreeItem, index: JSONStructureIndex, into parts: inout RowParts) {
         var labelKey = ""
         if let key = entry.key {
-            parts.add("\"\(key)\"", SyntaxPalette.property)
+            // YAML writes keys bare; string values stay quoted in both, so `"1"` and `1` read apart.
+            parts.add(index.sourceLanguage == .yaml ? key : "\"\(key)\"", SyntaxPalette.property)
             parts.add(": ", SyntaxPalette.symbol)
             labelKey = key
         } else if !isSingleRoot(item) {

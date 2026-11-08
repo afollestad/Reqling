@@ -59,14 +59,14 @@ final class ResponseBodyShaperTests: XCTestCase {
         XCTAssertEqual(undecodableImage.format, .text(.plainText))
     }
 
-    private func text(_ shaped: ShapedBody) -> String? {
+    func text(_ shaped: ShapedBody) -> String? {
         if case .text(let document) = shaped.content {
             return document.text(in: 0..<document.length)
         }
         return nil
     }
 
-    private func language(_ shaped: ShapedBody) -> SyntaxLanguage? {
+    func language(_ shaped: ShapedBody) -> SyntaxLanguage? {
         if case .text(let document) = shaped.content {
             return document.language
         }

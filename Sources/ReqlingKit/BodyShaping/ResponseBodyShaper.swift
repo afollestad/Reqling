@@ -1,4 +1,5 @@
 import Foundation
+internal import ReqlingYAML
 
 /// What a response body is, judged from its content type and first bytes alone, so the format picker can show while
 /// the body itself is still being shaped.
@@ -8,7 +9,8 @@ public enum BodyFormat: Hashable, Sendable {
     case image
     case json(JSONSource)
     case xml
-    /// Everything else: HTML, YAML, JavaScript, CSS, GraphQL, or plain text. Shaping may still find it isn't text.
+    case yaml
+    /// Everything else: HTML, JavaScript, CSS, GraphQL, or plain text. Shaping may still find it isn't text.
     case text(SyntaxLanguage)
 
     public enum JSONSource: Hashable, Sendable {
@@ -23,9 +25,9 @@ public enum BodyFormat: Hashable, Sendable {
 
 /// How the app wants a body shown.
 public enum ShapingMode: Hashable, Sendable {
-    /// JSON and XML as a collapsible tree.
+    /// JSON, XML, and YAML as a collapsible tree.
     case tree
-    /// JSON re-indented; anything else as sent.
+    /// JSON re-indented and YAML re-emitted; anything else as sent.
     case pretty
     case raw
 }
@@ -66,6 +68,8 @@ public enum ResponseBodyShaper {
             return .json(mediaType == "application/x-ndjson" ? .lines : .declared)
         case .xml:
             return .xml
+        case .yaml:
+            return .yaml
         case .plainText:
             return startsLikeJSON(body) ? .json(.sniffed) : .text(.plainText)
         case let language:
@@ -110,6 +114,14 @@ public enum ResponseBodyShaper {
             if mode == .tree {
                 return ShapedBody(content: try xmlTree(body, isTruncated: isTruncated), format: resolved)
             }
+        case .yaml:
+            (resolved, language) = (.yaml, .yaml)
+            if mode == .tree {
+                return ShapedBody(content: try yamlTree(body, isTruncated: isTruncated), format: resolved)
+            }
+            if mode == .pretty, let pretty = YAMLFormatter.pretty(body) {
+                return try shaped(Data(pretty.utf8), language: .yaml, format: resolved, byteCount: body.count)
+            }
         case .text(let textLanguage):
             (resolved, language) = (format, textLanguage)
         }
@@ -152,6 +164,29 @@ public enum ResponseBodyShaper {
                 return .treeFailed("The XML has more than \(XMLStructureIndex.nodeLimit.formatted()) nodes, too many for the tree.")
             case .syntax(let message, let line, let column):
                 return .treeFailed("Line \(line), column \(column): \(message)")
+            }
+        }
+    }
+
+    /// The tree of the JSON the body's YAML converts to, which copies values back as YAML (`sourceLanguage`). A body
+    /// cut short for the run history rarely ends where YAML can, so it says so rather than quoting the parser.
+    private static func yamlTree(_ body: Data, isTruncated: Bool) throws(CancellationError) -> ShapedBody.Content {
+        let json: Data
+        do {
+            json = try YAMLFormatter.treeJSON(body)
+        } catch {
+            return .treeFailed(isTruncated ? "The body was cut short to fit the run history, so it isn't whole YAML." : error.localizedDescription)
+        }
+        do {
+            var index = try JSONStructureIndex.build(json, allowsSequence: false, allowsTruncation: false)
+            index.sourceLanguage = .yaml
+            return .tree(.json(index))
+        } catch {
+            switch error {
+            case .cancelled:
+                throw CancellationError()
+            case .syntax(let message, _, _):
+                return .treeFailed(message)
             }
         }
     }

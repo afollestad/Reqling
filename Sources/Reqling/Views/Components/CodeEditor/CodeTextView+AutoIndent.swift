@@ -1,8 +1,8 @@
 import AppKit
 import ReqlingKit
 
-/// Return in a JSON or GraphQL editor indents the new line and closes a bracket left open, and a `}` or `]` typed at the
-/// start of its line moves back to its opener's indentation (`CodeIndent`).
+/// Return in a JSON, JavaScript, GraphQL, or YAML editor indents the new line and closes a bracket left open, and a `}`
+/// or `]` typed at the start of its line moves back to its opener's indentation (`CodeIndent`).
 extension CodeTextView {
     /// Applies `CodeIndent`'s edit for Return as one typed change; returns false to leave Return to AppKit: in other
     /// languages, with a selection, inside a string, or while an input method is composing.

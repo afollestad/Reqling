@@ -144,7 +144,7 @@ extension ResponseViewModel {
         switch format {
         case .empty:
             []
-        case .json:
+        case .json, .yaml:
             [.tree, .pretty, .raw]
         case .xml:
             [.tree, .raw]
