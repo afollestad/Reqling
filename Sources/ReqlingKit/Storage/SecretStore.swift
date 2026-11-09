@@ -46,11 +46,14 @@ public enum SecretAccount: Hashable, Sendable, CustomStringConvertible {
     case project(ProjectID)
     /// The Global environment every project shares (`RequestEnvironment.globalID`).
     case global
+    /// iCloud sync's own key, which keys the digests it keeps of what it last synced (`SyncBaseStore`).
+    case sync
 
     public var description: String {
         switch self {
         case .project(let id): id.description
         case .global: "global"
+        case .sync: "sync"
         }
     }
 
@@ -58,6 +61,7 @@ public enum SecretAccount: Hashable, Sendable, CustomStringConvertible {
         switch self {
         case .project: "Reqling project secrets"
         case .global: "Reqling global secrets"
+        case .sync: "Reqling iCloud sync key"
         }
     }
 }
@@ -158,6 +162,7 @@ public final class KeychainSecretStore: SecretStore {
 public final class InMemorySecretStore: SecretStore {
     private let storage = Mutex<[SecretAccount: [String: String]]>([:])
     private let readFailure = Mutex(false)
+    private let writeFailure = Mutex(false)
 
     public init() {}
 
@@ -165,6 +170,12 @@ public final class InMemorySecretStore: SecretStore {
     public var isFailingReads: Bool {
         get { readFailure.withLock { $0 } }
         set { readFailure.withLock { $0 = newValue } }
+    }
+
+    /// While set, writes throw as a locked or refusing Keychain does.
+    public var isFailingWrites: Bool {
+        get { writeFailure.withLock { $0 } }
+        set { writeFailure.withLock { $0 = newValue } }
     }
 
     public func secrets(for account: SecretAccount) throws -> [String: String] {
@@ -175,6 +186,9 @@ public final class InMemorySecretStore: SecretStore {
     }
 
     public func setSecrets(_ secrets: [String: String], for account: SecretAccount) throws {
+        if isFailingWrites {
+            throw SecretStoreError.keychain(errSecInteractionNotAllowed)
+        }
         storage.withLock { $0[account] = secrets.isEmpty ? nil : secrets }
     }
 }

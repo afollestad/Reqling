@@ -73,6 +73,11 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("global-environment.json")
     }
 
+    /// What iCloud sync keeps on this Mac (`SyncBaseStore`): digests of what it last synced, never content or secrets.
+    var syncDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("Sync", isDirectory: true)
+    }
+
     /// The values scripts set on this Mac (`CurrentValueStore`); secret ones live in the Keychain.
     var currentValuesURL: URL {
         applicationSupportDirectory.appendingPathComponent("current-values.json")

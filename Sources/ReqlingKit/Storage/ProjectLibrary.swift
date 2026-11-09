@@ -15,9 +15,15 @@ public final class ProjectLibrary {
     public internal(set) var globalEnvironment = RequestEnvironment.global()
     /// Why Global loaded incomplete (its file set aside, or its secret values unreadable), if it did.
     public internal(set) var globalEnvironmentIssue: String?
+    /// Whether Global's file couldn't be read at launch and was set aside, so it loaded empty. Sync then treats Global as
+    /// unknown rather than as everything deleted.
+    @ObservationIgnored var globalEnvironmentWasSetAside = false
     /// What scripts set on this Mac over the saved values. Edits of saved values through `mutate` and
     /// `mutateGlobalEnvironment` drop the matching ones (`ProjectLibrary+CurrentValues.swift`).
     @ObservationIgnored public let currentValues: CurrentValueStore
+    /// Told about every change to a project, Global, or current values made on this Mac (`LibraryChange`), never about
+    /// one a sync applied (`ProjectLibrary+Sync.swift`), so applying a change never sends it back. Set once, by sync.
+    @ObservationIgnored public var changeObserver: ((LibraryChange) -> Void)?
 
     @ObservationIgnored let configuration: Configuration
     /// Whether Global's secret values still sit blank because loading could not read them; see
@@ -67,6 +73,9 @@ public final class ProjectLibrary {
         currentValues = CurrentValueStore(url: configuration.currentValuesURL, secretStore: configuration.secretStore)
         loadRegistry()
         loadGlobalEnvironment()
+        currentValues.onChange = { [weak self] in
+            self?.changeObserver?(.currentValues)
+        }
     }
 
     // MARK: - Queries
@@ -94,6 +103,7 @@ public final class ProjectLibrary {
         projects.append(LibraryProject(id: document.id, url: folder, status: .loaded(document)))
         startMonitoring(document.id, at: folder)
         saveRegistry()
+        changeObserver?(.project(document.id))
         return document.id
     }
 
@@ -104,15 +114,27 @@ public final class ProjectLibrary {
         guard project(result.document.id) == nil else {
             throw ProjectStorageError.alreadyInLibrary
         }
-        projects.append(makeLoadedProject(result, url: url))
-        indexes[result.document.id] = result.index
-        startMonitoring(result.document.id, at: url)
-        saveRegistry()
+        register(result, at: url)
+        changeObserver?(.project(result.document.id))
         return result.document.id
     }
 
     /// Forgets a project without touching its folder or secrets, so adding the folder back restores everything.
     public func removeProject(_ id: ProjectID) {
+        unregister(id)
+        changeObserver?(.removed(id))
+    }
+
+    /// Lists and watches a folder just read, as adding it does.
+    private func register(_ result: ProjectReader.Result, at url: URL) {
+        projects.append(makeLoadedProject(result, url: url))
+        indexes[result.document.id] = result.index
+        startMonitoring(result.document.id, at: url)
+        saveRegistry()
+    }
+
+    /// `removeProject` without telling the observer, which a deletion tells as one instead.
+    private func unregister(_ id: ProjectID) {
         monitors.removeValue(forKey: id)?.stop()
         indexes[id] = nil
         projects.removeAll { $0.id == id }
@@ -130,7 +152,21 @@ public final class ProjectLibrary {
         }
         try? configuration.secretStore.setSecrets([:], for: id)
         currentValues.forget(id)
-        removeProject(id)
+        unregister(id)
+        changeObserver?(.deleted(id))
+    }
+
+    /// Moves a project another Mac deleted to the Trash and removes it, keeping its secrets and current values, so Put
+    /// Back and Add Project Folder restore all of it. Tells the observer nothing; sync applied it.
+    func deleteSyncedProject(_ id: ProjectID) throws {
+        guard let project = project(id) else {
+            throw ProjectStorageError.projectNotFound
+        }
+        monitors.removeValue(forKey: id)?.stop()
+        if FileManager.default.fileExists(atPath: project.url.path) {
+            try configuration.trasher.trash(project.url)
+        }
+        unregister(id)
     }
 
     public func moveProject(_ id: ProjectID, to index: Int) {
@@ -152,21 +188,94 @@ public final class ProjectLibrary {
     @discardableResult
     public func mutate<Result>(_ id: ProjectID, _ body: (inout ProjectDocument) throws -> Result) throws -> Result {
         reloadProjectSecretsIfUnread(id)
-        guard let position = projects.firstIndex(where: { $0.id == id }),
-              let old = projects[position].document,
-              let index = indexes[id] else {
-            throw ProjectStorageError.projectNotFound
-        }
-        guard !projects[position].isReadOnly else {
-            throw ProjectStorageError.readOnly
-        }
+        let (position, old) = try editableProject(id)
         var new = old
         let result = try body(&new)
         guard new != old else {
             return result
         }
         let secrets = SecretChanges(old: Self.secretValues(in: old), new: Self.secretValues(in: new))
-        try updateSecrets(of: .project(id), storing: secrets.stored, deleting: [])
+        try commit(new, at: position, storing: secrets.stored, deleting: secrets.deleted)
+        resetCurrentValues(old: old.allEnvironments, new: new.allEnvironments) { .environment(id, $0) }
+        changeObserver?(.project(id))
+        return result
+    }
+
+    /// Writes a document another Mac changed: `mutate`'s save, storing exactly the secret values that came with it,
+    /// without dropping current values (as a reload never does) or deleting secrets the change removed (so a deletion
+    /// stays recoverable), and without telling the observer.
+    func applySynced(_ document: ProjectDocument, storingSecrets secrets: [String: String]) throws {
+        reloadProjectSecretsIfUnread(document.id)
+        let (position, old) = try editableProject(document.id)
+        guard document != old else {
+            return
+        }
+        let current = Self.secretValues(in: old)
+        try commit(document, at: position, storing: secrets.filter { current[$0.key] != $0.value }, deleting: [])
+    }
+
+    /// Writes every file whose encoding differs from what was read, which states the IDs the reader derived for files
+    /// that had none. Sync does this before a project's first upload, since a derived ID changes when its file is renamed
+    /// or its rows reordered.
+    func persistSettledIDs(_ id: ProjectID) throws {
+        let (position, document) = try editableProject(id)
+        guard let index = indexes[id] else {
+            throw ProjectStorageError.projectNotFound
+        }
+        indexes[id] = try ProjectWriter(root: projects[position].url, trasher: configuration.trasher).save(document, previous: index)
+    }
+
+    /// Lists a project another Mac created, in the library's own folder: an unlisted folder there with its ID (a library
+    /// list set aside, a copy moved in) is adopted rather than duplicated beside it. Tells the observer nothing.
+    func adoptSyncedProject(_ document: ProjectDocument, storingSecrets secrets: [String: String]) throws {
+        guard project(document.id) == nil else {
+            throw ProjectStorageError.alreadyInLibrary
+        }
+        let parent = configuration.defaultProjectsDirectory
+        if let existing = unlistedFolder(with: document.id, in: parent) {
+            register(try ProjectReader(root: existing).read(), at: existing)
+            try applySynced(document, storingSecrets: secrets)
+            return
+        }
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let folder = Self.availableFolderURL(for: document.name, in: parent)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let index: ProjectDiskIndex
+        do {
+            try updateSecrets(of: .project(document.id), storing: secrets, deleting: [])
+            index = try ProjectWriter(root: folder, trasher: configuration.trasher).save(document, previous: ProjectDiskIndex())
+        } catch {
+            // Leave no half-written folder for the next attempt to step around.
+            try? configuration.trasher.trash(folder)
+            throw error
+        }
+        indexes[document.id] = index
+        projects.append(LibraryProject(id: document.id, url: folder, status: .loaded(document)))
+        startMonitoring(document.id, at: folder)
+        saveRegistry()
+    }
+
+    /// A loaded, writable project's position and document.
+    private func editableProject(_ id: ProjectID) throws -> (position: Int, document: ProjectDocument) {
+        guard let position = projects.firstIndex(where: { $0.id == id }),
+              let document = projects[position].document,
+              indexes[id] != nil else {
+            throw ProjectStorageError.projectNotFound
+        }
+        guard !projects[position].isReadOnly else {
+            throw ProjectStorageError.readOnly
+        }
+        return (position, document)
+    }
+
+    /// Stores new secrets, saves the folder, publishes, then deletes the secrets the folder no longer references, so
+    /// memory always matches disk. A failed save reloads from disk instead, leaving every secret the files reference.
+    private func commit(_ new: ProjectDocument, at position: Int, storing stored: [String: String], deleting deleted: Set<String>) throws {
+        let id = new.id
+        guard let index = indexes[id] else {
+            throw ProjectStorageError.projectNotFound
+        }
+        try updateSecrets(of: .project(id), storing: stored, deleting: [])
         do {
             indexes[id] = try ProjectWriter(root: projects[position].url, trasher: configuration.trasher).save(new, previous: index)
         } catch {
@@ -175,9 +284,7 @@ public final class ProjectLibrary {
         }
         projects[position].status = .loaded(new)
         // The folder no longer references these; a failure here only leaves unused values in the Keychain.
-        try? updateSecrets(of: .project(id), storing: [:], deleting: secrets.deleted)
-        resetCurrentValues(old: old.allEnvironments, new: new.allEnvironments) { .environment(id, $0) }
-        return result
+        try? updateSecrets(of: .project(id), storing: [:], deleting: deleted)
     }
 
     /// Re-reads a project from disk, publishing only a real change.
@@ -197,44 +304,16 @@ public final class ProjectLibrary {
             let reloaded = makeLoadedProject(result, url: url)
             indexes[id] = result.index
             if reloaded != projects[position] {
+                let documentChanged = reloaded.document != projects[position].document
                 projects[position] = reloaded
+                if documentChanged {
+                    changeObserver?(.project(id))
+                }
             }
         } catch {
             indexes[id] = nil
             projects[position].status = .unavailable(error.localizedDescription)
         }
-    }
-
-    /// The passphrase for sending a request: a Keychain that cannot be read behaves like no passphrase, and opening the
-    /// certificate then reports what is missing. Editors use `loadCertificatePassphrase`, which tells the two apart.
-    public func certificatePassphrase(for entry: CertificateEntryID, in project: ProjectID) -> String? {
-        try? loadCertificatePassphrase(for: entry, in: project)
-    }
-
-    /// The stored passphrase, or `nil` when none is stored. Throws when the Keychain cannot be read, so an editor never
-    /// shows a failed read as an empty passphrase and then saves that blank over the stored one.
-    public func loadCertificatePassphrase(for entry: CertificateEntryID, in project: ProjectID) throws -> String? {
-        try configuration.secretStore.secrets(for: project)[SecretKey.certificatePassphrase(entry)]
-    }
-
-    public func setCertificatePassphrase(_ passphrase: String?, for entry: CertificateEntryID, in project: ProjectID) throws {
-        try updateCertificatePassphrases([entry: passphrase], in: project)
-    }
-
-    /// Applies passphrase changes in one Keychain write; a `nil` or empty value deletes. Entries not listed keep what is
-    /// stored, so callers pass only what the user changed or removed.
-    public func updateCertificatePassphrases(_ changes: [CertificateEntryID: String?], in project: ProjectID) throws {
-        var stored: [String: String] = [:]
-        var deleted: Set<String> = []
-        for (entry, passphrase) in changes {
-            let key = SecretKey.certificatePassphrase(entry)
-            if let passphrase, !passphrase.isEmpty {
-                stored[key] = passphrase
-            } else {
-                deleted.insert(key)
-            }
-        }
-        try updateSecrets(of: .project(project), storing: stored, deleting: deleted)
     }
 
     // MARK: - Loading
@@ -387,52 +466,6 @@ public final class ProjectLibrary {
             suffix += 1
         }
         return candidate
-    }
-}
-
-/// A project as the library sees it: where it lives, and its document or why it could not be loaded.
-public struct LibraryProject: Identifiable, Hashable, Sendable {
-    public let id: ProjectID
-    public var url: URL
-    public var status: Status
-    public var issues: [ProjectLoadIssue]
-    public var isReadOnly: Bool
-
-    public enum Status: Hashable, Sendable {
-        case loaded(ProjectDocument)
-        case unavailable(String)
-    }
-
-    public init(id: ProjectID, url: URL, status: Status, issues: [ProjectLoadIssue] = [], isReadOnly: Bool = false) {
-        self.id = id
-        self.url = url
-        self.status = status
-        self.issues = issues
-        self.isReadOnly = isReadOnly
-    }
-
-    public var document: ProjectDocument? {
-        if case .loaded(let document) = status {
-            return document
-        }
-        return nil
-    }
-
-    public var name: String {
-        document?.name ?? url.deletingPathExtension().lastPathComponent
-    }
-}
-
-/// How an edit changes a project's or Global's secret variable values, keyed by `SecretKey`.
-struct SecretChanges {
-    /// New and changed values, stored before the folder is saved.
-    let stored: [String: String]
-    /// Keys the edit removed, deleted only after the folder no longer references them.
-    let deleted: Set<String>
-
-    init(old: [String: String], new: [String: String]) {
-        stored = new.filter { old[$0.key] != $0.value }
-        deleted = Set(old.keys).subtracting(new.keys)
     }
 }
 

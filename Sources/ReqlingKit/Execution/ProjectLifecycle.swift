@@ -46,6 +46,14 @@ public struct ProjectLifecycle {
         workspace.forgetProject(id, keepingLocalPaths: false)
     }
 
+    /// Deletes a project another Mac deleted, recoverably: the folder goes to the Trash, and its secrets, current values,
+    /// and local paths stay, so Put Back and Add Project Folder restore all of it. Its runs and history go.
+    func deleteSyncedProject(_ id: ProjectID) throws {
+        try library.deleteSyncedProject(id)
+        runner.forget(id)
+        workspace.forgetProject(id)
+    }
+
     /// Moves a folder or request to the Trash with its files, as `ProjectDocument.removeNode(_:)` does, and drops the
     /// history of every request inside it. Finder's Put Back restores the files but not the runs.
     public func deleteNode(_ id: RequestNodeID, in project: ProjectID) throws {

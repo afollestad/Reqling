@@ -61,6 +61,11 @@ public final class CurrentValueStore {
     /// change during a view update. `issue` reads `revision`, so writes still refresh whoever shows it.
     @ObservationIgnored private var readFailed = false
     @ObservationIgnored private var writeFailed = false
+    /// Called after each change this Mac makes (`ProjectLibrary.changeObserver`), never after `applySynced`.
+    @ObservationIgnored var onChange: (() -> Void)?
+    /// Whether the file couldn't be read at launch and was set aside, so this store started empty. Sync then treats
+    /// current values as unknown rather than as all dropped.
+    @ObservationIgnored private(set) var wasSetAside = false
 
     static let unreadableMessage = "Current values that scripts set as secret could not be read from the Keychain."
     static let unwritableMessage = "Current values that scripts set as secret could not be stored in the Keychain, "
@@ -76,6 +81,7 @@ public final class CurrentValueStore {
             } else {
                 // The next change rewrites the file; keep what it held for repair.
                 UndecodableFileBackup.preserve(url)
+                wasSetAside = true
             }
         }
     }
@@ -172,6 +178,56 @@ public final class CurrentValueStore {
         apply(Dictionary(uniqueKeysWithValues: dropped.map { ($0, CurrentVariable?.none) }), in: scope)
     }
 
+    // MARK: - Sync
+
+    /// The scopes holding any current value or marker, for sync to encode.
+    var storedScopes: [CurrentValueScope] {
+        var scopes: [CurrentValueScope] = file.global.isEmpty ? [] : [.global]
+        for (project, environments) in file.projects {
+            guard let projectID = ProjectID(string: project) else {
+                continue
+            }
+            scopes += environments.keys.compactMap(EnvironmentID.init(string:)).map { .environment(projectID, $0) }
+        }
+        return scopes
+    }
+
+    /// One scope's values and markers as stored, secret values not included.
+    func storedValues(in scope: CurrentValueScope) -> [String: StoredCurrentValue] {
+        file.values(in: scope)
+    }
+
+    /// Replaces one scope's values with what another Mac set, in `apply`'s order, without calling `onChange`. A secret
+    /// value never comes back as plain text for the same key, whichever Mac wrote last; a marker whose value didn't come
+    /// along keeps the value this Mac holds.
+    func applySynced(_ values: [String: StoredCurrentValue], secrets: [String: String], in scope: CurrentValueScope) {
+        let existing = file.values(in: scope)
+        var changes: [String: CurrentVariable?] = [:]
+        for key in Set(existing.keys).union(values.keys) {
+            switch values[key] {
+            case .plain(let text)? where existing[key] == .secret:
+                changes[key] = .value(TemplateVariable(value: text, isSecret: true))
+            case .plain(let text)?:
+                changes[key] = .value(TemplateVariable(value: text))
+            case .secret?:
+                if let secret = secrets[key] {
+                    changes[key] = .value(TemplateVariable(value: secret, isSecret: true))
+                } else if existing[key] != .secret {
+                    // A marker without its value would point at nothing; leave the key as it is here.
+                    continue
+                }
+            case .unset?:
+                changes[key] = .unset
+            case nil:
+                changes[key] = .some(nil)
+            }
+        }
+        let notified = onChange
+        onChange = nil
+        apply(changes, in: scope)
+        onChange = notified
+    }
+
     /// Drops every current value of a deleted project. Its Keychain item goes with the project's secrets.
     func forget(_ project: ProjectID) {
         var updated = file
@@ -219,6 +275,7 @@ public final class CurrentValueStore {
         }
         file = updated
         revision += 1
+        onChange?()
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try ProjectJSON.encode(updated).write(to: url, options: .atomic)

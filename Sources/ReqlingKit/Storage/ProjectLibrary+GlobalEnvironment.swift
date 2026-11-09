@@ -20,15 +20,33 @@ extension ProjectLibrary {
             return result
         }
         let secrets = SecretChanges(old: Self.secretValues(in: [old]), new: Self.secretValues(in: [new]))
-        try updateSecrets(of: .global, storing: secrets.stored, deleting: [])
+        try writeGlobalEnvironment(new, storing: secrets.stored)
+        // The file no longer references these; a failure here only leaves unused values in the Keychain.
+        try? updateSecrets(of: .global, storing: [:], deleting: secrets.deleted)
+        resetCurrentValues(old: [old], new: [new]) { _ in .global }
+        changeObserver?(.global)
+        return result
+    }
+
+    /// Writes Global as another Mac changed it, as `ProjectLibrary.applySynced` writes a project: exactly the secret
+    /// values that came with it are stored, none are deleted, current values stay, and the observer isn't told.
+    func applySyncedGlobalEnvironment(_ variables: [Variable], storingSecrets secrets: [String: String]) throws {
+        reloadGlobalSecretsIfUnread()
+        let new = RequestEnvironment.global(variables: variables)
+        guard new != globalEnvironment else {
+            return
+        }
+        let current = Self.secretValues(in: [globalEnvironment])
+        try writeGlobalEnvironment(new, storing: secrets.filter { current[$0.key] != $0.value })
+    }
+
+    /// Stores `stored` in the Keychain before the file names them, then writes the file and publishes.
+    private func writeGlobalEnvironment(_ new: RequestEnvironment, storing stored: [String: String]) throws {
+        try updateSecrets(of: .global, storing: stored, deleting: [])
         let url = configuration.globalEnvironmentURL
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try ProjectJSON.encode(GlobalEnvironmentFile(variables: new.variables)).write(to: url, options: .atomic)
         globalEnvironment = new
-        // The file no longer references these; a failure here only leaves unused values in the Keychain.
-        try? updateSecrets(of: .global, storing: [:], deleting: secrets.deleted)
-        resetCurrentValues(old: [old], new: [new]) { _ in .global }
-        return result
     }
 
     /// Reads Global's secret values again when loading could not, filling the ones still blank and clearing the issue.
@@ -56,6 +74,7 @@ extension ProjectLibrary {
         }
         guard let data = try? Data(contentsOf: url), let file = try? ProjectJSON.decode(GlobalEnvironmentFile.self, from: data) else {
             let backup = UndecodableFileBackup.preserve(url)
+            globalEnvironmentWasSetAside = true
             globalEnvironmentIssue = backup.map { "Global's file could not be read, so Reqling set it aside as “\($0.lastPathComponent)”." }
                 ?? "Global's file could not be read."
             return
