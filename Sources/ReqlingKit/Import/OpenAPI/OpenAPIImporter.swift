@@ -25,8 +25,11 @@ struct OpenAPIPlanner {
     /// parameters.
     var defaultVariables: [Variable] = []
     var environments: [RequestEnvironment] = []
-    /// What each security scheme maps to, worked out when a request first uses it (`OpenAPIPlanner+Security`).
-    var schemes: [String: OpenAPISchemeAuth] = [:]
+    /// Each security scheme a requirement names, found when one first does; `nil` for one Reqling can't meet
+    /// (`OpenAPIPlanner+Security`).
+    var schemes: [String: OpenAPIScheme?] = [:]
+    /// What each scheme a request uses maps to, made when one first does.
+    var schemeAuths: [String: OpenAPISchemeAuth] = [:]
     /// Deprecated operations' requests, by name, listed in one note.
     var deprecated: [String] = []
 

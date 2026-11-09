@@ -70,4 +70,33 @@ extension OpenAPIImporterTests {
         let keys = plan.defaultVariables.map(\.key)
         XCTAssertEqual(keys.count, Set(keys).count, "\(keys)")
     }
+
+    func testDeprecatedSchemesComeLastAndRequirementsPassedOverMakeNoVariables() async throws {
+        let plan = try await plan("""
+        openapi: 3.2.0
+        info: {title: Choices, version: '1'}
+        paths:
+          /first:
+            get:
+              summary: First
+              security: [{cookie: [], basic: []}, {legacy: []}, {token: []}]
+              responses: {}
+          /only:
+            get:
+              summary: Only
+              security: [{cookie: []}, {legacy: []}]
+              responses: {}
+        components:
+          securitySchemes:
+            cookie: {type: apiKey, in: cookie, name: session}
+            basic: {type: http, scheme: basic}
+            legacy: {type: apiKey, in: header, name: X-Legacy-Key, deprecated: true}
+            token: {type: http, scheme: bearer}
+        """)
+
+        XCTAssertEqual(try spec(plan, "First").auth, .bearer(token: "{{bearerToken}}"), "Past the cookie key and the deprecated one")
+        XCTAssertEqual(try spec(plan, "Only").auth, .apiKey(name: "X-Legacy-Key", value: "{{apiKey}}", location: .header),
+                       "Deprecated, but the only one it can meet")
+        XCTAssertEqual(plan.counts.credentialsToFill, ["bearerToken", "apiKey"], "None for the basic scheme beside the cookie key")
+    }
 }

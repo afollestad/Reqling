@@ -1,12 +1,29 @@
 import Foundation
 internal import ReqlingYAML
 
-/// What a security scheme maps to: auth a request sends, nothing to send (a client certificate, which the project's
-/// TLS settings hold), or nothing Reqling has, noted when the scheme is first used.
+/// A security scheme Reqling can meet, as the document defines it. Finding one makes nothing; its variables and notes
+/// wait until a request uses it (`OpenAPIPlanner.schemeAuth`), so an alternative passed over leaves none behind.
+struct OpenAPIScheme {
+    enum Kind {
+        case basic
+        case bearer
+        case apiKey(name: String, location: HTTPAuth.APIKeyLocation)
+        /// OAuth 2.0 or OpenID Connect, whose token the person gets themselves.
+        case token
+        /// mutualTLS, met by a client certificate in the project's TLS settings rather than by auth.
+        case clientCertificate
+    }
+
+    let kind: Kind
+    let node: OpenAPINode
+    /// 3.2's `deprecated`; an alternative without one is chosen first.
+    let isDeprecated: Bool
+}
+
+/// What a scheme a request uses maps to: auth it sends, or nothing to send (a client certificate).
 enum OpenAPISchemeAuth: Hashable {
     case auth(HTTPAuth)
     case satisfied
-    case unsupported
 }
 
 /// The auth an operation's security requirement maps to, and any further API keys it also needs, sent as rows.
@@ -20,25 +37,33 @@ struct OpenAPIOperationAuth {
 /// Connect to bearer auth with the token left to get, each with empty variables in Default for the person to fill in;
 /// only schemes some request uses make them.
 extension OpenAPIPlanner {
-    /// The first requirement in `requirements` (an operation's `security`, else the document's) that Reqling can meet:
-    /// its first scheme as the auth and any other API keys as rows. `[]`, or `{}` reached first, means none.
+    /// The requirement in `requirements` (an operation's `security`, else the document's) to use: the first Reqling can
+    /// meet without a deprecated scheme, else the first it can meet at all. Its first scheme is the auth, and any other
+    /// API keys are rows. `[]`, or `{}` chosen, means none. Requirements after the first met without a deprecated scheme
+    /// go unread, so their schemes make no notes.
     mutating func auth(for requirements: OpenAPINode?, owner: ImportNote.Owner) -> OpenAPIOperationAuth {
         guard let list = requirements?.value.array, !list.isEmpty else {
             return OpenAPIOperationAuth()
         }
+        var chosen: [(name: String, scheme: OpenAPIScheme)]?
+        var fallback: [(name: String, scheme: OpenAPIScheme)]?
         for requirement in list {
             let names = requirement.members?.map(\.key) ?? []
-            guard !names.isEmpty else {
-                return OpenAPIOperationAuth()
-            }
-            let mapped = names.map { (name: $0, auth: schemeAuth($0)) }
-            guard !mapped.contains(where: { $0.auth == .unsupported }) else {
+            let found = names.compactMap { name in scheme(name).map { (name: name, scheme: $0) } }
+            guard found.count == names.count else {
                 continue
             }
-            return combined(mapped, owner: owner)
+            guard found.contains(where: \.scheme.isDeprecated) else {
+                chosen = found
+                break
+            }
+            fallback = fallback ?? found
         }
-        note(owner, .auth, "None of its security requirements can be met with Reqling's auth, so it has none.")
-        return OpenAPIOperationAuth()
+        guard let chosen = chosen ?? fallback else {
+            note(owner, .auth, "None of its security requirements can be met with Reqling's auth, so it has none.")
+            return OpenAPIOperationAuth()
+        }
+        return combined(chosen.map { (name: $0.name, auth: schemeAuth($0.name, $0.scheme)) }, owner: owner)
     }
 
     private mutating func combined(_ mapped: [(name: String, auth: OpenAPISchemeAuth)], owner: ImportNote.Owner) -> OpenAPIOperationAuth {
@@ -65,61 +90,92 @@ extension OpenAPIPlanner {
         return result
     }
 
-    private mutating func schemeAuth(_ name: String) -> OpenAPISchemeAuth {
+    /// The scheme `name` defines, or `nil`, noted once, for one Reqling can't meet.
+    private mutating func scheme(_ name: String) -> OpenAPIScheme? {
         if let known = schemes[name] {
             return known
         }
-        let mapped = mapScheme(name)
-        schemes[name] = mapped
+        let found = findScheme(name)
+        schemes.updateValue(found, forKey: name)
+        return found
+    }
+
+    private mutating func findScheme(_ name: String) -> OpenAPIScheme? {
+        guard let node = resolved(root["components"]?["securitySchemes"]?[name], owner: .project) else {
+            note(.project, .auth, "The security scheme “\(name)” isn't defined, so it gives requests no auth.")
+            return nil
+        }
+        let kind: OpenAPIScheme.Kind
+        switch node["type"]?.value.string ?? "" {
+        case "http":
+            guard let http = httpKind(name, scheme: node) else {
+                return nil
+            }
+            kind = http
+        case "apiKey":
+            guard let apiKey = apiKeyKind(name, scheme: node) else {
+                return nil
+            }
+            kind = apiKey
+        case "oauth2", "openIdConnect":
+            kind = .token
+        case "mutualTLS":
+            kind = .clientCertificate
+        case let type:
+            note(.project, .auth, "The “\(name)” scheme is “\(type)”, which Reqling doesn't have, so it gives requests no auth.")
+            return nil
+        }
+        return OpenAPIScheme(kind: kind, node: node, isDeprecated: node["deprecated"]?.value.bool == true)
+    }
+
+    /// What `scheme` maps to, with its variables and notes made the first time a request uses it.
+    private mutating func schemeAuth(_ name: String, _ scheme: OpenAPIScheme) -> OpenAPISchemeAuth {
+        if let known = schemeAuths[name] {
+            return known
+        }
+        let mapped: OpenAPISchemeAuth
+        switch scheme.kind {
+        case .basic:
+            let username = credentials.placeholder("username", for: name, isSecret: false)
+            mapped = .auth(.basic(username: username, password: credentials.placeholder("password", for: name)))
+        case .bearer:
+            mapped = .auth(.bearer(token: credentials.placeholder("bearerToken", for: name)))
+        case .apiKey(let key, let location):
+            mapped = .auth(.apiKey(name: key, value: credentials.placeholder("apiKey", for: name), location: location))
+        case .token:
+            let token = credentials.placeholder("accessToken", for: name)
+            note(.project, .auth, tokenMessage(name, scheme: scheme.node, token: token))
+            mapped = .auth(.bearer(token: token))
+        case .clientCertificate:
+            note(.project, .auth, "The “\(name)” scheme asks for a client certificate; add one in the project's TLS settings.")
+            mapped = .satisfied
+        }
+        schemeAuths[name] = mapped
         return mapped
     }
 
-    private mutating func mapScheme(_ name: String) -> OpenAPISchemeAuth {
-        guard let scheme = resolved(root["components"]?["securitySchemes"]?[name], owner: .project) else {
-            note(.project, .auth, "The security scheme “\(name)” isn't defined, so it gives requests no auth.")
-            return .unsupported
-        }
-        switch scheme["type"]?.value.string ?? "" {
-        case "http":
-            return httpScheme(name, scheme: scheme)
-        case "apiKey":
-            return apiKeyScheme(name, scheme: scheme)
-        case "oauth2", "openIdConnect":
-            let token = credentials.placeholder("accessToken", for: name)
-            note(.project, .auth, tokenMessage(name, scheme: scheme, token: token))
-            return .auth(.bearer(token: token))
-        case "mutualTLS":
-            note(.project, .auth, "The “\(name)” scheme asks for a client certificate; add one in the project's TLS settings.")
-            return .satisfied
-        case let type:
-            note(.project, .auth, "The “\(name)” scheme is “\(type)”, which Reqling doesn't have, so it gives requests no auth.")
-            return .unsupported
-        }
-    }
-
-    private mutating func httpScheme(_ name: String, scheme: OpenAPINode) -> OpenAPISchemeAuth {
+    private mutating func httpKind(_ name: String, scheme: OpenAPINode) -> OpenAPIScheme.Kind? {
         switch (scheme["scheme"]?.value.string ?? "").lowercased() {
         case "basic":
-            let username = credentials.placeholder("username", for: name, isSecret: false)
-            return .auth(.basic(username: username, password: credentials.placeholder("password", for: name)))
+            return .basic
         case "bearer":
-            return .auth(.bearer(token: credentials.placeholder("bearerToken", for: name)))
+            return .bearer
         case let other:
             note(.project, .auth, "The “\(name)” scheme uses HTTP \(other) auth, which Reqling doesn't have, so it gives requests no auth.")
-            return .unsupported
+            return nil
         }
     }
 
-    private mutating func apiKeyScheme(_ name: String, scheme: OpenAPINode) -> OpenAPISchemeAuth {
+    private mutating func apiKeyKind(_ name: String, scheme: OpenAPINode) -> OpenAPIScheme.Kind? {
         let key = scheme["name"]?.value.string ?? name
         switch scheme["in"]?.value.string {
         case "header":
-            return .auth(.apiKey(name: key, value: credentials.placeholder("apiKey", for: name), location: .header))
+            return .apiKey(name: key, location: .header)
         case "query":
-            return .auth(.apiKey(name: key, value: credentials.placeholder("apiKey", for: name), location: .query))
+            return .apiKey(name: key, location: .query)
         default:
             note(.project, .auth, "The “\(name)” scheme sends its key in the “\(key)” cookie, which auth can't; add a Cookie header instead.")
-            return .unsupported
+            return nil
         }
     }
 
