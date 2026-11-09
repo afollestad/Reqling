@@ -4,14 +4,15 @@ import ReqlingKit
 /// Moving folders and requests, within a project or into another, and reordering projects. A move into another project
 /// asks first (`MoveConfirmation`): it rewrites two project folders and sends the old files to the Trash.
 extension AppModel {
-    /// Moves within a project; `index` is in the destination's children after the item is lifted out.
+    /// Moves within a project; `index` is in the destination's children after the item is lifted out. Opens the
+    /// project and folders around where it landed, so a drop into a closed one doesn't hide it.
     func move(_ node: RequestNodeID, in project: ProjectID, to parent: RequestNodeID?, at index: Int?) {
         flushPendingEdits()
-        perform("Couldn't Move the Item") {
+        let moved: Void? = perform("Couldn't Move the Item") {
             try library.mutate(project) { try $0.moveNode(node, to: parent, at: index) }
         }
-        if let parent {
-            workspace.updateProject(project) { $0.expandedFolderIDs.insert(parent) }
+        if moved != nil {
+            expandAncestors(of: node, in: project)
         }
     }
 

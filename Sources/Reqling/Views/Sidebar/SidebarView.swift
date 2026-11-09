@@ -1,38 +1,45 @@
 import AppKit
-import CoreTransferable
 import ReqlingKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Projects with their folders and requests, under a filter field. Selection, expansion, and every edit route
-/// through `AppModel`; filtering through `SidebarViewModel`.
+/// through `AppModel`; filtering through `SidebarViewModel`, and dragging through `SidebarDragController`.
 struct SidebarView: View {
     @Bindable var model: AppModel
-    @State private var presence = SidebarPresence()
+    @State private var drag: SidebarDragController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// `drag` is for tests, which drive the drag and clicks through it: synthesized mouse events never reach a `List`
+    /// row that isn't `.draggable`.
+    init(model: AppModel, drag: SidebarDragController? = nil) {
+        self.model = model
+        _drag = State(initialValue: drag ?? SidebarDragController(model: model, system: .live))
+    }
 
     var body: some View {
         let sidebar = model.sidebar
         let sections = sidebar.sections
         ScrollViewReader { proxy in
-            List(selection: $model.selection) {
-                Section {
-                    ForEach(sections) { section in
-                        SidebarProjectGroup(section: section, isFiltering: sidebar.isFiltering, model: model)
+            dragHost(
+                List(selection: selection) {
+                    Section {
+                        ForEach(sections) { section in
+                            SidebarProjectGroup(section: section, isFiltering: sidebar.isFiltering, model: model)
+                        }
+                    } header: {
+                        Text("Projects")
                     }
-                } header: {
-                    Text("Projects")
                 }
-            }
-            .listStyle(.sidebar)
-            .onDeleteCommand(perform: moveSelectionToTrash)
-            .background { SidebarPresenceReader(presence: presence) }
+                .listStyle(.sidebar)
+                .onDeleteCommand(perform: moveSelectionToTrash)
+            )
             .onChange(of: model.renaming) { _, item in
                 if let item {
                     reveal(item, with: proxy)
                 }
             }
             .onChange(of: model.selection) { _, item in
-                if let item, presence.isOnScreen {
+                if let item, drag.listHost.isOnScreen {
                     scroll(to: item, with: proxy)
                 }
             }
@@ -60,11 +67,58 @@ struct SidebarView: View {
         }
     }
 
+    /// The list's selection, which a drag hides while it holds the selected row: the table draws the highlight, so it
+    /// can't fade with the row. Only the table's keys set it, never while a drag is under way; rows select themselves
+    /// on a click (`SidebarDragController.click(_:)`).
+    private var selection: Binding<SidebarItem?> {
+        Binding(
+            get: { [drag, model] in
+                model.selection.flatMap { drag.isDragged($0) ? nil : $0 }
+            },
+            set: { [drag, model] item in
+                if drag.isIdle {
+                    model.selection = item
+                }
+            }
+        )
+    }
+
+    /// The drag's wiring around the list, lifted out of `body` for the type-checker.
+    private func dragHost<Content: View>(_ list: Content) -> some View {
+        list
+            .background { SidebarListHostReader(host: drag.listHost) }
+            .overlay { SidebarListGeometryReader(role: .visible) }
+            // The list runs under the filter bar and footer, and its rows' frames with it, so the overlay must too: inset
+            // by the safe area, the monitor's points would sit the filter bar's height above the rows' frames.
+            .overlay { SidebarDragOverlay(drag: drag).ignoresSafeArea() }
+            .environment(drag)
+            .onPreferenceChange(SidebarDragGeometryKey.self) { [drag] geometry in
+                // Preference changes arrive on the main thread.
+                MainActor.assumeIsolated {
+                    drag.geometryChanged(geometry)
+                }
+            }
+            .onChange(of: model.renaming) { _, item in
+                if item != nil {
+                    drag.teardown()
+                }
+            }
+            .onChange(of: model.sidebar.isFiltering) { _, isFiltering in
+                if isFiltering {
+                    drag.teardown()
+                }
+            }
+            .onChange(of: reduceMotion, initial: true) { _, reduceMotion in
+                drag.reducesMotion = reduceMotion
+            }
+            .onDisappear { drag.teardown() }
+    }
+
     /// Brings a row being renamed into view, or ends the rename when the sidebar is collapsed. A new request or folder
     /// can land below the fold or behind a collapsed column, where no row and so no field exists yet; left alone, the
     /// field would appear whenever the row did and take the keyboard from whatever had it by then. A visible row stays.
     private func reveal(_ item: SidebarItem, with proxy: ScrollViewProxy) {
-        guard presence.isOnScreen else {
+        guard drag.listHost.isOnScreen else {
             model.endRename(item, to: nil)
             return
         }
@@ -89,16 +143,6 @@ struct SidebarView: View {
         if let selection = model.selection {
             model.requestTrash(selection)
         }
-    }
-}
-
-/// A sidebar row's drag payload: an item within one project.
-struct SidebarDragItem: Codable, Transferable {
-    let projectID: ProjectID
-    let nodeID: RequestNodeID
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .json)
     }
 }
 
@@ -189,50 +233,5 @@ private struct SidebarFooter: View {
         .padding(.bottom, 8)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-    }
-}
-
-/// Where the sidebar's `List` sits in AppKit, to ask whether it is on screen when that matters rather than mirror it in
-/// state: `NavigationSplitView` hides a collapsed column instead of removing it.
-@MainActor
-private final class SidebarPresence {
-    weak var view: NSView?
-
-    var isOnScreen: Bool {
-        guard let view else {
-            return false
-        }
-        return view.window != nil && !view.isHiddenOrHasHiddenAncestor
-    }
-}
-
-private struct SidebarPresenceReader: NSViewRepresentable {
-    let presence: SidebarPresence
-
-    func makeNSView(context: Context) -> SidebarPresenceView {
-        let view = SidebarPresenceView()
-        presence.view = view
-        return view
-    }
-
-    func updateNSView(_ view: SidebarPresenceView, context: Context) {
-        presence.view = view
-    }
-}
-
-private final class SidebarPresenceView: NSView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setAccessibilityElement(false)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    /// Clicks go to the list as before.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
     }
 }

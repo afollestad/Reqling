@@ -13,13 +13,20 @@ final class SidebarInputTests: XCTestCase {
     private var project: SnapshotProject!
     private var window: SidebarInputTestWindow!
     private var controller: NSHostingController<AnyView>!
+    private var drag: SidebarDragController!
 
     override func setUp() async throws {
         fixture = AppFixture()
         project = try SnapshotProject.make(in: fixture)
+        // The real button is up while a test runs, which the drag's watch would take for a lost mouse-up.
+        drag = SidebarDragController(model: fixture.model, system: SidebarDragSystem(
+            sleep: { _ in },
+            isEscapePressed: { false },
+            isPointerDown: { true }
+        ))
         controller = NSHostingController(rootView: AnyView(
             HStack(spacing: 0) {
-                SidebarView(model: fixture.model)
+                SidebarView(model: fixture.model, drag: drag)
                     .frame(width: 280, height: 420)
                 TextField("Neighbour", text: .constant(""))
                     .frame(width: 200)
@@ -38,6 +45,7 @@ final class SidebarInputTests: XCTestCase {
         closeSnapshotWindow(window, controller: controller)
         window = nil
         controller = nil
+        drag = nil
         fixture.tearDown()
         fixture = nil
     }
@@ -273,32 +281,73 @@ final class SidebarInputTests: XCTestCase {
         }
     }
 
-    /// A click on a folder's row selects it, as the table does for any row, and opens or closes it too. A double-click
-    /// toggles it once.
-    func testClickingAFolderRowSelectsAndTogglesIt() async throws {
-        let folder = SidebarItem.node(project.id, project.folder)
-        let table = try await focusSidebar(selecting: folder)
+    /// A row takes its own click (`sidebarRowClick`), which synthesized mouse events can't reach, so this drives the
+    /// controller the click calls: it selects the row and gives the table the keyboard the table's own click did.
+    func testAClickSelectsTheRowAndGivesTheTableTheKeyboard() async throws {
+        let table = try await focusSidebar(selecting: .node(project.id, project.listUsers))
+        let neighbour = try XCTUnwrap(descendants(of: NSTextField.self).first { $0.placeholderString == "Neighbour" })
+        XCTAssertTrue(window.makeFirstResponder(neighbour))
+
+        drag.click(.node(project.id, project.createUser))
+
+        await waitUntil("the table to take the keyboard") {
+            self.settle()
+            return self.window.firstResponder === table
+        }
+        XCTAssertEqual(fixture.model.selection, .node(project.id, project.createUser))
+        try sendKey(125, characters: "\u{f701}", toWindow: true)
+        await waitUntil("the selection to move down") { self.fixture.model.selection == .node(self.project.id, self.project.folder) }
+    }
+
+    /// A click on a folder's row opens or closes it too, but not while filtering or renaming, on Control-click, or on a
+    /// double-click's second click.
+    func testAClickTogglesAFolderOnlyWhenNothingElseClaimsIt() {
+        XCTAssertTrue(SidebarNodeRow.clickToggles(isFiltering: false, isRenaming: false, modifiers: [], clickCount: 1))
+        XCTAssertFalse(SidebarNodeRow.clickToggles(isFiltering: true, isRenaming: false, modifiers: [], clickCount: 1))
+        XCTAssertFalse(SidebarNodeRow.clickToggles(isFiltering: false, isRenaming: true, modifiers: [], clickCount: 1))
+        XCTAssertFalse(SidebarNodeRow.clickToggles(isFiltering: false, isRenaming: false, modifiers: .control, clickCount: 1))
+        XCTAssertFalse(SidebarNodeRow.clickToggles(isFiltering: false, isRenaming: false, modifiers: [], clickCount: 2))
+    }
+
+    /// The table can't fade the highlight it draws, so a drag hides the selection while it holds the selected row; the
+    /// table's answering deselection must not reach the model, and the highlight comes back after.
+    func testDraggingTheSelectedRowKeepsItSelected() async throws {
+        let selected = SidebarItem.node(project.id, project.listUsers)
+        let table = try await focusSidebar(selecting: selected)
         let row = table.selectedRow
+
+        drag.sourceChanged(selected)
+        await waitUntil("the highlight to hide") {
+            self.settle()
+            return table.selectedRow == -1
+        }
+        drag.sourceEnded(selected)
+        await waitUntil("the highlight to return") {
+            self.settle()
+            return table.selectedRow == row
+        }
+
+        XCTAssertEqual(fixture.model.selection, selected)
+    }
+
+    /// A drag holds the keys that would act on the sidebar beneath it, and Escape cancels it until the mouse comes up.
+    func testADragHoldsTheSidebarsKeysAndEscapeCancelsIt() async throws {
+        let dragged = SidebarItem.node(project.id, project.createUser)
         _ = try await focusSidebar(selecting: .node(project.id, project.listUsers))
-        let rect = table.rect(ofRow: row)
-        let point = table.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
-
-        try click(at: point)
-        await waitUntil("the folder to be selected and closed") {
-            self.settle()
-            return self.fixture.model.selection == folder && !self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id)
-        }
-        try click(at: point)
-        await waitUntil("the folder to open again") {
-            self.settle()
-            return self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id)
-        }
-        XCTAssertEqual(fixture.model.selection, folder)
-
-        try click(at: point)
-        try click(at: point, count: 2)
+        drag.sourceChanged(dragged)
         settle()
-        XCTAssertFalse(fixture.model.isExpanded(folder: project.folder, in: project.id))
+
+        try sendKey()
+        settle()
+        XCTAssertNil(fixture.model.renaming, "Return renames nothing mid-drag")
+
+        try sendKey(53, characters: "\u{1b}")
+        XCTAssertFalse(drag.isIdle)
+        XCTAssertNil(drag.state.session, "Cancelled, waiting for the mouse to come up")
+
+        drag.sourceEnded(dragged)
+        XCTAssertTrue(drag.isIdle)
+        XCTAssertEqual(fixture.library.document(project.id)?.items.map(\.id), [project.listUsers, project.createUser, project.folder])
     }
 
     func testCommittedNamesAreTrimmedAndBlankOrUnchangedOnesKeepTheOldName() {
@@ -358,30 +407,6 @@ final class SidebarInputTests: XCTestCase {
             window.sendEvent(event)
         } else {
             NSApplication.shared.sendEvent(event)
-        }
-    }
-
-    /// Clicks the window at `point`, in its coordinates. The table may track a click in a loop of its own until the
-    /// button comes up, so the mouse-up waits in the queue first; whatever doesn't take it from there gets it after.
-    private func click(at point: NSPoint, count: Int = 1) throws {
-        func event(_ type: NSEvent.EventType) throws -> NSEvent {
-            try XCTUnwrap(NSEvent.mouseEvent(
-                with: type,
-                location: point,
-                modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber,
-                context: nil,
-                eventNumber: 0,
-                clickCount: count,
-                pressure: type == .leftMouseDown ? 1 : 0
-            ))
-        }
-        let mouseDown = try event(.leftMouseDown)
-        NSApp.postEvent(try event(.leftMouseUp), atStart: false)
-        window.sendEvent(mouseDown)
-        if let mouseUp = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) {
-            window.sendEvent(mouseUp)
         }
     }
 

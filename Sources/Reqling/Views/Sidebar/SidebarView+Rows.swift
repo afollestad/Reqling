@@ -15,11 +15,19 @@ struct SidebarProjectGroup: View {
             set: { if !isFiltering { model.setExpanded($0, project: project.id) } }
         )) {
             ForEach(section.items) { node in
-                SidebarNodeRow(node: node, projectID: project.id, depth: 0, isFiltering: isFiltering, model: model)
+                SidebarNodeRow(
+                    node: node, projectID: project.id, depth: 0, isFiltering: isFiltering, isMovable: isMovable, model: model
+                )
             }
         } label: {
-            SidebarProjectLabel(project: project, requestCount: section.requestCount, model: model)
+            SidebarProjectLabel(project: project, requestCount: section.requestCount, isFiltering: isFiltering, model: model)
         }
+    }
+
+    /// Whether its folders and requests can be dragged: never while filtering, whose shown order isn't the saved one,
+    /// and only out of a project that loaded and can be written.
+    private var isMovable: Bool {
+        !isFiltering && section.project.document != nil && !section.project.isReadOnly
     }
 }
 
@@ -29,8 +37,10 @@ private struct SidebarProjectLabel: View {
 
     let project: LibraryProject
     let requestCount: Int
+    let isFiltering: Bool
     let model: AppModel
     @Environment(\.appAccent) private var accent
+    @Environment(SidebarDragController.self) private var drag
 
     var body: some View {
         HStack(spacing: 8) {
@@ -54,12 +64,18 @@ private struct SidebarProjectLabel: View {
                     .foregroundStyle(.orange)
             }
         }
+        .sidebarRowClick(isEnabled: drag.isIdle) { drag.click(item) }
+        .sidebarDragGeometry(item)
+        .sidebarDragFade(item, drag: drag)
+        // A project that didn't load still reorders; its place in the sidebar is all a drag changes.
+        .sidebarDragSource(item, drag: drag, isEnabled: !isFiltering && model.renaming == nil)
         .help(unavailableReason ?? project.url.path)
-        .tag(SidebarItem.project(project.id))
+        .tag(item)
         .contextMenu { SidebarProjectMenu(project: project, model: model) }
-        .dropDestination(for: SidebarDragItem.self) { items, _ in
-            return drop(items, into: nil)
-        }
+    }
+
+    private var item: SidebarItem {
+        .project(project.id)
     }
 
     private var isAvailable: Bool {
@@ -71,15 +87,6 @@ private struct SidebarProjectLabel: View {
             return reason
         }
         return nil
-    }
-
-    private func drop(_ items: [SidebarDragItem], into parent: RequestNodeID?) -> Bool {
-        var moved = false
-        for item in items where item.projectID == project.id && model.canMove(item.nodeID, in: project.id, into: parent) {
-            model.move(item.nodeID, in: project.id, to: parent, at: nil)
-            moved = true
-        }
-        return moved
     }
 }
 
@@ -116,7 +123,7 @@ private struct SidebarProjectMenu: View {
 /// `AppModel.expandFolder(at:)` and `collapseFolderOrSelectParent(at:)` stand in for the outline's ← and →.
 struct SidebarNodeRow: View {
     /// The outline's own step between levels, which a project's rows still take from it.
-    static let indentPerLevel: CGFloat = 13
+    nonisolated static let indentPerLevel: CGFloat = 13
 
     let node: RequestNode
     let projectID: ProjectID
@@ -124,20 +131,30 @@ struct SidebarNodeRow: View {
     let depth: Int
     /// Filtering shows every folder open and remembers no change.
     let isFiltering: Bool
+    /// Whether the row can be dragged (`SidebarProjectGroup`).
+    let isMovable: Bool
     let model: AppModel
 
     var body: some View {
         switch node {
         case .request(let request):
-            SidebarRequestLabel(request: request, projectID: projectID, indent: indent, model: model)
+            SidebarRequestLabel(request: request, projectID: projectID, indent: indent, isMovable: isMovable, model: model)
         case .folder(let folder):
             let isExpanded = isFiltering || model.isExpanded(folder: folder.id, in: projectID)
             SidebarFolderLabel(
-                folder: folder, projectID: projectID, indent: indent, isExpanded: isExpanded, isFiltering: isFiltering, model: model
+                folder: folder,
+                projectID: projectID,
+                indent: indent,
+                isExpanded: isExpanded,
+                isFiltering: isFiltering,
+                isMovable: isMovable,
+                model: model
             )
             if isExpanded {
                 ForEach(folder.children) { child in
-                    SidebarNodeRow(node: child, projectID: projectID, depth: depth + 1, isFiltering: isFiltering, model: model)
+                    SidebarNodeRow(
+                        node: child, projectID: projectID, depth: depth + 1, isFiltering: isFiltering, isMovable: isMovable, model: model
+                    )
                 }
             }
         }
@@ -146,13 +163,22 @@ struct SidebarNodeRow: View {
     private var indent: CGFloat {
         CGFloat(depth) * Self.indentPerLevel
     }
+
+    /// Whether a click on a folder's row opens or closes it as well as selecting it. Filtering shows every folder open;
+    /// a rename's field takes clicks for itself; Control-click opens the menu. A double-click's second click is left
+    /// alone, or the folder would open and close again at once.
+    static func clickToggles(isFiltering: Bool, isRenaming: Bool, modifiers: NSEvent.ModifierFlags, clickCount: Int) -> Bool {
+        !isFiltering && !isRenaming && !modifiers.contains(.control) && clickCount <= 1
+    }
 }
 
 private struct SidebarRequestLabel: View {
     let request: RequestItem
     let projectID: ProjectID
     let indent: CGFloat
+    let isMovable: Bool
     let model: AppModel
+    @Environment(SidebarDragController.self) private var drag
 
     var body: some View {
         HStack(spacing: 8) {
@@ -167,26 +193,16 @@ private struct SidebarRequestLabel: View {
             }
         }
         .padding(.leading, indent)
-        .tag(SidebarItem.node(projectID, request.id))
+        .sidebarRowClick(isEnabled: drag.isIdle) { drag.click(item) }
+        .sidebarDragGeometry(item)
+        .sidebarDragFade(item, drag: drag)
+        .sidebarDragSource(item, drag: drag, isEnabled: isMovable && model.renaming == nil)
+        .tag(item)
         .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, request: request.kind.name, model: model) }
-        .draggable(SidebarDragItem(projectID: projectID, nodeID: request.id))
-        .dropDestination(for: SidebarDragItem.self) { items, _ in
-            // Dropping on a request places the item just before it.
-            guard let document = model.library.document(projectID) else {
-                return false
-            }
-            let parent = document.parentID(of: request.id)
-            var moved = false
-            let movable = items.filter { item in
-                item.projectID == projectID && item.nodeID != request.id && model.canMove(item.nodeID, in: projectID, into: parent)
-            }
-            for item in movable {
-                let siblings = (document.children(of: parent) ?? []).filter { $0.id != item.nodeID }
-                model.move(item.nodeID, in: projectID, to: parent, at: siblings.firstIndex { $0.id == request.id })
-                moved = true
-            }
-            return moved
-        }
+    }
+
+    private var item: SidebarItem {
+        .node(projectID, request.id)
     }
 }
 
@@ -196,40 +212,40 @@ private struct SidebarFolderLabel: View {
     let indent: CGFloat
     let isExpanded: Bool
     let isFiltering: Bool
+    let isMovable: Bool
     let model: AppModel
+    @Environment(SidebarDragController.self) private var drag
 
     var body: some View {
         HStack(spacing: 8) {
             SidebarFolderToggle(isExpanded: isExpanded, toggle: toggle)
                 .disabled(isFiltering)
-            // A click on the rest of the row selects the folder, as the table does, and opens or closes it too. The
-            // pill stays a button of its own, which opens or closes it without selecting it, as the outline's caret did.
-            HStack(spacing: 8) {
-                SidebarRowName(item: item, name: folder.name, model: model)
-                Spacer(minLength: 4)
-                SidebarAccessories {
-                    SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
-                    if !folder.scripts.isEmpty {
-                        SidebarScriptsBadge()
-                    }
-                    SidebarCount(count: folder.children.count)
+            SidebarRowName(item: item, name: folder.name, model: model)
+            Spacer(minLength: 4)
+            SidebarAccessories {
+                SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
+                if !folder.scripts.isEmpty {
+                    SidebarScriptsBadge()
                 }
+                SidebarCount(count: folder.children.count)
             }
-            .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded(toggleOnClick))
         }
         .padding(.leading, indent)
+        // A click on the row selects the folder and opens or closes it too. The pill, a button of its own, takes its
+        // own clicks, opening or closing the folder without selecting it, as the outline's caret did.
+        .sidebarRowClick(isEnabled: drag.isIdle) {
+            // Decided first: giving the table the keyboard ends a rename, which this click must not toggle.
+            let toggles = togglesOnClick
+            drag.click(item)
+            if toggles {
+                toggle()
+            }
+        }
+        .sidebarDragGeometry(item)
+        .sidebarDragFade(item, drag: drag)
+        .sidebarDragSource(item, drag: drag, isEnabled: isMovable && model.renaming == nil)
         .tag(item)
         .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, request: nil, model: model) }
-        .draggable(SidebarDragItem(projectID: projectID, nodeID: folder.id))
-        .dropDestination(for: SidebarDragItem.self) { items, _ in
-            var moved = false
-            for item in items where item.projectID == projectID && model.canMove(item.nodeID, in: projectID, into: folder.id) {
-                model.move(item.nodeID, in: projectID, to: folder.id, at: nil)
-                moved = true
-            }
-            return moved
-        }
     }
 
     private var item: SidebarItem {
@@ -238,17 +254,19 @@ private struct SidebarFolderLabel: View {
 
     /// Reads the model rather than `isExpanded`, which a click can outrun before the row redraws.
     private func toggle() {
+        guard drag.isIdle else {
+            return
+        }
         model.setExpanded(!model.isExpanded(folder: folder.id, in: projectID), folder: folder.id, in: projectID)
     }
 
-    /// Filtering shows every folder open; a rename's field takes clicks for itself; Control-click opens the menu. A
-    /// double-click's second click is left alone, or the folder would open and close again at once.
-    private func toggleOnClick() {
-        guard !isFiltering, model.renaming != item, !NSEvent.modifierFlags.contains(.control),
-              (NSApp.currentEvent?.clickCount ?? 1) <= 1 else {
-            return
-        }
-        toggle()
+    private var togglesOnClick: Bool {
+        SidebarNodeRow.clickToggles(
+            isFiltering: isFiltering,
+            isRenaming: model.renaming == item,
+            modifiers: NSEvent.modifierFlags,
+            clickCount: NSApp.currentEvent?.clickCount ?? 1
+        )
     }
 }
 

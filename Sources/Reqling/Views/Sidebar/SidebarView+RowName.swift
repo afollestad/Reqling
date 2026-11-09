@@ -10,6 +10,7 @@ struct SidebarRowName: View {
     /// Semibold, as a project's name is.
     var isEmphasized = false
     let model: AppModel
+    @Environment(SidebarDragController.self) private var drag
 
     var body: some View {
         if model.renaming == item {
@@ -27,7 +28,11 @@ struct SidebarRowName: View {
         }
     }
 
+    /// Leaves every key alone while a drag is under way, which swallows them itself (`SidebarDragMonitor`).
     private func handle(_ key: SidebarRowKey) -> Bool {
+        guard drag.isIdle else {
+            return false
+        }
         switch key {
         case .rename:
             guard model.canRename(item) else {

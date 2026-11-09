@@ -21,6 +21,7 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 - **Open a shared one** with **Add Project Folder…**.
 - **Folders** open and close with a click, or with → and ← when selected. ← inside a folder selects it, and a click on its icon opens or closes it without selecting it.
 - **Renaming.** A new folder or request starts with its name ready to type, and Return renames the selected item in place. Renames move files rather than rewriting them.
+- **Rearranging.** Drag a project, folder, or request, and a line shows where it will land. Below an open folder's last item, move the pointer left or right to choose inside the folder or after it. Dropping onto a folder or project puts the item first in it, and resting there opens a closed one. Moving into another project asks first, then lists any files the item now finds through paths kept on this Mac only. Escape cancels. Dragging is off while the sidebar is filtered, and in a project saved by a newer Reqling.
 - **Deleting** asks first, then moves the files to the Trash, on every Mac that [syncs](#syncing-with-icloud) the project.
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.
 - **Files** a request or the project uses, such as a body, a schema, or a certificate, are shared by a path relative to the project when they sit inside its folder or repository. For a file elsewhere, Reqling asks whether to share its path, for everyone with the same folder layout, or remember it on this Mac only.

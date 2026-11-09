@@ -7,6 +7,7 @@ These instructions apply to everything under `Tests/`. `Tests/ReqlingTests/Snaps
 - When updating UI, verify whether snapshot tests need to be updated and run the relevant snapshot checks before finishing.
 - Do not assert exact SPM dependency revisions in tests; pins are configuration, and regressions should be covered by behavior-focused tests.
 - **Never read a view's `@Environment` or `@FocusState` outside an installed body.** SwiftUI logs that as a runtime issue, which fails `test.sh`. Drive an unmounted view through a helper that takes the value as a parameter.
+- **Drive sidebar row clicks and drags through `SidebarDragController`.** Synthesized mouse events never reach a `List` row that isn't `.draggable`; keys sent through `NSApp` still reach the monitors.
 - **Avoid live `NSPopover` host tests on macOS 26.** Resizing a shown popover or opening nested shown popovers can crash a later test that pumps the run loop; prefer not-shown content and frame tests.
 
 ## CI-Safe Tests

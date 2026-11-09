@@ -100,7 +100,7 @@ let package = Package(
                 "ReqlingScriptProtocol",
                 .product(name: "NeedleFoundation", package: "needle")
             ],
-            exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "ViewModels")
+            exclude: guidanceFiles(in: "App", "DI", "Views", "Views/Settings", "Views/Sidebar/Drag", "ViewModels")
         ),
         // Foundation and Security only, so each launch stays fast.
         .executableTarget(name: "ReqlingPKCS12Probe"),
