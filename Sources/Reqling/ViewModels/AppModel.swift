@@ -75,6 +75,8 @@ final class AppModel {
     var alert: AppAlert?
     /// A project, folder, or request awaiting confirmation before it moves to the Trash.
     var trashPending: TrashConfirmation?
+    /// A folder or request awaiting confirmation before it moves into another project (`AppModel+Moves.swift`).
+    var movePending: MoveConfirmation?
     /// A protocol switch awaiting confirmation because it would discard part of the request.
     var kindChangePending: RequestKindChange?
     /// Run history awaiting confirmation before it is cleared, which cannot be undone.

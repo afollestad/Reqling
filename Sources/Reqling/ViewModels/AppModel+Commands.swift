@@ -211,28 +211,6 @@ extension AppModel {
         }
     }
 
-    /// Moves within a project; `index` is in the destination's children after the item is lifted out.
-    func move(_ node: RequestNodeID, in project: ProjectID, to parent: RequestNodeID?, at index: Int?) {
-        flushPendingEdits()
-        perform("Couldn't Move the Item") {
-            try library.mutate(project) { try $0.moveNode(node, to: parent, at: index) }
-        }
-        if let parent {
-            workspace.updateProject(project) { $0.expandedFolderIDs.insert(parent) }
-        }
-    }
-
-    /// Whether dropping `node` onto `target` is a valid move: same project, and never into itself or a descendant.
-    func canMove(_ node: RequestNodeID, in project: ProjectID, into parent: RequestNodeID?) -> Bool {
-        guard let document = library.document(project), document.node(node) != nil else {
-            return false
-        }
-        guard let parent else {
-            return true
-        }
-        return parent != node && !document.ancestors(of: parent).contains { $0.id == node }
-    }
-
     // MARK: - Sidebar expansion
 
     func isExpanded(_ project: ProjectID) -> Bool {
