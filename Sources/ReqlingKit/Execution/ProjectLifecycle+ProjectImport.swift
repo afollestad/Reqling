@@ -28,7 +28,7 @@ extension ProjectLifecycle {
             for slot in plan.files {
                 references[slot] = ProjectPathResolver.sharesLocation(slot.url, with: root)
                     ? .relative(ProjectPathResolver.relativePath(from: root, to: slot.url))
-                    : workspace.addLocalPath(slot.url.path, in: id)
+                    : workspace.addLocalPath(slot.url.path, for: slot.pathSlot, in: id)
             }
             try library.mutate(id) { document in
                 document.auth = plan.auth

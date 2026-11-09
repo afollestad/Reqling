@@ -48,13 +48,15 @@ struct MCPGRPCTools {
             let (project, document) = try context.document(try arguments.string("project"))
             var grpc = document.grpc
             if let roots = try arguments.objects("protoRoots", allowed: ["path", "local"]) {
-                grpc.protoRoots = try roots.map { try context.pathReference($0, in: project, existing: document.grpc.protoRoots) }
+                grpc.protoRoots = try roots.map { try context.pathReference($0, in: project, for: .protoRoots, existing: document.grpc.protoRoots) }
             }
             if let files = try arguments.stringArray("protoFiles") {
                 grpc.protoFiles = files.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             }
             if let sets = try arguments.objects("descriptorSets", allowed: ["path", "local"]) {
-                grpc.descriptorSets = try sets.map { try context.pathReference($0, in: project, existing: document.grpc.descriptorSets) }
+                grpc.descriptorSets = try sets.map { set in
+                    try context.pathReference(set, in: project, for: .projectDescriptorSets, existing: document.grpc.descriptorSets)
+                }
             }
             let updated = grpc
             try context.mutate(project.id) { $0.grpc = updated }
@@ -180,9 +182,9 @@ struct MCPGRPCTools {
 
     private func describe(_ configuration: ProjectGRPCConfiguration, in project: ProjectID) -> [String: Value] {
         var description: [String: Value] = [
-            "protoRoots": .array(configuration.protoRoots.map { context.describePath($0, in: project) }),
+            "protoRoots": .array(configuration.protoRoots.map { context.describePath($0, in: .protoRoots, of: project) }),
             "protoFiles": .array(configuration.protoFiles.map(Value.string)),
-            "descriptorSets": .array(configuration.descriptorSets.map { context.describePath($0, in: project) })
+            "descriptorSets": .array(configuration.descriptorSets.map { context.describePath($0, in: .projectDescriptorSets, of: project) })
         ]
         if let workspace = context.protoWorkspaces.workspace(for: project) {
             description["status"] = Self.describe(workspace.status)

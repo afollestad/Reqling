@@ -201,19 +201,26 @@ final class RequestEditorViewModel {
         notice = RunHistoryViewModel.restoredNotice(sentAt: date)
     }
 
-    /// Picks a file for a binary body or a form-data part, in place of `existing` (`AppModel.reference(for:in:replacing:)`).
-    func chooseFile(replacing existing: ProjectPathReference?) -> ProjectPathReference? {
+    /// Picks a file for the binary body or the form-data part `field`, in place of `existing`
+    /// (`AppModel.reference(for:in:at:replacing:)`).
+    func chooseFile(forField field: MultipartFieldID? = nil, replacing existing: ProjectPathReference?) -> ProjectPathReference? {
         guard let url = app.system.chooseFile(prompt: "Choose", allowedTypes: []) else {
             return nil
         }
-        return app.reference(for: url, in: projectID, replacing: existing)
+        return app.reference(for: url, in: projectID, at: fileSlot(field), replacing: existing)
     }
 
-    func describe(_ reference: ProjectPathReference?) -> String {
+    /// The binary body's file, or the form-data part `field`'s, as its button names it.
+    func describe(_ reference: ProjectPathReference?, forField field: MultipartFieldID? = nil) -> String {
         guard let reference else {
             return "No file chosen"
         }
-        return app.pathResolver(for: projectID)?.describe(reference) ?? "No file chosen"
+        return app.pathResolver(for: projectID)?.describe(reference, in: fileSlot(field)) ?? "No file chosen"
+    }
+
+    /// The form-data part `field`'s slot, or the binary body's.
+    private func fileSlot(_ field: MultipartFieldID?) -> ProjectPathSlot {
+        field.map { .formField(requestID, $0) } ?? .binaryBody(requestID)
     }
 
     // MARK: - Sending

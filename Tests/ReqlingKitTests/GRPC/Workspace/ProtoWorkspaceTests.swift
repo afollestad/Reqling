@@ -89,7 +89,7 @@ final class ProtoWorkspaceTests: XCTestCase {
     func testARelativePathOutsideTheProjectIsMissingButAThisMacPathIsNot() async throws {
         let outside = try ProtocFixtures.copyRoots(["common"], into: directory.file("elsewhere"))[0]
         let localID = LocalPathID()
-        let resolver = ProjectPathResolver(projectRoot: project, localPaths: [localID: outside.path])
+        let resolver = ProjectPathResolver(projectRoot: project, localPaths: [localID: outside.path], choices: [.local(localID): [.protoRoots]])
         let shared = ProtoWorkspace(
             projectID: ProjectID(),
             configuration: ProjectGRPCConfiguration(

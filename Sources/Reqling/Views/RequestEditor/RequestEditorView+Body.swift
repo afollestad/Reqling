@@ -178,8 +178,8 @@ private struct FormDataRow: View {
             case .text:
                 TemplateField(text: writer.binding(\.value), placeholder: "Value", tokenContext: tokenContext, accessibilityLabel: "Field value")
             case .file:
-                Button(editor.describe(field.file)) {
-                    if let reference = editor.chooseFile(replacing: field.file) {
+                Button(editor.describe(field.file, forField: field.id)) {
+                    if let reference = editor.chooseFile(forField: field.id, replacing: field.file) {
                         writer.edit { $0.file = reference }
                     }
                 }

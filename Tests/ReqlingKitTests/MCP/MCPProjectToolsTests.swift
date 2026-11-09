@@ -82,7 +82,7 @@ final class MCPProjectToolsTests: XCTestCase {
 
     func testDeletingMovesTheFolderToTheTrashAndForgetsItsState() async throws {
         let project = try await fixture.makeProject("Doomed")
-        _ = fixture.workspace.addLocalPath("/protos", in: project)
+        _ = fixture.workspace.addLocalPath("/protos", for: .protoRoots, in: project)
 
         let deleted = try await fixture.success("delete_project", ["project": .string(project.description)])
 

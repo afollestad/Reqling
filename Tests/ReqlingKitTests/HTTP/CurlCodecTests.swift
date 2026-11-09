@@ -82,6 +82,7 @@ final class CurlCodecTests: XCTestCase {
             resolver: TemplateResolver(scope: VariableScope()),
             authChain: [.none],
             paths: ProjectPathResolver(projectRoot: FileManager.default.temporaryDirectory),
+            request: RequestNodeID(),
             defaults: HTTPRequestDefaults(),
             userAgent: "Reqling/1.0"
         ))
@@ -103,6 +104,7 @@ final class CurlCodecTests: XCTestCase {
                 resolver: TemplateResolver(scope: VariableScope(entries: ["token": .init(value: "s3cr3t", source: .override, isSecret: true)])),
                 authChain: [.none],
                 paths: ProjectPathResolver(projectRoot: FileManager.default.temporaryDirectory),
+                request: RequestNodeID(),
                 defaults: HTTPRequestDefaults(),
                 userAgent: "Reqling/1.0"
             )
@@ -139,6 +141,7 @@ final class CurlCodecTests: XCTestCase {
             resolver: TemplateResolver(scope: VariableScope()),
             authChain: [.none],
             paths: ProjectPathResolver(projectRoot: FileManager.default.temporaryDirectory),
+            request: RequestNodeID(),
             defaults: HTTPRequestDefaults(),
             userAgent: "Reqling/1.0"
         )).urlRequest.url
@@ -200,6 +203,7 @@ final class CurlCodecTests: XCTestCase {
             resolver: TemplateResolver(scope: VariableScope()),
             authChain: [.none],
             paths: ProjectPathResolver(projectRoot: directory.url),
+            request: RequestNodeID(),
             defaults: HTTPRequestDefaults(verifyTLS: false),
             userAgent: "Reqling/1.0"
         ))

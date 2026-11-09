@@ -26,27 +26,28 @@ public final class GRPCSchemaService {
         self.reflection = reflection
     }
 
-    /// The schema `spec.schema` names. `.automatic` uses the project's protos when its gRPC configuration has any,
-    /// otherwise reflection. `reflection` is where reflection connects, resolved from the request; it is only read when
-    /// reflection is used, and `nil` there means the request has no usable target.
+    /// The schema `spec.schema` names, for `request` in `document`, which holds the spec. `.automatic` uses the
+    /// project's protos when its gRPC configuration has any, otherwise reflection. `reflection` is where reflection
+    /// connects, resolved from the request; it is only read when reflection is used, and `nil` there means the request
+    /// has no usable target.
     public func schema(
         for spec: GRPCRequestSpec,
-        in project: ProjectID,
-        configuration: ProjectGRPCConfiguration,
+        of request: RequestNodeID,
+        in document: ProjectDocument,
         paths: ProjectPathResolver,
         reflection target: GRPCReflectionTarget?
     ) async throws(GRPCSchemaLookupError) -> GRPCSchema {
         switch spec.schema {
-        case .automatic where !configuration.isEmpty, .projectProtos:
-            return try await projectProtos(in: project, configuration: configuration, paths: paths)
+        case .automatic where !document.grpc.isEmpty, .projectProtos:
+            return try await projectProtos(in: document.id, configuration: document.grpc, paths: paths)
         case .automatic, .reflection:
             guard let target else {
                 throw .schema(GRPCSchemaError("Enter a target to read the schema through server reflection."))
             }
-            return GRPCSchema(registry: try await reflected(target, in: project), source: .reflection)
+            return GRPCSchema(registry: try await reflected(target, in: document.id), source: .reflection)
         case .descriptorSet(let reference):
             do {
-                return GRPCSchema(registry: try descriptorSet(reference, paths: paths), source: .descriptorSet)
+                return GRPCSchema(registry: try descriptorSet(reference, in: .descriptorSet(request), paths: paths), source: .descriptorSet)
             } catch {
                 throw .schema(error)
             }
@@ -143,10 +144,14 @@ public final class GRPCSchemaService {
         }
     }
 
-    private func descriptorSet(_ reference: ProjectPathReference, paths: ProjectPathResolver) throws(GRPCSchemaError) -> DescriptorRegistry {
-        guard let url = paths.url(for: reference),
+    private func descriptorSet(
+        _ reference: ProjectPathReference,
+        in slot: ProjectPathSlot,
+        paths: ProjectPathResolver
+    ) throws(GRPCSchemaError) -> DescriptorRegistry {
+        guard let url = paths.url(for: reference, in: slot),
               let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
-            throw GRPCSchemaError("The descriptor set \(paths.describe(reference)) could not be found on this Mac.")
+            throw GRPCSchemaError("The descriptor set \(paths.describe(reference, in: slot)) could not be found on this Mac.")
         }
         let stamp = FileStamp(
             size: (attributes[.size] as? NSNumber)?.intValue ?? -1,
@@ -157,7 +162,7 @@ public final class GRPCSchemaService {
         }
         let data: Data
         do {
-            data = try paths.data(for: reference)
+            data = try paths.data(for: reference, in: slot)
         } catch {
             throw GRPCSchemaError(error.localizedDescription)
         }

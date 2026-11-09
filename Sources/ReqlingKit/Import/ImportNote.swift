@@ -73,4 +73,12 @@ struct ImportFileSlot: Hashable, Sendable {
     let request: RequestNodeID
     let target: Target
     let url: URL
+
+    /// Where the project holds the file, which a this-Mac-only one is chosen for.
+    var pathSlot: ProjectPathSlot {
+        switch target {
+        case .binary: .binaryBody(request)
+        case .formField(let field): .formField(request, field)
+        }
+    }
 }

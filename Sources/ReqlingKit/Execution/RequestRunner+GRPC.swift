@@ -40,14 +40,14 @@ extension RequestRunner {
             throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
         }
         guard spec.schema == .reflection || (spec.schema == .automatic && context.document.grpc.isEmpty) else {
-            return try await schema(for: spec, context: context, project: project, endpoint: nil)
+            return try await schema(for: spec, context: context, endpoint: nil)
         }
         // Only for the cache key, so a name only the scripts define doesn't fail before they run.
         var probeOptions = options
         probeOptions.allowUnresolved = true
         let probe = try connection(for: spec, context: context, project: project, options: probeOptions)
         if grpcSchemas?.hasReflection(Self.reflectionTarget(probe), in: project) != false {
-            return try await schema(for: spec, context: context, project: project, endpoint: probe)
+            return try await schema(for: spec, context: context, endpoint: probe)
         }
         let session = try await previewScripts(request, in: project, options: options)
         do throws(RunFailure) {
@@ -57,7 +57,7 @@ extension RequestRunner {
                 throw RunFailure(kind: .invalidRequest, message: "“\(context.item.name)” is not a gRPC request.")
             }
             let endpoint = try connection(for: scriptedSpec, context: scripted, project: project, options: options, reusing: probe)
-            return try await schema(for: scriptedSpec, context: scripted, project: project, endpoint: endpoint)
+            return try await schema(for: scriptedSpec, context: scripted, endpoint: endpoint)
         } catch {
             throw error.noting(session)
         }
@@ -168,7 +168,7 @@ extension RequestRunner {
             if let session {
                 endpoint.resolved.markScriptChanges(session.changes, redaction: context.redaction)
             }
-            let schema = try await schema(for: spec, context: context, project: project, endpoint: endpoint)
+            let schema = try await schema(for: spec, context: context, endpoint: endpoint)
             if Task.isCancelled {
                 throw RunFailure(GRPCCallError.cancelled)
             }
@@ -286,7 +286,6 @@ extension RequestRunner {
     private func schema(
         for spec: GRPCRequestSpec,
         context: RunContext,
-        project: ProjectID,
         endpoint: Connection?
     ) async throws(RunFailure) -> GRPCSchema {
         guard let grpcSchemas else {
@@ -296,8 +295,8 @@ extension RequestRunner {
         do {
             return try await grpcSchemas.schema(
                 for: spec,
-                in: project,
-                configuration: context.document.grpc,
+                of: context.item.id,
+                in: context.document,
                 paths: context.paths,
                 reflection: reflection
             )

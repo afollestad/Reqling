@@ -25,6 +25,7 @@ final class HTTPRequestBuilderTests: XCTestCase {
             resolver: TemplateResolver(scope: VariableScope(entries: entries), dynamic: dynamic),
             authChain: authChain,
             paths: ProjectPathResolver(projectRoot: directory.url),
+            request: RequestNodeID(),
             defaults: HTTPRequestDefaults(timeoutSeconds: 12, followRedirects: true, verifyTLS: true),
             userAgent: "Reqling/1.0",
             makeBoundary: { "BOUNDARY" }

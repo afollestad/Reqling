@@ -162,7 +162,7 @@ final class AppModel {
         self.sleep = sleep
         lifecycle = ProjectLifecycle(library: library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
         for project in library.projects {
-            lifecycle.reconcileLocalPaths(in: project.id)
+            lifecycle.reconcileFileChoices(in: project.id)
         }
         syncProtoWorkspaces()
         mcpServer.host = self

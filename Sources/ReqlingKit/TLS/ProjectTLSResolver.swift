@@ -53,11 +53,12 @@ public struct ProjectTLSResolver: Sendable {
     public func loadIdentity(_ entry: ClientCertificateEntry) throws(TLSError) -> TLSClientIdentity {
         switch entry.source {
         case .pkcs12(let file):
-            return try PKCS12Importer.importIdentity(try paths.identityData(for: file), passphrase: passphrase(entry.id) ?? "", probe: pkcs12Probe)
+            let data = try paths.identityData(for: file, in: .clientCertificate(entry.id))
+            return try PKCS12Importer.importIdentity(data, passphrase: passphrase(entry.id) ?? "", probe: pkcs12Probe)
         case .pem(let certificate, let key):
             return try PEMIdentityImporter.importIdentity(
-                certificate: try paths.identityData(for: certificate),
-                key: try paths.identityData(for: key),
+                certificate: try paths.identityData(for: certificate, in: .clientCertificate(entry.id)),
+                key: try paths.identityData(for: key, in: .clientCertificate(entry.id)),
                 passphrase: passphrase(entry.id) ?? ""
             )
         case .keychainIdentity:
@@ -82,12 +83,12 @@ public struct ProjectTLSResolver: Sendable {
             switch entry.source {
             case .pkcs12(let file):
                 add(Data("pkcs12".utf8))
-                add((try? paths.identityData(for: file)) ?? Data())
+                add((try? paths.identityData(for: file, in: .clientCertificate(entry.id))) ?? Data())
                 add(Data((passphrase(entry.id) ?? "").utf8))
             case .pem(let certificate, let key):
                 add(Data("pem".utf8))
-                add((try? paths.identityData(for: certificate)) ?? Data())
-                add((try? paths.identityData(for: key)) ?? Data())
+                add((try? paths.identityData(for: certificate, in: .clientCertificate(entry.id))) ?? Data())
+                add((try? paths.identityData(for: key, in: .clientCertificate(entry.id))) ?? Data())
                 add(Data((passphrase(entry.id) ?? "").utf8))
             case .keychainIdentity:
                 add(Data("keychain".utf8))
@@ -100,7 +101,7 @@ public struct ProjectTLSResolver: Sendable {
     public func loadAnchors() throws(TLSError) -> [SecCertificate] {
         var anchors: [SecCertificate] = []
         for reference in configuration.caCertificates {
-            anchors += try CertificateLoader.certificates(from: try paths.data(for: reference))
+            anchors += try CertificateLoader.certificates(from: try paths.data(for: reference, in: .caCertificates))
         }
         return anchors
     }

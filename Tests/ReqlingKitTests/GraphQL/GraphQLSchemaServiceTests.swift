@@ -254,6 +254,25 @@ final class GraphQLSchemaServiceTests: XCTestCase {
         await XCTAssertThrowsRunFailure(try await runner.graphQLSchema(for: setup.request, in: setup.project), containing: "could not be found")
     }
 
+    /// A schema file kept on this Mac loads for the request it was chosen for, and is missing for another request that
+    /// names it, as one another Mac or a repository moved there.
+    func testAThisMacSchemaFileLoadsOnlyForTheRequestItWasChosenFor() async throws {
+        let file = fixture.directory.file("api.graphql")
+        try GraphQLOracle.fixtureSDL.write(to: file, atomically: true, encoding: .utf8)
+        let pathID = LocalPathID()
+        let setup = try makeProject(base: "http://127.0.0.1:1/graphql", schema: .file(.local(pathID)))
+        workspace.setLocalPath(file.path, for: pathID, at: .graphQLSchema(setup.request), in: setup.project)
+        let spec = HTTPRequestSpec(method: .post, url: "{{base}}", body: Self.graphQLBody(schema: .file(.local(pathID))))
+        let other = RequestItem(name: "Other", kind: .http(spec))
+        try fixture.library.mutate(setup.project) { try $0.insert(.request(other), into: nil) }
+        let runner = makeRunner()
+
+        let schema = try await runner.graphQLSchema(for: setup.request, in: setup.project)
+
+        XCTAssertEqual(schema.source, .file(name: "api.graphql"))
+        await XCTAssertThrowsRunFailure(try await runner.graphQLSchema(for: other.id, in: setup.project), containing: "chosen for another field")
+    }
+
     // MARK: - Support
 
     struct ProjectSetup {

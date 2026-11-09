@@ -302,6 +302,33 @@ final class SheetModelTests: XCTestCase {
         ], "a file holding its key asks for no other")
     }
 
+    /// A certificate and key kept on this Mac are chosen for the entry the sheet makes for them, so TLS reads them once
+    /// Done saves it, and they're marked so nothing else can.
+    func testACertificateKeptOnThisMacIsReadForItsEntry() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("certs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let certificate = folder.appendingPathComponent("client.crt")
+        let key = folder.appendingPathComponent("client.key")
+        try Data("-----BEGIN CERTIFICATE-----\nMII=\n-----END CERTIFICATE-----\n".utf8).write(to: certificate)
+        try Data("key".utf8).write(to: key)
+        let settings = ProjectSettingsModel(projectID: project, app: fixture.model)
+        fixture.system.pathSharing = .thisMacOnly
+        fixture.system.filesToChoose = [certificate, key]
+
+        settings.addCertificateFile()
+        settings.clientCertificates[0].hostPattern = "api.test"
+        XCTAssertTrue(settings.save())
+
+        let entry = try XCTUnwrap(fixture.library.document(project)?.tls.clientCertificates.first)
+        guard case .pem(_, let savedKey) = entry.source else {
+            return XCTFail("Expected a PEM certificate, got \(entry.source)")
+        }
+        let paths = try XCTUnwrap(fixture.model.pathResolver(for: project))
+        XCTAssertEqual(try paths.identityData(for: savedKey, in: .clientCertificate(entry.id)), Data("key".utf8))
+        XCTAssertNil(paths.url(for: savedKey, in: .clientCertificate(entry.id)), "Marked, so only TLS reads it")
+    }
+
     func testAnUnreadablePEMKeyPassphraseIsFlaggedLikeAPKCS12One() async throws {
         let entry = ClientCertificateEntry(hostPattern: "a.test", source: .pem(certificate: .relative("a.crt"), key: .relative("a.key")))
         try fixture.library.mutate(project) { $0.tls.clientCertificates = [entry] }
@@ -380,7 +407,7 @@ final class SheetModelTests: XCTestCase {
             protoFiles: ["acme/v1/users.proto"],
             descriptorSets: [.relative("schema/api.protoset")]
         ))
-        XCTAssertEqual(fixture.model.pathResolver(for: project)?.url(for: saved.protoRoots[1])?.path, external.path)
+        XCTAssertEqual(fixture.model.pathResolver(for: project)?.url(for: saved.protoRoots[1], in: .protoRoots)?.path, external.path)
 
         let reopened = ProjectSettingsModel(projectID: project, app: fixture.model)
         XCTAssertEqual(reopened.protoRoots, saved.protoRoots)

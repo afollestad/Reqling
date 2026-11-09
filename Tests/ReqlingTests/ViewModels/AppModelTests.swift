@@ -55,11 +55,12 @@ final class AppModelTests: XCTestCase {
     func testALaunchDropsOnlyTheLocalPathsAProjectNoLongerUses() throws {
         let project = try makeProject()
         let workspace = fixture.component.workspaceState
-        let root = workspace.addLocalPath("/protos/root", in: project)
-        let removed = workspace.addLocalPath("/protos/removed", in: project)
+        let root = workspace.addLocalPath("/protos/root", for: .protoRoots, in: project)
+        let removed = workspace.addLocalPath("/protos/removed", for: .protoRoots, in: project)
         var spec = HTTPRequestSpec()
-        spec.body.binary.file = workspace.addLocalPath("/files/body.bin", in: project)
-        let request = RequestItem(name: "Upload", kind: .http(spec))
+        let requestID = RequestNodeID()
+        spec.body.binary.file = workspace.addLocalPath("/files/body.bin", for: .binaryBody(requestID), in: project)
+        let request = RequestItem(id: requestID, name: "Upload", kind: .http(spec))
         try fixture.library.mutate(project) { document in
             document.grpc.protoRoots = [root, removed]
             try document.insert(.request(request), into: nil)
@@ -78,14 +79,14 @@ final class AppModelTests: XCTestCase {
     func testDeletingAProjectForgetsItsLocalPathsButRemovingKeepsThem() throws {
         let project = try makeProject()
         let workspace = fixture.component.workspaceState
-        _ = workspace.addLocalPath("/protos", in: project)
+        _ = workspace.addLocalPath("/protos", for: .protoRoots, in: project)
 
         model.removeProject(project)
 
         XCTAssertEqual(workspace.localPaths(in: project).count, 1)
 
         let other = try makeProject()
-        _ = workspace.addLocalPath("/protos", in: other)
+        _ = workspace.addLocalPath("/protos", for: .protoRoots, in: other)
         model.deleteProject(other)
 
         XCTAssertTrue(workspace.localPaths(in: other).isEmpty)
@@ -188,25 +189,27 @@ final class AppModelTests: XCTestCase {
         let root = try XCTUnwrap(fixture.library.project(project)?.url)
         let inside = root.appendingPathComponent("fixtures/body.bin")
         let outside = FileManager.default.temporaryDirectory.appendingPathComponent("outside-\(UUID().uuidString).bin")
+        let body = ProjectPathSlot.binaryBody(RequestNodeID())
 
-        XCTAssertEqual(model.reference(for: inside, in: project), .relative("fixtures/body.bin"))
+        XCTAssertEqual(model.reference(for: inside, in: project, at: body), .relative("fixtures/body.bin"))
 
         fixture.system.pathSharing = .thisMacOnly
-        guard case .local(let id) = model.reference(for: outside, in: project) else {
+        guard case .local(let id) = model.reference(for: outside, in: project, at: body) else {
             return XCTFail("Expected a this-Mac-only reference")
         }
         XCTAssertEqual(fixture.component.workspaceState.localPath(id, in: project), outside.path)
 
         fixture.system.pathSharing = nil
-        XCTAssertNil(model.reference(for: outside, in: project))
+        XCTAssertNil(model.reference(for: outside, in: project, at: body))
 
         fixture.system.pathSharing = .shared
-        let shared = try XCTUnwrap(model.reference(for: outside, in: project))
+        let shared = try XCTUnwrap(model.reference(for: outside, in: project, at: body))
         guard case .relative(let path) = shared else {
             return XCTFail("Expected a shared reference")
         }
-        XCTAssertEqual(model.pathResolver(for: project)?.url(for: shared)?.lastPathComponent, outside.lastPathComponent)
-        XCTAssertEqual(fixture.component.workspaceState.chosenOutsidePaths(in: project), [path])
+        XCTAssertEqual(model.pathResolver(for: project)?.url(for: shared, in: body)?.lastPathComponent, outside.lastPathComponent)
+        XCTAssertEqual(fixture.component.workspaceState.choices(in: project)[shared], [body])
+        XCTAssertEqual(fixture.component.workspaceState.projectState(project).chosenOutsidePaths, [path])
     }
 
     func testAFolderCannotMoveIntoItselfOrItsDescendants() throws {

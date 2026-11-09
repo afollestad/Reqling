@@ -53,7 +53,7 @@ extension RequestRunner {
             throw RunFailure(kind: .invalidRequest, message: "The request has no schema file.")
         }
         do throws(GraphQLSchemaLookupError) {
-            return try await found.service.file(reference, paths: found.context.paths)
+            return try await found.service.file(reference, in: .graphQLSchema(found.context.item.id), paths: found.context.paths)
         } catch {
             throw Self.lookupFailure(error).redacting(found.context.redaction)
         }
@@ -71,7 +71,7 @@ extension RequestRunner {
         }
         switch found.spec.body.graphQL.schema {
         case .file(let reference):
-            return try? await found.service.file(reference, paths: found.context.paths)
+            return try? await found.service.file(reference, in: .graphQLSchema(found.context.item.id), paths: found.context.paths)
         case .introspection:
             guard let endpoint = try? graphQLEndpoint(found, project: project, options: Self.probeOptions(options)).endpoint else {
                 return nil

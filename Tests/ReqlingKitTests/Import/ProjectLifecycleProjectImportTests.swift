@@ -76,7 +76,8 @@ final class ProjectLifecycleProjectImportTests: XCTestCase {
         XCTAssertEqual(workspace.projectState(id).scriptTrust, .trusted)
     }
 
-    /// A file in the project's repository is shared by a relative path; one elsewhere is kept on this Mac only.
+    /// A file in the project's repository is shared by a relative path; one elsewhere is kept on this Mac only, chosen
+    /// for the request's body.
     func testBodyFilesArePointedAtAsTheyWouldBeIfChosen() throws {
         let repository = fixture.directory.file("Repo")
         try FileManager.default.createDirectory(at: repository.appendingPathComponent(".git"), withIntermediateDirectories: true)
@@ -95,17 +96,19 @@ final class ProjectLifecycleProjectImportTests: XCTestCase {
 
         let id = try lifecycle.importProject(plan, named: "Files", in: repository).project
 
-        let files = try XCTUnwrap(fixture.library.document(id)).items.compactMap { node -> ProjectPathReference? in
+        let requests = try XCTUnwrap(fixture.library.document(id)).items.compactMap { node -> RequestItem? in
             guard case .request(let request) = node else {
                 return nil
             }
-            return request.kind.httpSpec?.body.binary.file
+            return request
         }
+        let files = requests.map { $0.kind.httpSpec?.body.binary.file }
         XCTAssertEqual(files.first, .relative("../files/inside.png"))
-        guard case .local(let local)? = files.last else {
+        guard case .local? = files.last, let local = files.last ?? nil, let last = requests.last else {
             return XCTFail("a file outside the repository is this Mac's alone")
         }
-        XCTAssertEqual(workspace.projectState(id).localPaths[local.description], outside.path)
+        let paths = try XCTUnwrap(lifecycle.pathResolver(for: id))
+        XCTAssertEqual(paths.url(for: local, in: .binaryBody(last.id))?.path, outside.path)
     }
 
     func testAnOpenAPIImportIsTrustedWithItsCredentialsEmptySecretsAndAnEnvironmentPerServer() async throws {

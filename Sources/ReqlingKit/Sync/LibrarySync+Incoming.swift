@@ -217,11 +217,9 @@ extension LibrarySync {
         }
         do {
             let decoded = try ProjectRecordCoder.document(id, from: working.values.filter { $0.type != .currentValues }, local: previous)
-            // Before another Mac's change lands, every file this Mac reads a client identity from is marked, so one that
-            // change moves into a request can't be read there (`ProjectWorkspaceState.identityFiles`).
-            if let previous {
-                lifecycle.markIdentityFiles(of: previous)
-            }
+            // Before another Mac's change lands, every file chosen here is settled where it was chosen, and every file
+            // this Mac reads a client identity from is marked, so one the change moves elsewhere can't be read there.
+            lifecycle.prepareForOutsideChange(to: id, from: previous)
             if previous == nil {
                 try library.adoptSyncedProject(decoded.document, storingSecrets: decoded.secrets)
             } else {

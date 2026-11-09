@@ -187,7 +187,8 @@ final class MCPRequestToolsTests: XCTestCase {
     }
 
     /// A shared path stays shared while its file is inside the destination's folder or repository, and otherwise
-    /// becomes a this-Mac-only path the result warns about. A this-Mac-only path stays one, recorded for the destination.
+    /// becomes a this-Mac-only path the result warns about. A this-Mac-only path stays one, recorded for the destination
+    /// and chosen there for the same field.
     func testMovingIntoAnotherProjectRepointsFileReferences() async throws {
         try FileManager.default.createDirectory(at: fixture.storage.directory.file("Projects/.git"), withIntermediateDirectories: true)
         let web = try await fixture.makeProject("Web")
@@ -197,9 +198,11 @@ final class MCPRequestToolsTests: XCTestCase {
         let outside = try XCTUnwrap(created["project"]?["id"]?.stringValue.flatMap(ProjectID.init(string:)))
         var spec = HTTPRequestSpec(url: "https://api/upload")
         spec.body.binary.file = .relative("data/body.bin")
-        let certificate = fixture.workspace.addLocalPath("/Users/me/client.p12", in: project)
-        spec.body.formData = [MultipartField(key: "cert", kind: .file, file: certificate)]
-        let request = RequestItem(name: "Upload", kind: .http(spec))
+        let requestID = RequestNodeID()
+        let field = MultipartFieldID()
+        let certificate = fixture.workspace.addLocalPath("/Users/me/client.p12", for: .formField(requestID, field), in: project)
+        spec.body.formData = [MultipartField(id: field, key: "cert", kind: .file, file: certificate)]
+        let request = RequestItem(id: requestID, name: "Upload", kind: .http(spec))
         try fixture.library.mutate(project) { try $0.insert(.request(request), into: nil) }
 
         func move(from source: ProjectID, to destination: ProjectID) async throws -> (Value?, HTTPRequestSpec) {
@@ -227,6 +230,9 @@ final class MCPRequestToolsTests: XCTestCase {
         XCTAssertTrue(outsideWarnings?.arrayValue?.first?.stringValue?.contains(bodyPath) == true, "\(String(describing: outsideWarnings))")
         XCTAssertTrue(localPath(inOutside.body.binary.file, in: outside)?.hasSuffix(bodyPath) == true)
         XCTAssertEqual(localPath(inOutside.body.formData.first?.file, in: outside), "/Users/me/client.p12")
+        let choices = fixture.workspace.choices(in: outside)
+        XCTAssertEqual(choices[try XCTUnwrap(inOutside.body.binary.file)], [.binaryBody(requestID)])
+        XCTAssertEqual(choices[try XCTUnwrap(inOutside.body.formData.first?.file)], [.formField(requestID, field)])
     }
 
     /// A folder carries its whole tree, taking fresh IDs throughout when the destination already uses one of them, as a

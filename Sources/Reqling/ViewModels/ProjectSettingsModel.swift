@@ -78,8 +78,8 @@ final class ProjectSettingsModel {
         app.keychain.availableIdentities()
     }
 
-    func describe(_ reference: ProjectPathReference) -> String {
-        app.pathResolver(for: projectID)?.describe(reference) ?? ""
+    func describe(_ reference: ProjectPathReference, in slot: ProjectPathSlot) -> String {
+        app.pathResolver(for: projectID)?.describe(reference, in: slot) ?? ""
     }
 
     // MARK: - Certificates
@@ -91,9 +91,11 @@ final class ProjectSettingsModel {
         guard let url = app.system.chooseFile(prompt: "Add Certificate", allowedTypes: types) else {
             return
         }
+        // The entry's ID comes first: its files are chosen for it.
+        let id = CertificateEntryID()
         guard !["p12", "pfx"].contains(url.pathExtension.lowercased()) else {
-            if let reference = app.reference(for: url, in: projectID) {
-                clientCertificates.append(ClientCertificateEntry(hostPattern: "", source: .pkcs12(reference)))
+            if let reference = app.reference(for: url, in: projectID, at: .clientCertificate(id)) {
+                clientCertificates.append(ClientCertificateEntry(id: id, hostPattern: "", source: .pkcs12(reference)))
             }
             return
         }
@@ -108,11 +110,11 @@ final class ProjectSettingsModel {
             }
             keyURL = chosen
         }
-        guard let certificate = app.reference(for: url, in: projectID),
-              let key = keyURL == url ? certificate : app.reference(for: keyURL, in: projectID) else {
+        guard let certificate = app.reference(for: url, in: projectID, at: .clientCertificate(id)),
+              let key = keyURL == url ? certificate : app.reference(for: keyURL, in: projectID, at: .clientCertificate(id)) else {
             return
         }
-        clientCertificates.append(ClientCertificateEntry(hostPattern: "", source: .pem(certificate: certificate, key: key)))
+        clientCertificates.append(ClientCertificateEntry(id: id, hostPattern: "", source: .pem(certificate: certificate, key: key)))
     }
 
     func addKeychainCertificate() {
@@ -132,7 +134,7 @@ final class ProjectSettingsModel {
     func addCACertificate() {
         let types = ["pem", "crt", "cer", "der"].compactMap { UTType(filenameExtension: $0) }
         guard let url = app.system.chooseFile(prompt: "Add CA Certificate", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID) else {
+              let reference = app.reference(for: url, in: projectID, at: .caCertificates) else {
             return
         }
         caCertificates.append(reference)
@@ -200,7 +202,7 @@ final class ProjectSettingsModel {
             return .problem("The project is not available.")
         }
         do {
-            let certificates = try CertificateLoader.certificates(from: try paths.data(for: reference))
+            let certificates = try CertificateLoader.certificates(from: try paths.data(for: reference, in: .caCertificates))
             guard let first = certificates.first else {
                 return .problem("The file contains no certificates.")
             }

@@ -4,10 +4,10 @@ import Foundation
 public struct ProjectPathResolver: Sendable {
     public let projectRoot: URL
     public let localPaths: [LocalPathID: String]
-    /// Shared paths outside the project's folder and repository that the person chose on this Mac
-    /// (`WorkspaceStateStore.chosenOutsidePaths(in:)`), which resolve even though they lead out.
-    public let chosenOutsidePaths: Set<String>
-    /// Resolved paths of files used for a client certificate or key, which only `identityData(for:)` reads
+    /// The slots each file the person chose on this Mac was chosen for: a this-Mac-only reference, or a shared path
+    /// outside the project's folder and repository (`WorkspaceStateStore.choices(in:)`). Each resolves only there.
+    public let choices: [ProjectPathReference: Set<ProjectPathSlot>]
+    /// Resolved paths of files used for a client certificate or key, which only `identityData(for:in:)` reads
     /// (`ProjectWorkspaceState.identityFiles`).
     public let identityFiles: Set<String>
     /// The folder no repository at or above may widen a project's shared location to; see `sharesLocation`.
@@ -16,13 +16,13 @@ public struct ProjectPathResolver: Sendable {
     public init(
         projectRoot: URL,
         localPaths: [LocalPathID: String] = [:],
-        chosenOutsidePaths: Set<String> = [],
+        choices: [ProjectPathReference: Set<ProjectPathSlot>] = [:],
         identityFiles: Set<String> = []
     ) {
         self.init(
             projectRoot: projectRoot,
             localPaths: localPaths,
-            chosenOutsidePaths: chosenOutsidePaths,
+            choices: choices,
             identityFiles: identityFiles,
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         )
@@ -31,90 +31,104 @@ public struct ProjectPathResolver: Sendable {
     init(
         projectRoot: URL,
         localPaths: [LocalPathID: String],
-        chosenOutsidePaths: Set<String> = [],
+        choices: [ProjectPathReference: Set<ProjectPathSlot>] = [:],
         identityFiles: Set<String> = [],
         homeDirectory: URL
     ) {
         self.projectRoot = projectRoot
         self.localPaths = localPaths
-        self.chosenOutsidePaths = chosenOutsidePaths
+        self.choices = choices
         self.identityFiles = identityFiles
         self.homeDirectory = homeDirectory
     }
 
-    /// `project`'s resolver, with this Mac's local paths and chosen outside paths from `workspace`.
+    /// `project`'s resolver, with this Mac's local paths and choices from `workspace`.
     @MainActor
     public init(projectRoot: URL, workspace: WorkspaceStateStore, project: ProjectID) {
         self.init(
             projectRoot: projectRoot,
             localPaths: workspace.localPaths(in: project),
-            chosenOutsidePaths: workspace.chosenOutsidePaths(in: project),
+            choices: workspace.choices(in: project),
             identityFiles: workspace.identityFiles(in: project)
         )
     }
 
-    /// The file's URL, or `nil` for a this-Mac-only reference recorded on another Mac, or a shared one that leads
-    /// outside the project's folder and repository.
+    /// The file `slot` reads, or `nil` when it reads none here: a this-Mac-only reference recorded on another Mac, a
+    /// shared one that leads outside the project's folder and repository, or either kind chosen here for another slot.
     ///
-    /// Whoever shares the project wrote its relative paths, so a `../../.ssh/id_rsa` body, or a symlink in the folder
-    /// that leads out, would have a request read and send a file the person never chose. One that leaves is treated as
-    /// missing, unless the person chose it on this Mac (`chosenOutsidePaths`). A this-Mac-only path is the person's own
-    /// choice, so it may point anywhere, except that one chosen for a client certificate or key is read only as one
-    /// (`identityData(for:)`).
-    public func url(for reference: ProjectPathReference) -> URL? {
-        guard let url = identityFileURL(for: reference), !identityFiles.contains(Self.canonicalPath(of: url)) else {
+    /// Whoever shares the project wrote its references, so a `../../.ssh/id_rsa` body, a symlink in the folder that
+    /// leads out, or the reference to a file the person chose for another request, would have a request read and send
+    /// a file the person never chose for it. A shared path that leaves counts as missing unless the person chose it on
+    /// this Mac, and any choice made here counts only in the slot it was made for (`choices`). A file chosen for a
+    /// client certificate or key is read only as one (`identityData(for:in:)`), even in a slot it was also chosen for.
+    public func url(for reference: ProjectPathReference, in slot: ProjectPathSlot) -> URL? {
+        guard let url = identityFileURL(for: reference, in: slot), !identityFiles.contains(Self.canonicalPath(of: url)) else {
             return nil
         }
         return url
     }
 
     /// The resolved paths of the files `references` reach, as `ProjectWorkspaceState.identityFiles` records them.
-    public func resolvedPaths(of references: [ProjectPathReference]) -> Set<String> {
-        Set(references.compactMap { identityFileURL(for: $0).map(Self.canonicalPath) })
+    public func resolvedPaths(of references: [PlacedPathReference]) -> Set<String> {
+        Set(references.compactMap { identityFileURL(for: $0.reference, in: $0.slot).map(Self.canonicalPath) })
     }
 
-    /// `url(for:)`, but reaching client certificate and key files too: for TLS identities, and for describing them.
-    public func identityFileURL(for reference: ProjectPathReference) -> URL? {
+    /// `url(for:in:)`, but reaching client certificate and key files too: for TLS identities, and for describing them.
+    public func identityFileURL(for reference: ProjectPathReference, in slot: ProjectPathSlot) -> URL? {
         switch reference {
         case .relative(let path):
             let url = projectRoot.appendingPathComponent(path).standardizedFileURL
-            return isAllowed(path, at: url) ? url : nil
+            return isAllowed(reference, at: url, in: slot) ? url : nil
         case .local(let id):
+            guard isChosen(reference, for: slot) else {
+                return nil
+            }
             return localPaths[id].map { URL(fileURLWithPath: $0) }
         }
     }
 
-    /// A short description for errors and the UI.
-    public func describe(_ reference: ProjectPathReference) -> String {
+    /// Whether the person chose `reference` on this Mac for `slot`.
+    public func isChosen(_ reference: ProjectPathReference, for slot: ProjectPathSlot) -> Bool {
+        choices[reference]?.contains(slot) == true
+    }
+
+    /// A short description of what `slot` reads, for errors and the UI.
+    public func describe(_ reference: ProjectPathReference, in slot: ProjectPathSlot) -> String {
         switch reference {
         case .relative(let path):
-            guard isAllowed(path, at: projectRoot.appendingPathComponent(path).standardizedFileURL) else {
-                return "“\(path)” (outside the project’s folder and repository)"
+            if isAllowed(reference, at: projectRoot.appendingPathComponent(path).standardizedFileURL, in: slot) {
+                return "“\(path)”"
             }
-            return "“\(path)”"
+            return choices[reference] == nil
+                ? "“\(path)” (outside the project’s folder and repository)"
+                : "“\(path)” (chosen on this Mac for another field)"
         case .local(let id):
-            return localPaths[id].map { "“\(($0 as NSString).lastPathComponent)”" } ?? "A file chosen on another Mac"
+            guard let path = localPaths[id] else {
+                return "A file chosen on another Mac"
+            }
+            return isChosen(reference, for: slot) ? "“\((path as NSString).lastPathComponent)”" : "A file chosen for another field"
         }
     }
 
-    /// Reads the referenced file, failing with a description of what is missing.
-    public func data(for reference: ProjectPathReference) throws(TLSError) -> Data {
-        guard let url = url(for: reference), let data = try? Data(contentsOf: url) else {
-            throw .missingFile(describe(reference))
-        }
-        return data
-    }
-
-    /// Reads a client certificate's or key's file, which `data(for:)` refuses.
-    public func identityData(for reference: ProjectPathReference) throws(TLSError) -> Data {
-        guard let url = identityFileURL(for: reference), let data = try? Data(contentsOf: url) else {
-            throw .missingFile(describe(reference))
+    /// Reads the file `slot` refers to, failing with a description of what is missing.
+    public func data(for reference: ProjectPathReference, in slot: ProjectPathSlot) throws(TLSError) -> Data {
+        guard let url = url(for: reference, in: slot), let data = try? Data(contentsOf: url) else {
+            throw .missingFile(describe(reference, in: slot))
         }
         return data
     }
 
-    private func isAllowed(_ path: String, at url: URL) -> Bool {
-        chosenOutsidePaths.contains(path) || Self.sharesLocation(url, with: projectRoot, homeDirectory: homeDirectory)
+    /// Reads a client certificate's or key's file, which `data(for:in:)` refuses.
+    public func identityData(for reference: ProjectPathReference, in slot: ProjectPathSlot) throws(TLSError) -> Data {
+        guard let url = identityFileURL(for: reference, in: slot), let data = try? Data(contentsOf: url) else {
+            throw .missingFile(describe(reference, in: slot))
+        }
+        return data
+    }
+
+    /// A shared path resolves inside the project's folder or repository, and outside only where the person chose it.
+    private func isAllowed(_ reference: ProjectPathReference, at url: URL, in slot: ProjectPathSlot) -> Bool {
+        isChosen(reference, for: slot) || Self.sharesLocation(url, with: projectRoot, homeDirectory: homeDirectory)
     }
 
     /// `target` relative to `root`, using `..` segments where needed (`../proto/api.proto`).

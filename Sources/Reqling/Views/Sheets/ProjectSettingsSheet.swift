@@ -98,11 +98,11 @@ private struct ClientCertificateRow: View {
             }
             switch entry.source {
             case .pkcs12(let file):
-                FileRow(label: "File", description: settings.describe(file))
+                FileRow(label: "File", description: settings.describe(file, in: .clientCertificate(entry.id)))
             case .pem(let certificate, let key):
-                FileRow(label: "Certificate", description: settings.describe(certificate))
+                FileRow(label: "Certificate", description: settings.describe(certificate, in: .clientCertificate(entry.id)))
                 if key != certificate {
-                    FileRow(label: "Key", description: settings.describe(key))
+                    FileRow(label: "Key", description: settings.describe(key, in: .clientCertificate(entry.id)))
                 }
             case .keychainIdentity:
                 LabeledRow("Identity") {
@@ -180,7 +180,7 @@ private struct CACertificatesSection: View {
             ForEach(settings.caCertificates.indices, id: \.self) { index in
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(settings.describe(settings.caCertificates[index]))
+                        Text(settings.describe(settings.caCertificates[index], in: .caCertificates))
                         CertificateStatusLabel(status: settings.status(ofCA: settings.caCertificates[index]))
                     }
                     Spacer()

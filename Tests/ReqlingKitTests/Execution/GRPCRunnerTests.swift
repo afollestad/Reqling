@@ -201,6 +201,31 @@ final class GRPCRunnerTests: XCTestCase {
     }
 }
 
+extension GRPCRunnerTests {
+    /// A descriptor set kept on this Mac is read for the request it was chosen for, and is missing for another request
+    /// that names it, as one another Mac or a repository moved there.
+    func testAThisMacDescriptorSetIsReadOnlyForTheRequestItWasChosenFor() async throws {
+        let file = fixture.directory.file("codec.binpb")
+        try FileManager.default.copyItem(at: try ProtocFixtures.codecDescriptorSet, to: file)
+        let pathID = LocalPathID()
+        let spec = echoSpec("Echo", schema: .descriptorSet(.local(pathID)))
+        let project = try fixture.library.createProject(named: "gRPC files")
+        let chosen = RequestItem(name: "Chosen", kind: .grpc(spec))
+        let other = RequestItem(name: "Other", kind: .grpc(spec))
+        try fixture.library.mutate(project) { document in
+            try document.insert(.request(chosen), into: nil)
+            try document.insert(.request(other), into: nil)
+        }
+        workspace.setLocalPath(file.path, for: pathID, at: .descriptorSet(chosen.id), in: project)
+        let runner = makeRunner()
+
+        let schema = try await runner.grpcSchema(for: chosen.id, in: project)
+
+        XCTAssertEqual(schema.source, .descriptorSet)
+        await XCTAssertThrowsRunFailure(try await runner.grpcSchema(for: other.id, in: project), containing: "chosen for another field")
+    }
+}
+
 // MARK: - Helpers
 
 extension GRPCRunnerTests {

@@ -414,6 +414,7 @@ public final class RequestRunner {
             resolver: context.resolver,
             authChain: context.authChain,
             paths: context.paths,
+            request: context.item.id,
             defaults: settings.settings.requestDefaults,
             userAgent: userAgent
         )

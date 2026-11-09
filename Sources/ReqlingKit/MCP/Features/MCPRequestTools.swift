@@ -183,10 +183,8 @@ struct MCPRequestTools {
         ) { arguments in
             let (project, document) = try context.document(try arguments.string("project"))
             let original = try context.request(try arguments.string("request"), in: document)
-            let copy = RequestNode.request(original).copy(named: try arguments.optionalString("name") ?? "\(original.name) Copy")
-            let parent = document.parentID(of: original.id)
-            let index = (document.children(of: parent) ?? []).firstIndex { $0.id == original.id }.map { $0 + 1 }
-            try context.mutate(project.id) { try $0.insert(copy, into: parent, at: index) }
+            let name = try arguments.optionalString("name") ?? "\(original.name) Copy"
+            let copy = try context.describingErrors { try context.lifecycle.duplicateNode(original.id, in: project.id, named: name) }
             guard case .request(let request) = copy else {
                 throw MCPToolError("The copy isn't a request.")
             }

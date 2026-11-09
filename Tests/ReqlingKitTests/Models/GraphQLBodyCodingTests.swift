@@ -45,7 +45,7 @@ final class GraphQLBodyCodingTests: XCTestCase {
         var spec = HTTPRequestSpec()
         spec.body.graphQL.schema = .file(.local(id))
 
-        let moved = RequestKind.http(spec).mappingPathReferences { _ in .relative("api.graphql") }
+        let moved = RequestKind.http(spec).mappingPathReferences(of: RequestNodeID()) { _, _ in .relative("api.graphql") }
 
         XCTAssertEqual(moved.httpSpec?.body.graphQL.schema, .file(.relative("api.graphql")))
     }

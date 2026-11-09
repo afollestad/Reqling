@@ -149,15 +149,9 @@ extension AppModel {
 
     func duplicate(_ node: RequestNodeID, in project: ProjectID) {
         flushPendingEdits()
-        guard let document = library.document(project), let original = document.node(node) else {
-            return
-        }
-        let copy = original.copy(named: "\(original.name) Copy")
-        let parent = document.parentID(of: node)
-        let index = (document.children(of: parent) ?? []).firstIndex { $0.id == node }.map { $0 + 1 }
-        guard perform("Couldn't Duplicate the Item", {
-            try library.mutate(project) { try $0.insert(copy, into: parent, at: index) }
-        }) != nil else {
+        guard let original = library.document(project)?.node(node),
+              let copy = perform("Couldn't Duplicate the Item", { try lifecycle.duplicateNode(node, in: project, named: "\(original.name) Copy") })
+        else {
             return
         }
         selection = .node(project, copy.id)
@@ -272,11 +266,17 @@ extension AppModel {
 
     // MARK: - Files
 
-    /// Turns a chosen file into a reference: relative when it lives with the project, otherwise as the user picks.
+    /// Turns a file chosen for `slot` into a reference: relative when it lives with the project, otherwise as the user
+    /// picks, and recorded as chosen for `slot` unless it lives with the project (`ProjectPathResolver.choices`).
     /// Choosing one again for `replacing`, a this-Mac-only reference with no path here (chosen on another Mac), keeps
-    /// its ID, so the other Mac's file for it stays chosen there. A new ID instead when it has a path here, or when a
-    /// copied request shares it, which would otherwise change too.
-    func reference(for url: URL, in project: ProjectID, replacing existing: ProjectPathReference? = nil) -> ProjectPathReference? {
+    /// its ID, so the other Mac's file for it stays chosen there. A new ID instead when it has a path here, which
+    /// another slot may hold it for, or when a copied request shares it, which would otherwise change too.
+    func reference(
+        for url: URL,
+        in project: ProjectID,
+        at slot: ProjectPathSlot,
+        replacing existing: ProjectPathReference? = nil
+    ) -> ProjectPathReference? {
         guard let root = library.project(project)?.url else {
             return nil
         }
@@ -294,17 +294,17 @@ extension AppModel {
         case .shared:
             let path = ProjectPathResolver.relativePath(from: root, to: url)
             if !isInside {
-                // Only this choice lets a shared path outside the project resolve (`ProjectPathResolver.url(for:)`).
-                workspace.addChosenOutsidePath(path, in: project)
+                // Only this choice lets a shared path outside the project resolve (`ProjectPathResolver.url(for:in:)`).
+                workspace.addChosenOutsidePath(path, for: slot, in: project)
             }
             return .relative(path)
         case .thisMacOnly:
             if case .local(let id)? = existing, workspace.localPath(id, in: project) == nil,
                library.document(project)?.referenceCount(of: id) == 1 {
-                workspace.setLocalPath(url.path, for: id, in: project)
+                workspace.setLocalPath(url.path, for: id, at: slot, in: project)
                 return .local(id)
             }
-            return workspace.addLocalPath(url.path, in: project)
+            return workspace.addLocalPath(url.path, for: slot, in: project)
         }
     }
 

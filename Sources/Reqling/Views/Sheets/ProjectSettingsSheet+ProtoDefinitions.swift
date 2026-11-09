@@ -37,7 +37,7 @@ struct ProjectSettingsProtoDefinitions: View {
             ForEach(ProtoPathRowID.rows(settings.protoRoots, of: .roots)) { row in
                 let index = row.index
                 ProtoPathRow(
-                    title: settings.describe(settings.protoRoots[index]),
+                    title: settings.describe(settings.protoRoots[index], in: .protoRoots),
                     sharing: settings.sharing(of: settings.protoRoots[index]),
                     removeLabel: "Remove this proto root"
                 ) {
@@ -83,7 +83,7 @@ struct ProjectSettingsProtoDefinitions: View {
             ForEach(ProtoPathRowID.rows(settings.descriptorSets, of: .descriptorSets)) { row in
                 let index = row.index
                 ProtoPathRow(
-                    title: settings.describe(settings.descriptorSets[index]),
+                    title: settings.describe(settings.descriptorSets[index], in: .projectDescriptorSets),
                     sharing: settings.sharing(of: settings.descriptorSets[index]),
                     removeLabel: "Remove this descriptor set"
                 ) {

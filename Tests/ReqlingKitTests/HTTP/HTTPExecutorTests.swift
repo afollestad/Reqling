@@ -36,6 +36,7 @@ final class HTTPExecutorTests: XCTestCase {
             resolver: TemplateResolver(scope: VariableScope(entries: variables)),
             authChain: [.none],
             paths: ProjectPathResolver(projectRoot: FileManager.default.temporaryDirectory),
+            request: RequestNodeID(),
             defaults: HTTPRequestDefaults(timeoutSeconds: timeout, followRedirects: followRedirects, verifyTLS: verifyTLS),
             userAgent: "Reqling/1.0",
             makeBoundary: { "BOUNDARY" }

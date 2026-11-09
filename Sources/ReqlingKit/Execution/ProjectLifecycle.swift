@@ -28,7 +28,7 @@ public struct ProjectLifecycle {
     @discardableResult
     public func addProjectFolder(_ url: URL) throws -> ProjectID {
         let id = try library.addProjectFolder(url)
-        reconcileLocalPaths(in: id)
+        reconcileFileChoices(in: id)
         return id
     }
 
@@ -64,14 +64,50 @@ public struct ProjectLifecycle {
         }
     }
 
-    /// Drops the stored paths `project` no longer references; see `WorkspaceStateStore.reconcileLocalPaths(in:keeping:)`
-    /// for why only a load does this.
-    public func reconcileLocalPaths(in project: ProjectID) {
+    /// Drops the files chosen on this Mac that `project` no longer references, and settles where any chosen before
+    /// slots were recorded belong; see `WorkspaceStateStore.reconcileChoices(in:holding:)` for why only a load does this.
+    public func reconcileFileChoices(in project: ProjectID) {
         if let document = library.document(project) {
-            workspace.reconcileLocalPaths(in: project, keeping: document.localPathIDs)
-            workspace.reconcileChosenOutsidePaths(in: project, keeping: document.relativePaths)
+            workspace.reconcileChoices(in: project, holding: document.placedReferences)
             markIdentityFiles(of: document)
         }
+    }
+
+    /// Readies `project` for a change another Mac made to it: settles this Mac's file choices against `previous`, its
+    /// copy here, so none can be taken from where the change puts it (`WorkspaceStateStore.slotUnslottedChoices`), and
+    /// marks its client identity files. With no copy here, the change writes the folder, and choices made before slots
+    /// were recorded are forgotten instead.
+    func prepareForOutsideChange(to project: ProjectID, from previous: ProjectDocument?) {
+        guard let previous else {
+            workspace.forgetUnslottedChoices(in: project)
+            return
+        }
+        workspace.slotUnslottedChoices(in: project, holding: previous.placedReferences)
+        markIdentityFiles(of: previous)
+    }
+
+    /// Copies a folder or request in place, right after it, with `name`, and returns the copy. Each file chosen on this
+    /// Mac for the original is chosen for the copy too, the person's own doing; one that wasn't chosen for its place in
+    /// the original, as another Mac may have moved it there, stays missing in the copy.
+    @discardableResult
+    public func duplicateNode(_ id: RequestNodeID, in project: ProjectID, named name: String) throws -> RequestNode {
+        guard let document = library.document(project), let original = document.node(id) else {
+            throw ProjectTreeError.notFound
+        }
+        var originals: [RequestNodeID: RequestNodeID] = [:]
+        let copy = original.copy(named: name, originals: &originals)
+        let parent = document.parentID(of: id)
+        let index = (document.children(of: parent) ?? []).firstIndex { $0.id == id }.map { $0 + 1 }
+        try library.mutate(project) { try $0.insert(copy, into: parent, at: index) }
+        if let resolver = pathResolver(for: project) {
+            for placed in copy.placedReferences {
+                let original = placed.slot.request.flatMap { originals[$0] }.map(placed.slot.moved(to:)) ?? placed.slot
+                if resolver.isChosen(placed.reference, for: original) {
+                    workspace.choose(placed.reference, for: placed.slot, in: project)
+                }
+            }
+        }
+        return copy
     }
 
     /// Gives every loaded project with proto definitions a workspace on its current configuration and local paths,
@@ -117,21 +153,34 @@ public struct ProjectLifecycle {
 extension RequestNode {
     /// A deep copy with fresh IDs throughout, so the copy and the original never share files or selection.
     public func copy(named name: String? = nil) -> RequestNode {
+        var originals: [RequestNodeID: RequestNodeID] = [:]
+        return copy(named: name, originals: &originals)
+    }
+
+    /// `copy(named:)`, noting each copied request's original ID under its new one in `originals`, so what the original
+    /// keeps by its ID (a file's slot, `ProjectPathSlot.moved(to:)`) can be found for the copy.
+    public func copy(named name: String? = nil, originals: inout [RequestNodeID: RequestNodeID]) -> RequestNode {
         switch self {
         case .request(let request):
-            return .request(RequestItem(
+            let copy = RequestItem(
                 name: name ?? request.name,
                 kind: request.kind,
                 scripts: request.scripts,
                 runsInheritedScripts: request.runsInheritedScripts
-            ))
+            )
+            originals[copy.id] = request.id
+            return .request(copy)
         case .folder(let folder):
+            var children: [RequestNode] = []
+            for child in folder.children {
+                children.append(child.copy(originals: &originals))
+            }
             return .folder(RequestFolder(
                 name: name ?? folder.name,
                 auth: folder.auth,
                 scripts: folder.scripts,
                 runsInheritedScripts: folder.runsInheritedScripts,
-                children: folder.children.map { $0.copy() }
+                children: children
             ))
         }
     }

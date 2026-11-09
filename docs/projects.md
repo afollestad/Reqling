@@ -24,6 +24,7 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.
 - **Files** a request or the project uses, such as a body, a schema, or a certificate, are shared by a path relative to the project when they sit inside its folder or repository. For a file elsewhere, Reqling asks whether to share its path, for everyone with the same folder layout, or remember it on this Mac only.
   - A shared path that leads outside the folder and repository, directly or through a symlink, works only on a Mac where someone chose it. Elsewhere it counts as missing until it's chosen there, so a project someone else wrote can't read your other files.
+  - A file kept on this Mac only, or a shared path chosen outside the folder and repository, works only in the field it was chosen for, and in copies you make of its request by duplicating or moving it. If someone else's change, from a repository or another Mac, puts it in another field, it's missing there until you choose it again.
 - **Filter the sidebar** by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
 
 ## Importing

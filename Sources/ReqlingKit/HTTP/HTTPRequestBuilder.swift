@@ -20,6 +20,8 @@ public struct HTTPBuildContext: Sendable {
     /// The project's auth followed by each enclosing folder's, outermost first; `inherit` walks it from the end.
     public var authChain: [HTTPAuth]
     public var paths: ProjectPathResolver
+    /// The request being built, whose slots its files are read for (`ProjectPathSlot`); an unsaved request's are none.
+    public var request: RequestNodeID
     public var defaults: HTTPRequestDefaults
     public var userAgent: String
     /// Multipart boundaries are injected so tests and previews are deterministic.
@@ -29,6 +31,7 @@ public struct HTTPBuildContext: Sendable {
         resolver: TemplateResolver,
         authChain: [HTTPAuth],
         paths: ProjectPathResolver,
+        request: RequestNodeID,
         defaults: HTTPRequestDefaults,
         userAgent: String,
         makeBoundary: @escaping @Sendable () -> String = { "reqling-\(UUID().uuidString.lowercased())" }
@@ -36,6 +39,7 @@ public struct HTTPBuildContext: Sendable {
         self.resolver = resolver
         self.authChain = authChain
         self.paths = paths
+        self.request = request
         self.defaults = defaults
         self.userAgent = userAgent
         self.makeBoundary = makeBoundary
@@ -335,9 +339,9 @@ public enum HTTPRequestBuilder {
             }
             return Body(sent: Data(sent.joined(separator: "&").utf8), shown: Data(shown.joined(separator: "&").utf8))
         case .formData:
-            return try multipartBody(body.formData, boundary: boundary, paths: context.paths, resolve: resolve)
+            return try multipartBody(body.formData, boundary: boundary, context: context, resolve: resolve)
         case .binary:
-            let data = try fileData(body.binary.file, paths: context.paths).data
+            let data = try fileData(body.binary.file, in: .binaryBody(context.request), paths: context.paths).data
             return Body(sent: data, shown: data)
         case .graphQL:
             return try graphQLBody(body.graphQL, resolve: resolve)
@@ -347,7 +351,7 @@ public enum HTTPRequestBuilder {
     private static func multipartBody(
         _ fields: [MultipartField],
         boundary: String,
-        paths: ProjectPathResolver,
+        context: HTTPBuildContext,
         resolve: Resolve
     ) throws(HTTPBuildError) -> Body {
         var sent: [MultipartEncoder.Part] = []
@@ -361,7 +365,7 @@ public enum HTTPRequestBuilder {
                 sent.append(.init(name: name.sent, contentType: contentType?.sent, data: Data(value.sent.utf8)))
                 shown.append(.init(name: name.shown, contentType: contentType?.shown, data: Data(value.shown.utf8)))
             case .file:
-                let file = try fileData(field.file, paths: paths)
+                let file = try fileData(field.file, in: .formField(context.request, field.id), paths: context.paths)
                 let guessed = HTTPEncoding.mimeType(forFileName: file.name)
                 sent.append(.init(name: name.sent, fileName: file.name, contentType: contentType?.sent ?? guessed, data: file.data))
                 shown.append(.init(name: name.shown, fileName: file.name, contentType: contentType?.shown ?? guessed, data: file.data))
@@ -430,13 +434,14 @@ public enum HTTPRequestBuilder {
 
     private static func fileData(
         _ reference: ProjectPathReference?,
+        in slot: ProjectPathSlot,
         paths: ProjectPathResolver
     ) throws(HTTPBuildError) -> (data: Data, name: String) {
         guard let reference else {
             throw .missingFile("The body file")
         }
-        guard let url = paths.url(for: reference), let data = try? Data(contentsOf: url) else {
-            throw .missingFile(paths.describe(reference))
+        guard let url = paths.url(for: reference, in: slot), let data = try? Data(contentsOf: url) else {
+            throw .missingFile(paths.describe(reference, in: slot))
         }
         return (data, url.lastPathComponent)
     }

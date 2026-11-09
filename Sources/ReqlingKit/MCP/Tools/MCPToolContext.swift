@@ -148,9 +148,15 @@ public final class MCPToolContext {
 
     // MARK: - Paths
 
-    /// A path argument as a reference: shared ones relative to the project folder, this-Mac ones recorded locally (an
-    /// already-recorded path keeps its ID, so repeated updates don't pile up entries).
-    func pathReference(_ entry: MCPArguments, in project: LibraryProject, existing: [ProjectPathReference]) throws -> ProjectPathReference {
+    /// A path argument as a reference for `slot`: shared ones relative to the project folder, this-Mac ones recorded
+    /// locally and chosen for `slot` (an already-recorded path chosen for it keeps its ID, so repeated updates don't
+    /// pile up entries).
+    func pathReference(
+        _ entry: MCPArguments,
+        in project: LibraryProject,
+        for slot: ProjectPathSlot,
+        existing: [ProjectPathReference]
+    ) throws -> ProjectPathReference {
         let path = try entry.string("path")
         if try entry.bool("local", default: false) {
             let url = try MCPProjectTools.absoluteURL(path, field: "\(entry.path).path")
@@ -159,7 +165,7 @@ public final class MCPToolContext {
                 guard case .local = reference else {
                     return false
                 }
-                return resolver?.identityFileURL(for: reference)?.path == url.path
+                return resolver?.identityFileURL(for: reference, in: slot)?.path == url.path
             }
             if let match {
                 return match
@@ -168,16 +174,16 @@ public final class MCPToolContext {
             // shares it.
             if existing.count == 1, case .local(let id) = existing[0], workspace.localPath(id, in: project.id) == nil,
                project.document?.referenceCount(of: id) == 1 {
-                workspace.setLocalPath(url.path, for: id, in: project.id)
+                workspace.setLocalPath(url.path, for: id, at: slot, in: project.id)
                 return .local(id)
             }
-            return workspace.addLocalPath(url.path, in: project.id)
+            return workspace.addLocalPath(url.path, for: slot, in: project.id)
         }
         let isAbsolute = path.hasPrefix("/") || path.hasPrefix("~")
         let url = isAbsolute
             ? try MCPProjectTools.absoluteURL(path, field: "\(entry.path).path")
             : project.url.appendingPathComponent(path).standardizedFileURL
-        // A relative path is checked too: the resolver would treat one that leads out as missing (`url(for:)`), so
+        // A relative path is checked too: the resolver would treat one that leads out as missing (`url(for:in:)`), so
         // saving it would only leave a broken reference.
         guard ProjectPathResolver.sharesLocation(url, with: project.url) else {
             throw MCPToolError("\(path) is outside the project's folder and repository, so others couldn't resolve it; pass "
@@ -186,13 +192,13 @@ public final class MCPToolContext {
         return .relative(isAbsolute ? ProjectPathResolver.relativePath(from: project.url, to: url) : path)
     }
 
-    /// A reference as tools report it: its path on this Mac, whether it is shared through the project, and whether the
-    /// file is there.
-    /// `identity` reaches a client certificate's own files, which the general resolution refuses.
-    func describePath(_ reference: ProjectPathReference, in project: ProjectID, identity: Bool = false) -> Value {
+    /// A reference as tools report it from `slot`: its path on this Mac, whether it is shared through the project, and
+    /// whether the file is there. `identity` reaches a client certificate's own files, which the general resolution
+    /// refuses.
+    func describePath(_ reference: ProjectPathReference, in slot: ProjectPathSlot, of project: ProjectID, identity: Bool = false) -> Value {
         let resolver = lifecycle.pathResolver(for: project)
-        let url = identity ? resolver?.identityFileURL(for: reference) : resolver?.url(for: reference)
-        var description: [String: Value] = ["path": .string(url?.path ?? resolver?.describe(reference) ?? "")]
+        let url = identity ? resolver?.identityFileURL(for: reference, in: slot) : resolver?.url(for: reference, in: slot)
+        var description: [String: Value] = ["path": .string(url?.path ?? resolver?.describe(reference, in: slot) ?? "")]
         switch reference {
         case .relative(let relative):
             description["shared"] = true

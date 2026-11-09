@@ -31,10 +31,12 @@ extension ProjectLifecycle {
         guard !origin.isReadOnly, !target.isReadOnly else {
             throw ProjectStorageError.readOnly
         }
-        let fresh = node.subtreeIDs.contains { document.node($0) != nil } ? node.copy() : node
+        var originals: [RequestNodeID: RequestNodeID] = [:]
+        let fresh = node.subtreeIDs.contains { document.node($0) != nil } ? node.copy(originals: &originals) : node
         var localized: [String] = []
-        let moved = fresh.mappingPathReferences { reference in
-            rebased(reference, from: origin, to: target, localized: &localized)
+        let moved = fresh.mappingPathReferences { reference, slot in
+            let sourceSlot = slot.request.flatMap { originals[$0] }.map(slot.moved(to:)) ?? slot
+            return rebased(reference, from: (origin, sourceSlot), to: (target, slot), localized: &localized)
         }
         try library.mutate(destination) { try $0.insert(moved, into: parent, at: index) }
         revokeTrustIfUntrustedScriptsArrive(with: node, from: source, to: destination)
@@ -66,31 +68,34 @@ extension ProjectLifecycle {
         workspace.updateProject(destination) { $0.scriptTrust = .unknown }
     }
 
-    /// `reference` as `destination` reaches the same file. A shared path stays shared while the file is inside the
-    /// destination's folder or repository; outside, a path relative to the destination would reach it on this Mac only,
-    /// so it becomes a local one and is listed in `localized`. A local path stays local.
+    /// `reference`, held in `source`'s slot, as `destination` reaches the same file from its slot. A shared path stays
+    /// shared while the file is inside the destination's folder or repository; outside, a path relative to the
+    /// destination would reach it on this Mac only, so it becomes a local one, chosen for the destination's slot, and is
+    /// listed in `localized`. A local path stays local, and chosen there.
     private func rebased(
         _ reference: ProjectPathReference,
-        from source: LibraryProject,
-        to destination: LibraryProject,
+        from source: (project: LibraryProject, slot: ProjectPathSlot),
+        to destination: (project: LibraryProject, slot: ProjectPathSlot),
         localized: inout [String]
     ) -> ProjectPathReference {
-        // A local path chosen on another Mac has nothing here to carry over, and stays missing.
-        guard let url = pathResolver(for: source.id)?.url(for: reference) else {
+        // A local path chosen on another Mac, or a file chosen for another slot, has nothing here to carry over, and
+        // stays missing.
+        guard let url = pathResolver(for: source.project.id)?.url(for: reference, in: source.slot) else {
             return reference
         }
         if case .relative = reference {
-            if ProjectPathResolver.sharesLocation(url, with: destination.url) {
-                return .relative(ProjectPathResolver.relativePath(from: destination.url, to: url))
+            if ProjectPathResolver.sharesLocation(url, with: destination.project.url) {
+                return .relative(ProjectPathResolver.relativePath(from: destination.project.url, to: url))
             }
             if !localized.contains(url.path) {
                 localized.append(url.path)
             }
         }
-        if let existing = workspace.localPaths(in: destination.id).first(where: { $0.value == url.path }) {
+        if let existing = workspace.localPaths(in: destination.project.id).first(where: { $0.value == url.path }) {
+            workspace.choose(.local(existing.key), for: destination.slot, in: destination.project.id)
             return .local(existing.key)
         }
-        return workspace.addLocalPath(url.path, in: destination.id)
+        return workspace.addLocalPath(url.path, for: destination.slot, in: destination.project.id)
     }
 }
 

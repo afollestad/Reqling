@@ -256,37 +256,6 @@ final class LibrarySyncTests: XCTestCase {
         XCTAssertEqual(macB.library.document(id), before)
     }
 
-    /// Mac A moves the reference to Mac B's client key into a request body: Mac B won't read the key for it.
-    func testAClientKeyMovedIntoABodyByAnotherMacStaysUnreadable() async throws {
-        let id = try await shareProject()
-        let requestID = try XCTUnwrap(request(in: macA, id)).id
-        let key = macB.storage.directory.file("client.p12")
-        try Data("private key".utf8).write(to: key)
-        let reference = macB.workspace.addLocalPath(key.path, in: id)
-        try macB.library.mutate(id) { document in
-            document.tls.clientCertificates = [ClientCertificateEntry(hostPattern: "api.example.com", source: .pkcs12(reference))]
-        }
-        await macB.sync.syncNow()
-        await macA.sync.syncNow()
-
-        try macA.library.mutate(id) { try $0.updateNode(requestID) { node in
-            if case .request(var request) = node, case .http(var spec) = request.kind {
-                spec.method = .post
-                spec.body.mode = .binary
-                spec.body.binary.file = reference
-                request.kind = .http(spec)
-                node = .request(request)
-            }
-        } }
-        await macA.sync.syncNow()
-        await macB.sync.syncNow()
-
-        XCTAssertEqual(request(in: macB, id)?.kind.httpSpec?.body.binary.file, reference)
-        let paths = try XCTUnwrap(macB.lifecycle.pathResolver(for: id))
-        XCTAssertNil(paths.url(for: reference))
-        XCTAssertEqual(try paths.identityData(for: reference), Data("private key".utf8), "TLS still reads it")
-    }
-
     func testScriptsChangedOnAnotherMacAskForTrustAgain() async throws {
         let id = try await shareProject()
         macB.workspace.updateProject(id) { $0.scriptTrust = .trusted }

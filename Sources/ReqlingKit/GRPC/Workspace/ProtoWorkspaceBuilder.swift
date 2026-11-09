@@ -15,16 +15,16 @@ struct ProtoWorkspacePlan: Hashable, Sendable {
     let descriptorSets: [Path]
 
     init(configuration: ProjectGRPCConfiguration, resolver: ProjectPathResolver) {
-        roots = configuration.protoRoots.map { Self.path(for: $0, resolver: resolver) }
+        roots = configuration.protoRoots.map { Self.path(for: $0, in: .protoRoots, resolver: resolver) }
         files = configuration.protoFiles
-        descriptorSets = configuration.descriptorSets.map { Self.path(for: $0, resolver: resolver) }
+        descriptorSets = configuration.descriptorSets.map { Self.path(for: $0, in: .projectDescriptorSets, resolver: resolver) }
     }
 
     /// A relative path outside the project's folder or repository resolves to `nil` unless the person chose it on this
-    /// Mac (`ProjectPathResolver.url(for:)`), so a cloned `../../..` never has Reqling walk, watch, and hash the home
+    /// Mac (`ProjectPathResolver.url(for:in:)`), so a cloned `../../..` never has Reqling walk, watch, and hash the home
     /// folder.
-    private static func path(for reference: ProjectPathReference, resolver: ProjectPathResolver) -> Path {
-        Path(url: resolver.url(for: reference), description: resolver.describe(reference))
+    private static func path(for reference: ProjectPathReference, in slot: ProjectPathSlot, resolver: ProjectPathResolver) -> Path {
+        Path(url: resolver.url(for: reference, in: slot), description: resolver.describe(reference, in: slot))
     }
 
     var isEmpty: Bool {

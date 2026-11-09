@@ -73,7 +73,9 @@ struct MCPTLSTools {
                 }
             }
             if let authorities = try arguments.objects("caCertificates", allowed: ["path", "local"]) {
-                tls.caCertificates = try authorities.map { try context.pathReference($0, in: project, existing: document.tls.caCertificates) }
+                tls.caCertificates = try authorities.map { authority in
+                    try context.pathReference(authority, in: project, for: .caCertificates, existing: document.tls.caCertificates)
+                }
             }
             let updated = tls
             try context.mutate(project.id) { $0.tls = updated }
@@ -118,7 +120,7 @@ struct MCPTLSTools {
         guard !certificate.hostPattern.isEmpty else {
             throw MCPToolError("\(entry.path).hostPattern is required for a new certificate.")
         }
-        if let source = try source(entry, replacing: certificate.source, in: project) {
+        if let source = try source(entry, replacing: certificate.source, of: certificate.id, in: project) {
             if certificate.source == .keychainIdentity {
                 context.workspace.setKeychainIdentity(nil, for: certificate.id)
             }
@@ -130,11 +132,13 @@ struct MCPTLSTools {
         return certificate
     }
 
-    /// The source `entry`'s files name, or `nil` when it names none. A PEM entry may replace just its `certificate` or
-    /// its `key`; any other entry switching to PEM needs both. Local paths it already had keep their IDs.
+    /// The source `entry`'s files name, or `nil` when it names none, for the certificate `id`. A PEM entry may replace
+    /// just its `certificate` or its `key`; any other entry switching to PEM needs both. Local paths it already had keep
+    /// their IDs.
     private func source(
         _ entry: MCPArguments,
         replacing current: ClientCertificateSource,
+        of id: CertificateEntryID,
         in project: LibraryProject
     ) throws -> ClientCertificateSource? {
         let file = try entry.nested("file", allowed: ["path", "local"])
@@ -145,7 +149,7 @@ struct MCPTLSTools {
             guard certificate == nil, key == nil else {
                 throw MCPToolError("\(entry.path) takes a PKCS#12 `file` or a PEM `certificate` and `key`, not both.")
             }
-            return .pkcs12(try context.pathReference(file, in: project, existing: previous))
+            return .pkcs12(try context.pathReference(file, in: project, for: .clientCertificate(id), existing: previous))
         }
         guard certificate != nil || key != nil else {
             return nil
@@ -163,7 +167,7 @@ struct MCPTLSTools {
                 }
                 return kept
             }
-            let reference = try context.pathReference(argument, in: project, existing: previous)
+            let reference = try context.pathReference(argument, in: project, for: .clientCertificate(id), existing: previous)
             previous.append(reference)
             return reference
         }
@@ -184,18 +188,18 @@ struct MCPTLSTools {
                 switch entry.source {
                 case .pkcs12(let reference):
                     description["source"] = "pkcs12"
-                    description["file"] = context.describePath(reference, in: project, identity: true)
+                    description["file"] = context.describePath(reference, in: .clientCertificate(entry.id), of: project, identity: true)
                 case .pem(let certificate, let key):
                     description["source"] = "pem"
-                    description["certificate"] = context.describePath(certificate, in: project, identity: true)
-                    description["key"] = context.describePath(key, in: project, identity: true)
+                    description["certificate"] = context.describePath(certificate, in: .clientCertificate(entry.id), of: project, identity: true)
+                    description["key"] = context.describePath(key, in: .clientCertificate(entry.id), of: project, identity: true)
                 case .keychainIdentity:
                     description["source"] = "keychainIdentity"
                     description["chosenOnThisMac"] = .bool(context.workspace.keychainIdentity(for: entry.id) != nil)
                 }
                 return .object(description)
             }),
-            "caCertificates": .array(tls.caCertificates.map { context.describePath($0, in: project) })
+            "caCertificates": .array(tls.caCertificates.map { context.describePath($0, in: .caCertificates, of: project) })
         ]
     }
 }

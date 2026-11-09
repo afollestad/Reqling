@@ -52,7 +52,8 @@ extension RequestEditorViewModel {
     var graphQLSchemaSourceTitle: String {
         switch spec.body.graphQL.schema {
         case .introspection: "Introspection"
-        case .file(let reference): app.pathResolver(for: projectID)?.url(for: reference)?.lastPathComponent ?? "Schema file"
+        case .file(let reference):
+            app.pathResolver(for: projectID)?.url(for: reference, in: .graphQLSchema(requestID))?.lastPathComponent ?? "Schema file"
         }
     }
 
@@ -68,7 +69,7 @@ extension RequestEditorViewModel {
             existing = current
         }
         guard let url = app.system.chooseFile(prompt: "Use Schema", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID, replacing: existing) else {
+              let reference = app.reference(for: url, in: projectID, at: .graphQLSchema(requestID), replacing: existing) else {
             return
         }
         spec.body.graphQL.schema = .file(reference)

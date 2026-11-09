@@ -51,7 +51,7 @@ extension ProjectSettingsModel {
 
     func addProtoRoot() {
         guard let url = app.system.chooseDirectory(prompt: "Add Proto Root"),
-              let reference = newReference(for: url, notIn: protoRoots) else {
+              let reference = newReference(for: url, in: .protoRoots, notIn: protoRoots) else {
             return
         }
         protoRoots.append(reference)
@@ -88,7 +88,7 @@ extension ProjectSettingsModel {
     func addDescriptorSet() {
         let types = ["protoset", "binpb", "pb"].compactMap { UTType(filenameExtension: $0) }
         guard let url = app.system.chooseFile(prompt: "Add Descriptor Set", allowedTypes: types),
-              let reference = newReference(for: url, notIn: descriptorSets) else {
+              let reference = newReference(for: url, in: .projectDescriptorSets, notIn: descriptorSets) else {
             return
         }
         descriptorSets.append(reference)
@@ -101,16 +101,17 @@ extension ProjectSettingsModel {
         descriptorSets.remove(at: index)
     }
 
-    /// `url` as a reference to append, or `nil` when the pick was cancelled or `url` is already in `existing`.
+    /// `url` as a reference to append to `slot`'s list, or `nil` when the pick was cancelled or `url` is already in
+    /// `existing`.
     ///
-    /// The repeat check compares resolved paths before `AppModel.reference(for:in:)` runs, because that mints a fresh
-    /// `LocalPathID` for every this-Mac pick: comparing references afterwards would miss the repeat, add a second row,
-    /// and orphan a local-path entry. Checking first also skips the shared-or-this-Mac question for a repeat.
-    private func newReference(for url: URL, notIn existing: [ProjectPathReference]) -> ProjectPathReference? {
+    /// The repeat check compares resolved paths before `AppModel.reference(for:in:at:replacing:)` runs, because that
+    /// mints a fresh `LocalPathID` for every this-Mac pick: comparing references afterwards would miss the repeat, add a
+    /// second row, and orphan a local-path entry. Checking first also skips the shared-or-this-Mac question for a repeat.
+    private func newReference(for url: URL, in slot: ProjectPathSlot, notIn existing: [ProjectPathReference]) -> ProjectPathReference? {
         let target = Self.canonicalPath(url)
         let resolver = app.pathResolver(for: projectID)
-        guard !existing.contains(where: { resolver?.url(for: $0).map(Self.canonicalPath) == target }),
-              let reference = app.reference(for: url, in: projectID),
+        guard !existing.contains(where: { resolver?.url(for: $0, in: slot).map(Self.canonicalPath) == target }),
+              let reference = app.reference(for: url, in: projectID, at: slot),
               !existing.contains(reference) else {
             return nil
         }

@@ -104,9 +104,13 @@ public final class GraphQLSchemaService {
     }
 
     /// The schema in a file: SDL or saved introspection JSON.
-    func file(_ reference: ProjectPathReference, paths: ProjectPathResolver) async throws(GraphQLSchemaLookupError) -> GraphQLSchemaSnapshot {
-        guard let url = paths.url(for: reference), let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
-            throw .unreadable("The schema file \(paths.describe(reference)) could not be found on this Mac.")
+    func file(
+        _ reference: ProjectPathReference,
+        in slot: ProjectPathSlot,
+        paths: ProjectPathResolver
+    ) async throws(GraphQLSchemaLookupError) -> GraphQLSchemaSnapshot {
+        guard let url = paths.url(for: reference, in: slot), let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            throw .unreadable("The schema file \(paths.describe(reference, in: slot)) could not be found on this Mac.")
         }
         let stamp = FileStamp(size: (attributes[.size] as? NSNumber)?.intValue ?? -1, modified: attributes[.modificationDate] as? Date)
         if let cached = files[url], cached.stamp == stamp {
@@ -114,7 +118,7 @@ public final class GraphQLSchemaService {
         }
         let data: Data
         do {
-            data = try paths.data(for: reference)
+            data = try paths.data(for: reference, in: slot)
         } catch {
             throw .unreadable(error.localizedDescription)
         }

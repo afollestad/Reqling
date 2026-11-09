@@ -185,7 +185,8 @@ final class GRPCEditorViewModel {
         case .automatic: "Automatic"
         case .projectProtos: "Project protos"
         case .reflection: "Server reflection"
-        case .descriptorSet(let reference): app.pathResolver(for: projectID)?.url(for: reference)?.lastPathComponent ?? "Descriptor set"
+        case .descriptorSet(let reference):
+            app.pathResolver(for: projectID)?.url(for: reference, in: .descriptorSet(requestID))?.lastPathComponent ?? "Descriptor set"
         }
     }
 
@@ -231,7 +232,7 @@ final class GRPCEditorViewModel {
             existing = current
         }
         guard let url = app.system.chooseFile(prompt: "Use Descriptor Set", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID, replacing: existing) else {
+              let reference = app.reference(for: url, in: projectID, at: .descriptorSet(requestID), replacing: existing) else {
             return
         }
         spec.schema = .descriptorSet(reference)
