@@ -1,0 +1,45 @@
+openapi: 3.2.0
+$self: https://api.example.com/specs/v32.yaml
+info:
+  title: Version 3.2
+  version: '1'
+servers:
+  - url: /api
+    name: Local
+tags:
+  - name: admin
+  - name: users
+    parent: admin
+  - name: badges
+    kind: badge
+  - name: orphans
+    parent: nobody
+paths:
+  /search:
+    query:
+      summary: Search
+      tags: [badges, users]
+      requestBody:
+        content:
+          application/json:
+            examples:
+              basic:
+                dataValue: {term: pets}
+      responses: {}
+    additionalOperations:
+      PURGE:
+        summary: Purge
+        tags: [orphans]
+        responses: {}
+      'BAD METHOD':
+        responses: {}
+  /filter:
+    get:
+      summary: Filter
+      parameters:
+        - in: querystring
+          name: all
+          content:
+            application/x-www-form-urlencoded:
+              example: {status: open, page: '2'}
+      responses: {}

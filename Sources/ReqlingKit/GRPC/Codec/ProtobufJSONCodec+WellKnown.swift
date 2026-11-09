@@ -2,7 +2,7 @@
 /// an `Any`'s payload type has to be in the registry.
 extension ProtobufJSONCodec {
     /// Checks depth itself, since an `Any` reaches here directly for a well-known payload.
-    func encodeWellKnown(_ json: ProtoJSONValue, as type: WellKnownType, depth: Int) throws(GRPCCodecError) -> [UInt8] {
+    func encodeWellKnown(_ json: OrderedJSON, as type: WellKnownType, depth: Int) throws(GRPCCodecError) -> [UInt8] {
         try checkDepth(depth)
         let field = type.schema.fields[0]
         var writer = WireWriter()
@@ -46,7 +46,7 @@ extension ProtobufJSONCodec {
         as type: WellKnownType,
         depth: Int,
         unknown: inout Int
-    ) throws(GRPCCodecError) -> ProtoJSONValue {
+    ) throws(GRPCCodecError) -> OrderedJSON {
         try checkDepth(depth)
         let schema = type.schema
         let collected = try collect(bytes, schema: schema, unknown: &unknown)
@@ -82,7 +82,7 @@ extension ProtobufJSONCodec {
         }
     }
 
-    private static func instant(_ json: ProtoJSONValue, as type: WellKnownType) throws(GRPCCodecError) -> ProtoTime.Instant {
+    private static func instant(_ json: OrderedJSON, as type: WellKnownType) throws(GRPCCodecError) -> ProtoTime.Instant {
         guard case .string(let text) = json else {
             let expected = type == .timestamp ? "an RFC 3339 timestamp string" : "a duration string such as \"1.5s\""
             throw mismatch(expected: expected, got: json)
@@ -91,7 +91,7 @@ extension ProtobufJSONCodec {
     }
 
     /// `Value` is plain JSON: each JSON type sets the matching member of its `kind` oneof.
-    private func encodeValue(_ json: ProtoJSONValue, into writer: inout WireWriter, depth: Int) throws(GRPCCodecError) {
+    private func encodeValue(_ json: OrderedJSON, into writer: inout WireWriter, depth: Int) throws(GRPCCodecError) {
         switch json {
         case .null:
             writer.write(.varint(0), number: 1)
@@ -114,7 +114,7 @@ extension ProtobufJSONCodec {
     }
 
     /// `{"@type": url, ...fields}`, or `{"@type": url, "value": json}` when the payload is itself a well-known type.
-    private func encodeAny(_ json: ProtoJSONValue, depth: Int) throws(GRPCCodecError) -> [UInt8] {
+    private func encodeAny(_ json: OrderedJSON, depth: Int) throws(GRPCCodecError) -> [UInt8] {
         guard case .object(let members) = json else {
             throw Self.mismatch(expected: "an object with an `@type`", got: json)
         }
@@ -154,7 +154,7 @@ extension ProtobufJSONCodec {
         return writer.bytes
     }
 
-    private func decodeAny(_ collected: [[WireValue]], depth: Int, unknown: inout Int) throws(GRPCCodecError) -> ProtoJSONValue {
+    private func decodeAny(_ collected: [[WireValue]], depth: Int, unknown: inout Int) throws(GRPCCodecError) -> OrderedJSON {
         let schema = WellKnownType.any.schema
         let typeURL = try presentJSON(collected[0], field: schema.fields[0], depth: depth, unknown: &unknown)
         guard case .string(let typeURL) = typeURL, !typeURL.isEmpty else {
@@ -168,12 +168,12 @@ extension ProtobufJSONCodec {
         if case .lengthDelimited(let bytes) = collected[1].last {
             payload = bytes
         }
-        let typeMember = ProtoJSONMember(key: "@type", value: .string(typeURL))
+        let typeMember = OrderedJSONMember(key: "@type", value: .string(typeURL))
         if let wellKnown = WellKnownType(rawValue: typeName) {
-            let value = try within("value") { () throws(GRPCCodecError) -> ProtoJSONValue in
+            let value = try within("value") { () throws(GRPCCodecError) -> OrderedJSON in
                 try decodeWellKnown(payload, as: wellKnown, depth: depth + 1, unknown: &unknown)
             }
-            return .object([typeMember, ProtoJSONMember(key: "value", value: value)])
+            return .object([typeMember, OrderedJSONMember(key: "value", value: value)])
         }
         guard case .object(let members) = try decodeMessage(payload, typeName: typeName, depth: depth + 1, unknown: &unknown) else {
             return .object([typeMember])
@@ -196,9 +196,9 @@ extension ProtobufJSONCodec {
     }
 }
 
-extension ProtoJSONValue {
+extension OrderedJSON {
     /// An array's elements; empty for any other value.
-    var arrayItems: [ProtoJSONValue] {
+    var arrayItems: [OrderedJSON] {
         guard case .array(let items) = self else {
             return []
         }

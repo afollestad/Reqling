@@ -175,9 +175,9 @@ extension ProtobufJSONCodecTests {
         }
 
         // The JSON parser caps nesting first, so build the deep value directly to reach the encoder's own check.
-        var json = ProtoJSONValue.object([])
+        var json = OrderedJSON.object([])
         for _ in 0..<150 {
-            json = .object([ProtoJSONMember(key: "@type", value: .string(anyURL)), ProtoJSONMember(key: "value", value: json)])
+            json = .object([OrderedJSONMember(key: "@type", value: .string(anyURL)), OrderedJSONMember(key: "value", value: json)])
         }
         XCTAssertThrowsError(try codec.encodeMessage(json, typeName: "google.protobuf.Any", depth: 0)) { error in
             XCTAssertEqual((error as? GRPCCodecError)?.message, "Messages are nested more than 100 levels deep")

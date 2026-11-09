@@ -1,13 +1,14 @@
-/// JSON as the codec needs it, which `JSONSerialization` cannot offer: objects keep member order, so output follows
-/// field declaration order, and numbers keep their source text, so 64-bit integers never round through `Double`.
-enum ProtoJSONValue: Equatable {
+/// JSON as `JSONSerialization` cannot offer it: objects keep member order, so the gRPC codec's output follows field
+/// declaration order and an imported document's examples keep theirs, and numbers keep their source text, so 64-bit
+/// integers never round through `Double`.
+enum OrderedJSON: Equatable {
     case null
     case bool(Bool)
     /// The number's literal text, always valid JSON number grammar.
     case number(String)
     case string(String)
-    case array([ProtoJSONValue])
-    case object([ProtoJSONMember])
+    case array([OrderedJSON])
+    case object([OrderedJSONMember])
 
     /// Names the value's JSON type for "expected X, got Y" errors.
     var typeDescription: String {
@@ -107,7 +108,7 @@ enum ProtoJSONValue: Equatable {
     }
 }
 
-struct ProtoJSONMember: Equatable {
+struct OrderedJSONMember: Equatable {
     let key: String
-    let value: ProtoJSONValue
+    let value: OrderedJSON
 }

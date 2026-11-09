@@ -133,7 +133,7 @@ let package = Package(
                 .product(name: "GraphQL", package: "GraphQL"),
                 .product(name: "GraphQLFixtureServer", package: "GraphQLFixtureServer")
             ],
-            resources: [.copy("GRPC/Fixtures"), .copy("GraphQL/GraphQLFixtures"), .copy("Import/PostmanFixtures")]
+            resources: [.copy("GRPC/Fixtures"), .copy("GraphQL/GraphQLFixtures"), .copy("Import/PostmanFixtures"), .copy("Import/OpenAPIFixtures")]
         ),
         .testTarget(
             name: "ReqlingTests",

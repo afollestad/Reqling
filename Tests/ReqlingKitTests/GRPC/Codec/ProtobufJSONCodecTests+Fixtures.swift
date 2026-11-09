@@ -152,7 +152,7 @@ enum CodecFixtures {
 
     /// Compares JSON structurally, member order included, so goldens can be written compactly.
     static func assertJSON(_ actual: String, _ expected: String, file: StaticString = #filePath, line: UInt = #line) throws {
-        XCTAssertEqual(try ProtoJSONParser.parse(actual), try ProtoJSONParser.parse(expected), file: file, line: line)
+        XCTAssertEqual(try OrderedJSONParser.parse(actual), try OrderedJSONParser.parse(expected), file: file, line: line)
     }
 
     /// Asserts `body` throws a `GRPCCodecError` at `path` whose message contains `fragment`.

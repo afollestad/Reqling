@@ -37,3 +37,12 @@ custom_rules:
     regex: ^\s*(@testable\s+|@_implementationOnly\s+|internal\s+|public\s+)?import\s+GraphQL\s*$
     message: Only Sources/ReqlingGraphQLEngine/ imports GraphQL; use ReqlingKit's GraphQL types elsewhere.
     severity: error
+  # Yams extends Foundation and standard library types, which changes how any module that sees it type-checks;
+  # `ReqlingYAML` wraps it behind its own types.
+  yams_import:
+    name: Yams Import
+    included: /Sources/
+    excluded: /Sources/ReqlingYAML/
+    regex: ^\s*(@testable\s+|@_implementationOnly\s+|internal\s+|public\s+)?import\s+Yams\s*$
+    message: Only Sources/ReqlingYAML/ imports Yams; use ReqlingYAML's types elsewhere.
+    severity: error

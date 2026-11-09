@@ -1,5 +1,6 @@
-/// A strict RFC 8259 parser into `ProtoJSONValue`, reporting the line and column of the first syntax error.
-struct ProtoJSONParser {
+/// A strict RFC 8259 parser into `OrderedJSON`, reporting the line and column of the first syntax error. The gRPC codec
+/// reads messages through it, and imports read JSON documents through it, since `JSONSerialization` loses key order.
+struct OrderedJSONParser {
     /// Matches protobuf's recursion limit, and keeps hostile nesting from exhausting the stack.
     static let maxDepth = 100
 
@@ -11,8 +12,8 @@ struct ProtoJSONParser {
         bytes = Array(text.utf8)
     }
 
-    static func parse(_ text: String) throws(GRPCCodecError) -> ProtoJSONValue {
-        var parser = ProtoJSONParser(text)
+    static func parse(_ text: String) throws(JSONSyntaxError) -> OrderedJSON {
+        var parser = OrderedJSONParser(text)
         parser.skipWhitespace()
         let value = try parser.parseValue()
         parser.skipWhitespace()
@@ -22,15 +23,15 @@ struct ProtoJSONParser {
         return value
     }
 
-    private mutating func parseValue() throws(GRPCCodecError) -> ProtoJSONValue {
+    private mutating func parseValue() throws(JSONSyntaxError) -> OrderedJSON {
         guard let byte = peek() else {
             throw failure("unexpected end of input")
         }
         switch byte {
         case UInt8(ascii: "{"):
-            return try nested { parser throws(GRPCCodecError) in try parser.parseObject() }
+            return try nested { parser throws(JSONSyntaxError) in try parser.parseObject() }
         case UInt8(ascii: "["):
-            return try nested { parser throws(GRPCCodecError) in try parser.parseArray() }
+            return try nested { parser throws(JSONSyntaxError) in try parser.parseArray() }
         case UInt8(ascii: "\""):
             return .string(try parseString())
         case UInt8(ascii: "t"):
@@ -50,8 +51,8 @@ struct ProtoJSONParser {
     }
 
     private mutating func nested(
-        _ parse: (inout ProtoJSONParser) throws(GRPCCodecError) -> ProtoJSONValue
-    ) throws(GRPCCodecError) -> ProtoJSONValue {
+        _ parse: (inout OrderedJSONParser) throws(JSONSyntaxError) -> OrderedJSON
+    ) throws(JSONSyntaxError) -> OrderedJSON {
         depth += 1
         defer { depth -= 1 }
         guard depth <= Self.maxDepth else {
@@ -60,9 +61,9 @@ struct ProtoJSONParser {
         return try parse(&self)
     }
 
-    private mutating func parseObject() throws(GRPCCodecError) -> ProtoJSONValue {
+    private mutating func parseObject() throws(JSONSyntaxError) -> OrderedJSON {
         offset += 1
-        var members: [ProtoJSONMember] = []
+        var members: [OrderedJSONMember] = []
         skipWhitespace()
         if peek() == UInt8(ascii: "}") {
             offset += 1
@@ -77,7 +78,7 @@ struct ProtoJSONParser {
             skipWhitespace()
             try expect(":")
             skipWhitespace()
-            members.append(ProtoJSONMember(key: key, value: try parseValue()))
+            members.append(OrderedJSONMember(key: key, value: try parseValue()))
             skipWhitespace()
             if try endOfContainer("}") {
                 return .object(members)
@@ -85,9 +86,9 @@ struct ProtoJSONParser {
         }
     }
 
-    private mutating func parseArray() throws(GRPCCodecError) -> ProtoJSONValue {
+    private mutating func parseArray() throws(JSONSyntaxError) -> OrderedJSON {
         offset += 1
-        var items: [ProtoJSONValue] = []
+        var items: [OrderedJSON] = []
         skipWhitespace()
         if peek() == UInt8(ascii: "]") {
             offset += 1
@@ -104,7 +105,7 @@ struct ProtoJSONParser {
     }
 
     /// Consumes `,` (more elements follow) or `close` (the container ended).
-    private mutating func endOfContainer(_ close: Unicode.Scalar) throws(GRPCCodecError) -> Bool {
+    private mutating func endOfContainer(_ close: Unicode.Scalar) throws(JSONSyntaxError) -> Bool {
         if peek() == UInt8(ascii: close) {
             offset += 1
             return true
@@ -113,7 +114,7 @@ struct ProtoJSONParser {
         return false
     }
 
-    private mutating func parseString() throws(GRPCCodecError) -> String {
+    private mutating func parseString() throws(JSONSyntaxError) -> String {
         offset += 1
         var utf8: [UInt8] = []
         while let byte = peek() {
@@ -134,7 +135,7 @@ struct ProtoJSONParser {
         throw failure("unterminated string")
     }
 
-    private mutating func appendEscape(to utf8: inout [UInt8]) throws(GRPCCodecError) {
+    private mutating func appendEscape(to utf8: inout [UInt8]) throws(JSONSyntaxError) {
         guard let byte = peek() else {
             throw failure("unterminated string")
         }
@@ -171,7 +172,7 @@ struct ProtoJSONParser {
         UInt8(ascii: "n"): 0x0A, UInt8(ascii: "r"): 0x0D, UInt8(ascii: "t"): 0x09
     ]
 
-    private mutating func readHexQuad() throws(GRPCCodecError) -> UInt32 {
+    private mutating func readHexQuad() throws(JSONSyntaxError) -> UInt32 {
         guard offset + 4 <= bytes.count else {
             throw failure("invalid \\u escape")
         }
@@ -186,7 +187,7 @@ struct ProtoJSONParser {
         return value
     }
 
-    private mutating func parseNumber() throws(GRPCCodecError) -> String {
+    private mutating func parseNumber() throws(JSONSyntaxError) -> String {
         let start = offset
         while let byte = peek(), Self.numberBytes.contains(byte) {
             offset += 1
@@ -200,7 +201,7 @@ struct ProtoJSONParser {
 
     private static let numberBytes = Set("+-.0123456789eE".utf8)
 
-    private mutating func expectLiteral(_ literal: String) throws(GRPCCodecError) {
+    private mutating func expectLiteral(_ literal: String) throws(JSONSyntaxError) {
         let utf8 = Array(literal.utf8)
         guard offset + utf8.count <= bytes.count, Array(bytes[offset..<offset + utf8.count]) == utf8 else {
             throw failure("unexpected character")
@@ -208,7 +209,7 @@ struct ProtoJSONParser {
         offset += utf8.count
     }
 
-    private mutating func expect(_ character: Unicode.Scalar) throws(GRPCCodecError) {
+    private mutating func expect(_ character: Unicode.Scalar) throws(JSONSyntaxError) {
         guard peek() == UInt8(ascii: character) else {
             throw failure("expected `\(character)`")
         }
@@ -225,12 +226,23 @@ struct ProtoJSONParser {
         }
     }
 
-    private func failure(_ detail: String) -> GRPCCodecError {
+    private func failure(_ detail: String) -> JSONSyntaxError {
         let consumed = bytes[..<min(offset, bytes.count)]
         let line = consumed.count { $0 == 0x0A } + 1
         let lineStart = consumed.lastIndex(of: 0x0A).map { $0 + 1 } ?? 0
         // Count UTF-8 lead bytes, so a column is a character position rather than a byte offset.
         let column = consumed[lineStart...].count { $0 & 0xC0 != 0x80 } + 1
-        return GRPCCodecError("Invalid JSON at line \(line), column \(column): \(detail)")
+        return JSONSyntaxError(message: detail, line: line, column: column)
+    }
+}
+
+/// Where JSON text stops being JSON, 1-based, with what was found there.
+struct JSONSyntaxError: Error, Hashable, Sendable {
+    let message: String
+    let line: Int
+    let column: Int
+
+    var description: String {
+        "Invalid JSON at line \(line), column \(column): \(message)"
     }
 }

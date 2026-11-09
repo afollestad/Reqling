@@ -16,7 +16,12 @@ public struct ProtobufJSONCodec: Sendable {
     /// Encodes proto3 JSON (`{"name": "Ada"}`) as `messageType`'s wire bytes. Fields accept their JSON name or their
     /// proto name; unknown fields, mistyped values, and out-of-range numbers throw with the offending path.
     public func encode(json: String, as messageType: String) throws(GRPCCodecError) -> [UInt8] {
-        let value = try ProtoJSONParser.parse(json)
+        let value: OrderedJSON
+        do {
+            value = try OrderedJSONParser.parse(json)
+        } catch {
+            throw GRPCCodecError(error.description)
+        }
         return try encodeMessage(value, typeName: DescriptorRegistry.normalized(messageType), depth: 0)
     }
 
@@ -102,7 +107,7 @@ extension ProtobufJSONCodec {
         }
     }
 
-    static func mismatch(expected: String, got json: ProtoJSONValue) -> GRPCCodecError {
+    static func mismatch(expected: String, got json: OrderedJSON) -> GRPCCodecError {
         GRPCCodecError("Expected \(expected), got \(json.typeDescription)")
     }
 

@@ -1,0 +1,333 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Petstore",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://{region}.petstore.example.com/v1",
+      "description": "Production",
+      "variables": {
+        "region": {
+          "default": "us",
+          "enum": [
+            "us",
+            "eu"
+          ]
+        }
+      }
+    },
+    {
+      "url": "https://staging.petstore.example.com/v1/",
+      "description": "Staging"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "store"
+    },
+    {
+      "name": "pets"
+    }
+  ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "summary": "List pets",
+        "tags": [
+          "pets"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "example": [
+              "dog",
+              "\ud83d\udc31"
+            ]
+          },
+          {
+            "name": "X-Trace",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Accept",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pets.",
+            "links": {
+              "first": {
+                "operationId": "getPet"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a pet",
+        "tags": [
+          "pets",
+          "store"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "$ref": "schemas/pet.yaml#/Pet"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/pet.yaml#/Pet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created."
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "parameters": [
+        {
+          "name": "petId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "example": 42
+        }
+      ],
+      "get": {
+        "summary": "Get a pet",
+        "operationId": "getPet",
+        "tags": [
+          "pets"
+        ],
+        "responses": {
+          "200": {
+            "description": "The pet."
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "tags": [
+          "pets"
+        ],
+        "deprecated": true,
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          }
+        }
+      }
+    },
+    "/files/{name}.{ext}": {
+      "get": {
+        "summary": "Download a file",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "report"
+          },
+          {
+            "name": "ext",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pdf",
+                "csv"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file."
+          }
+        }
+      }
+    },
+    "/store/orders": {
+      "post": {
+        "summary": "Place an order",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "petId"
+                ],
+                "properties": {
+                  "petId": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "shipped": {}
+        },
+        "responses": {
+          "200": {
+            "description": "Placed."
+          }
+        }
+      }
+    },
+    "/store/inventory": {
+      "get": {
+        "summary": "Inventory",
+        "tags": [
+          "store"
+        ],
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts."
+          }
+        }
+      }
+    },
+    "/oauth/me": {
+      "get": {
+        "summary": "Who am I",
+        "security": [
+          {
+            "petstore_auth": [
+              "read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "You."
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "newPet": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Noted."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20
+        }
+      }
+    },
+    "schemas": {
+      "Owner": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Ada"
+          },
+          "pets": {
+            "type": "array",
+            "items": {
+              "$ref": "schemas/pet.yaml#/Pet"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "petstore_auth": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://petstore.example.com/oauth/authorize",
+            "tokenUrl": "https://petstore.example.com/oauth/token",
+            "scopes": {
+              "read": "Read pets"
+            }
+          }
+        }
+      }
+    }
+  }
+}

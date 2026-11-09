@@ -9,7 +9,7 @@ extension ProtobufJSONCodecTests {
 
         let parsed = try Reqling_Test_V1_Everything(jsonString: example)
         try CodecFixtures.assertEquivalent(Reqling_Test_V1_Everything(serializedBytes: codec.encode(json: example, as: Self.everything)), parsed)
-        guard case .object(let members) = try ProtoJSONParser.parse(example) else {
+        guard case .object(let members) = try OrderedJSONParser.parse(example) else {
             return XCTFail("Not an object: \(example)")
         }
         let keys = members.map(\.key)
@@ -25,14 +25,14 @@ extension ProtobufJSONCodecTests {
     }
 
     func testExamplePlaceholdersAndRecursionGuard() throws {
-        let example = try ProtoJSONParser.parse(codec.example(for: Self.everything))
+        let example = try OrderedJSONParser.parse(codec.example(for: Self.everything))
         guard case .object(let members) = example else {
             return XCTFail("Not an object")
         }
         let values = Dictionary(members.map { ($0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
 
         XCTAssertEqual(values["color"], .string("COLOR_UNSPECIFIED"))
-        XCTAssertEqual(values["counts"], .object([ProtoJSONMember(key: "key", value: .number("0"))]))
+        XCTAssertEqual(values["counts"], .object([OrderedJSONMember(key: "key", value: .number("0"))]))
         XCTAssertEqual(values["byId"].flatMap(Self.firstKey), "0")
         XCTAssertEqual(values["flags"].flatMap(Self.firstKey), "false")
         XCTAssertEqual(values["at"], .string("1970-01-01T00:00:00Z"))
@@ -42,7 +42,7 @@ extension ProtobufJSONCodecTests {
         XCTAssertEqual(values["extras"], .array([.object([])]))
         // `Nested.children` contains `Nested` itself, so the guard stops one level in.
         try CodecFixtures.assertJSON(
-            ProtoJSONValue.object([ProtoJSONMember(key: "nested", value: values["nested"] ?? .null)]).prettyPrinted(),
+            OrderedJSON.object([OrderedJSONMember(key: "nested", value: values["nested"] ?? .null)]).prettyPrinted(),
             #"{"nested": {"mood": "MOOD_UNSPECIFIED", "children": [{}]}}"#
         )
     }
@@ -89,20 +89,20 @@ extension ProtobufJSONCodecTests {
         }
         let codec = ProtobufJSONCodec(registry: DescriptorRegistry(files: [CodecFixtures.file("chain", syntax: "proto3", chain)]))
 
-        let example = try ProtoJSONParser.parse(codec.example(for: "chain.C0"))
+        let example = try OrderedJSONParser.parse(codec.example(for: "chain.C0"))
 
         // 32 expanded levels, then `{}`.
         XCTAssertEqual(Self.objectDepth(example), ProtobufJSONCodec.ExampleBudget.maxDepth + 1)
     }
 
-    private static func objectDepth(_ json: ProtoJSONValue) -> Int {
+    private static func objectDepth(_ json: OrderedJSON) -> Int {
         guard case .object(let members) = json else {
             return 0
         }
         return 1 + (members.map { objectDepth($0.value) }.max() ?? 0)
     }
 
-    private static func firstKey(_ json: ProtoJSONValue) -> String? {
+    private static func firstKey(_ json: OrderedJSON) -> String? {
         guard case .object(let members) = json else {
             return nil
         }

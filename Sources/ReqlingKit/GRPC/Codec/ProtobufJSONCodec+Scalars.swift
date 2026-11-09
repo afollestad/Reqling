@@ -7,7 +7,7 @@ extension ProtobufJSONCodec {
     static let nullValueEnum = "google.protobuf.NullValue"
 
     /// Encodes one non-repeated value of `field`'s type.
-    func wireValue(_ json: ProtoJSONValue, field: FieldSchema, depth: Int) throws(GRPCCodecError) -> WireValue {
+    func wireValue(_ json: OrderedJSON, field: FieldSchema, depth: Int) throws(GRPCCodecError) -> WireValue {
         switch field.kind {
         case .bool:
             guard case .bool(let value) = json else {
@@ -31,7 +31,7 @@ extension ProtobufJSONCodec {
         }
     }
 
-    private static func numericWireValue(_ json: ProtoJSONValue, kind: FieldSchema.Kind) throws(GRPCCodecError) -> WireValue {
+    private static func numericWireValue(_ json: OrderedJSON, kind: FieldSchema.Kind) throws(GRPCCodecError) -> WireValue {
         let int32Range = (min: Int64(Int32.min), max: Int64(Int32.max))
         switch kind {
         case .double:
@@ -67,7 +67,7 @@ extension ProtobufJSONCodec {
     }
 
     /// Decodes one value of a scalar or enum field; messages go through `decodeMessage`.
-    func scalarJSON(_ value: WireValue, field: FieldSchema) throws(GRPCCodecError) -> ProtoJSONValue {
+    func scalarJSON(_ value: WireValue, field: FieldSchema) throws(GRPCCodecError) -> OrderedJSON {
         let bits = value.bits
         switch field.kind {
         case .double:
@@ -106,7 +106,7 @@ extension ProtobufJSONCodec {
     }
 
     /// Accepts an enum value's name or number. `NullValue` also accepts JSON `null`, its JSON form.
-    func enumNumber(_ json: ProtoJSONValue, typeName: String) throws(GRPCCodecError) -> Int32 {
+    func enumNumber(_ json: OrderedJSON, typeName: String) throws(GRPCCodecError) -> Int32 {
         if typeName == Self.nullValueEnum, json == .null || json == .string("NULL_VALUE") {
             return 0
         }
@@ -128,7 +128,7 @@ extension ProtobufJSONCodec {
     }
 
     /// The value's name, or its number when the schema predates it: proto3 enums are open.
-    func enumJSON(_ number: Int32, typeName: String) -> ProtoJSONValue {
+    func enumJSON(_ number: Int32, typeName: String) -> OrderedJSON {
         if typeName == Self.nullValueEnum {
             return .null
         }
@@ -139,7 +139,7 @@ extension ProtobufJSONCodec {
     }
 
     static func signedInteger(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         min: Int64,
         max: Int64,
         label: String
@@ -156,7 +156,7 @@ extension ProtobufJSONCodec {
         return isNegative ? Int64(bitPattern: 0 &- magnitude) : Int64(magnitude)
     }
 
-    static func unsignedInteger(_ json: ProtoJSONValue, max: UInt64, label: String) throws(GRPCCodecError) -> UInt64 {
+    static func unsignedInteger(_ json: OrderedJSON, max: UInt64, label: String) throws(GRPCCodecError) -> UInt64 {
         let (number, text) = try integerNumber(json, label: label)
         guard case .exact(let isNegative, let magnitude) = number.integer else {
             throw integerFailure(number, text: text, label: label)
@@ -168,7 +168,7 @@ extension ProtobufJSONCodec {
     }
 
     private static func integerNumber(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         label: String
     ) throws(GRPCCodecError) -> (ProtoJSONNumber, String) {
         let text: String
@@ -192,7 +192,7 @@ extension ProtobufJSONCodec {
     }
 
     static func floatingPoint<Value: BinaryFloatingPoint & LosslessStringConvertible>(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         as type: Value.Type
     ) throws(GRPCCodecError) -> Value {
         let label = type == Float.self ? "float" : "double"
@@ -219,7 +219,7 @@ extension ProtobufJSONCodec {
     }
 
     /// Shortest round-trip text, without Swift's trailing `.0`.
-    static func floatingPointJSON<Value: BinaryFloatingPoint & CustomStringConvertible>(_ value: Value) -> ProtoJSONValue {
+    static func floatingPointJSON<Value: BinaryFloatingPoint & CustomStringConvertible>(_ value: Value) -> OrderedJSON {
         if value.isNaN {
             return .string("NaN")
         }
@@ -231,7 +231,7 @@ extension ProtobufJSONCodec {
     }
 
     /// Standard base64, padded or not; URL-safe base64 is accepted too.
-    static func base64Bytes(_ json: ProtoJSONValue) throws(GRPCCodecError) -> [UInt8] {
+    static func base64Bytes(_ json: OrderedJSON) throws(GRPCCodecError) -> [UInt8] {
         guard case .string(let text) = json else {
             throw mismatch(expected: "base64 bytes as a string", got: json)
         }

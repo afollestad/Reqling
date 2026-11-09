@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Only containers are recorded, in pre-order, as flat arrays of byte offsets: a scalar is found again by scanning its
 /// parent's few bytes when it is needed. That keeps the index to a few bytes per container however large the body is,
-/// where a parsed tree (`JSONSerialization`, or `ProtoJSONValue`) costs many times the body and reorders or recurses.
+/// where a parsed tree (`JSONSerialization`, or `OrderedJSON`) costs many times the body and reorders or recurses.
 /// The pass is iterative, so nesting depth is limited by memory, not the stack.
 public struct JSONStructureIndex: Sendable {
     public let id = UUID()

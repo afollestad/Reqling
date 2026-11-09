@@ -97,6 +97,10 @@ struct ProjectImportPresentation: Equatable {
         switch kind {
         case .descriptions: "description"
         case .savedResponses: "saved response"
+        case .responses: "response definition"
+        case .callbacks: "callback"
+        case .links: "link"
+        case .webhooks: "webhook"
         }
     }
 

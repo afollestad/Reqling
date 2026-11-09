@@ -2,7 +2,7 @@ import Foundation
 @testable import ReqlingKit
 import XCTest
 
-/// A Postman import written as a new project: its files, its secrets kept apart, its trust, and its body files.
+/// An import written as a new project: its files, its secrets kept apart, its trust, and its body files.
 @MainActor
 final class ProjectLifecycleProjectImportTests: XCTestCase {
     private var fixture: LibraryFixture!
@@ -13,7 +13,7 @@ final class ProjectLifecycleProjectImportTests: XCTestCase {
     override func setUp() async throws {
         fixture = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: fixture.directory.file("Support/workspace.json"))
-        suiteName = "com.afollestad.reqling.tests.postman-import.\(UUID().uuidString)"
+        suiteName = "com.afollestad.reqling.tests.project-import.\(UUID().uuidString)"
         let settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
         let runner = RequestRunner(
             library: fixture.library,
@@ -106,6 +106,21 @@ final class ProjectLifecycleProjectImportTests: XCTestCase {
             return XCTFail("a file outside the repository is this Mac's alone")
         }
         XCTAssertEqual(workspace.projectState(id).localPaths[local.description], outside.path)
+    }
+
+    func testAnOpenAPIImportIsTrustedWithItsCredentialsEmptySecretsAndAnEnvironmentPerServer() async throws {
+        let plan = OpenAPIImporter.plan(try await OpenAPILoaderTests.load(try OpenAPILoaderTests.fixture("petstore", "yaml")))
+
+        let id = try lifecycle.importProject(plan, named: "Petstore").project
+        let document = try XCTUnwrap(fixture.library.document(id))
+
+        XCTAssertEqual(workspace.projectState(id).scriptTrust, .trusted, "It brought no scripts")
+        XCTAssertEqual(document.allEnvironments.map(\.name), ["Default", "Production", "Staging"])
+        XCTAssertEqual(document.auth, .bearer(token: "{{bearerToken}}"))
+        let secrets = document.defaultEnvironment.variables.filter(\.isSecret)
+        XCTAssertEqual(Set(secrets.map(\.key)), ["apiKey", "bearerToken", "accessToken"])
+        XCTAssertTrue(secrets.allSatisfy { $0.value.isEmpty })
+        XCTAssertEqual(document.items.map(\.name), ["store", "pets", "Download a file", "Who am I"])
     }
 
     func testAFailedSaveLeavesNoProjectBehind() throws {

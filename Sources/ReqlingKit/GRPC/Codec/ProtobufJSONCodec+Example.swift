@@ -10,7 +10,7 @@ extension ProtobufJSONCodec {
 
     /// `ancestors` holds the messages enclosing this one, so a message that contains itself, directly or through
     /// others, stops at `{}` instead of recursing forever.
-    func exampleMessage(_ typeName: String, ancestors: Set<String>, budget: inout ExampleBudget) -> ProtoJSONValue {
+    func exampleMessage(_ typeName: String, ancestors: Set<String>, budget: inout ExampleBudget) -> OrderedJSON {
         if let wellKnown = WellKnownType(rawValue: typeName) {
             return exampleWellKnown(wellKnown)
         }
@@ -23,7 +23,7 @@ extension ProtobufJSONCodec {
         }
         let nestedAncestors = ancestors.union([typeName])
         var setOneofs = Set<Int>()
-        var members: [ProtoJSONMember] = []
+        var members: [OrderedJSONMember] = []
         for field in schema.fields {
             // A oneof accepts one member, so only its first appears.
             if let oneof = field.oneofIndex, !setOneofs.insert(oneof).inserted {
@@ -31,13 +31,13 @@ extension ProtobufJSONCodec {
             }
             budget.remainingFields -= 1
             let value = exampleField(field, ancestors: nestedAncestors, budget: &budget)
-            members.append(ProtoJSONMember(key: field.jsonName, value: value))
+            members.append(OrderedJSONMember(key: field.jsonName, value: value))
         }
         return .object(members)
     }
 
     /// One element for a repeated field, and one entry for a map.
-    private func exampleField(_ field: FieldSchema, ancestors: Set<String>, budget: inout ExampleBudget) -> ProtoJSONValue {
+    private func exampleField(_ field: FieldSchema, ancestors: Set<String>, budget: inout ExampleBudget) -> OrderedJSON {
         if field.isMap {
             guard let entry = try? schema(for: field.typeName),
                   let keyField = entry.field(number: 1),
@@ -46,13 +46,13 @@ extension ProtobufJSONCodec {
                 return .object([])
             }
             let key = keyField.kind == .string ? "key" : Self.exampleKeyText(exampleScalar(keyField))
-            return .object([ProtoJSONMember(key: key, value: exampleValue(valueField, ancestors: ancestors, budget: &budget))])
+            return .object([OrderedJSONMember(key: key, value: exampleValue(valueField, ancestors: ancestors, budget: &budget))])
         }
         let value = exampleValue(field, ancestors: ancestors, budget: &budget)
         return field.isRepeated ? .array([value]) : value
     }
 
-    private func exampleValue(_ field: FieldSchema, ancestors: Set<String>, budget: inout ExampleBudget) -> ProtoJSONValue {
+    private func exampleValue(_ field: FieldSchema, ancestors: Set<String>, budget: inout ExampleBudget) -> OrderedJSON {
         switch field.kind {
         case .message, .group:
             exampleMessage(field.typeName, ancestors: ancestors, budget: &budget)
@@ -61,7 +61,7 @@ extension ProtobufJSONCodec {
         }
     }
 
-    private func exampleScalar(_ field: FieldSchema) -> ProtoJSONValue {
+    private func exampleScalar(_ field: FieldSchema) -> OrderedJSON {
         guard field.kind == .enum else {
             return (try? scalarJSON(.zero(for: field.wireType ?? .varint), field: field)) ?? .null
         }
@@ -74,7 +74,7 @@ extension ProtobufJSONCodec {
         return .string(first.name)
     }
 
-    private func exampleWellKnown(_ type: WellKnownType) -> ProtoJSONValue {
+    private func exampleWellKnown(_ type: WellKnownType) -> OrderedJSON {
         switch type {
         case .any, .structObject:
             .object([])
@@ -93,7 +93,7 @@ extension ProtobufJSONCodec {
         }
     }
 
-    private static func exampleKeyText(_ json: ProtoJSONValue) -> String {
+    private static func exampleKeyText(_ json: OrderedJSON) -> String {
         switch json {
         case .number(let text), .string(let text):
             text

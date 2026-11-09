@@ -1,7 +1,7 @@
 /// proto3 JSON to wire bytes. Fields are written in declaration order, repeated scalars packed, and proto3 implicit
 /// fields omitted at their default; fields with presence (`optional`, oneof members, messages) are always written.
 extension ProtobufJSONCodec {
-    func encodeMessage(_ json: ProtoJSONValue, typeName: String, depth: Int) throws(GRPCCodecError) -> [UInt8] {
+    func encodeMessage(_ json: OrderedJSON, typeName: String, depth: Int) throws(GRPCCodecError) -> [UInt8] {
         try checkDepth(depth)
         if let wellKnown = WellKnownType(rawValue: typeName) {
             return try encodeWellKnown(json, as: wellKnown, depth: depth)
@@ -15,11 +15,11 @@ extension ProtobufJSONCodec {
     /// Checks that every key names a field, none is given twice under either of its names, and at most one member of
     /// each oneof is set, before writing anything.
     func encodeFields(
-        _ members: [ProtoJSONMember],
+        _ members: [OrderedJSONMember],
         schema: MessageSchema,
         depth: Int
     ) throws(GRPCCodecError) -> [UInt8] {
-        var assigned: [Int: ProtoJSONMember] = [:]
+        var assigned: [Int: OrderedJSONMember] = [:]
         var oneofKeys: [Int: String] = [:]
         for member in members {
             guard let field = schema.field(named: member.key) else {
@@ -51,7 +51,7 @@ extension ProtobufJSONCodec {
 
     /// Writes each element of a JSON array as one element of `field`, packing scalars into a single record.
     func encodeRepeated(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         field: FieldSchema,
         into writer: inout WireWriter,
         depth: Int
@@ -78,7 +78,7 @@ extension ProtobufJSONCodec {
     /// Writes each member of a JSON object as one `key`/`value` entry message. Both are always written, so an entry
     /// never depends on a reader filling in defaults.
     func encodeMap(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         field: FieldSchema,
         into writer: inout WireWriter,
         depth: Int
@@ -102,7 +102,7 @@ extension ProtobufJSONCodec {
 
     /// JSON `null` stands for a field's default, so it writes nothing, except where it is itself a value:
     /// `google.protobuf.Value` (`NullValue`) and a `NullValue` enum.
-    static func isUnset(_ json: ProtoJSONValue, field: FieldSchema) -> Bool {
+    static func isUnset(_ json: OrderedJSON, field: FieldSchema) -> Bool {
         json == .null && (field.isRepeated || !carriesNull(field.typeName))
     }
 
@@ -111,7 +111,7 @@ extension ProtobufJSONCodec {
     }
 
     private func encodeField(
-        _ json: ProtoJSONValue,
+        _ json: OrderedJSON,
         field: FieldSchema,
         into writer: inout WireWriter,
         depth: Int
@@ -132,7 +132,7 @@ extension ProtobufJSONCodec {
     }
 
     /// A repeated element or map value, which, unlike a field, cannot be `null` unless `null` is its value.
-    private func elementValue(_ json: ProtoJSONValue, field: FieldSchema, depth: Int) throws(GRPCCodecError) -> WireValue {
+    private func elementValue(_ json: OrderedJSON, field: FieldSchema, depth: Int) throws(GRPCCodecError) -> WireValue {
         if json == .null, !Self.carriesNull(field.typeName) {
             throw GRPCCodecError("Expected a value, got null")
         }

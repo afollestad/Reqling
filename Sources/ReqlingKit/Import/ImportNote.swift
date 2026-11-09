@@ -18,6 +18,11 @@ public struct ImportNote: Hashable, Sendable {
         case body
         case file
         case variable
+        case url
+        case parameter
+        /// A `$ref` that couldn't be followed.
+        case reference
+        case operation
     }
 
     public let owner: Owner
@@ -32,6 +37,8 @@ public struct ImportCounts: Hashable, Sendable {
     public var environments = 0
     /// Literal credentials moved into secret variables, by variable name.
     public var credentials: [String] = []
+    /// Empty secret variables made for credentials the source only describes, by name, for the person to fill in.
+    public var credentialsToFill: [String] = []
     /// What the source held that Reqling has nowhere to keep, by kind; a kind it held none of is absent.
     public var omitted: [ImportOmission: Int] = [:]
 }
@@ -41,6 +48,11 @@ public enum ImportOmission: Hashable, Sendable, CaseIterable {
     case descriptions
     /// Example responses saved with requests.
     case savedResponses
+    /// An API description's responses, each status's.
+    case responses
+    case callbacks
+    case links
+    case webhooks
 }
 
 /// What an import added to or changed in one environment, by key.
