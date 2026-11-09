@@ -78,7 +78,7 @@ public enum OpenAPILoader {
             let (data, _) = try await fetcher.data(from: target)
             return (data, try StructuredText.parse(data))
         } catch let error as ImportError {
-            source.failures[target] = error.errorDescription ?? "It couldn't be loaded."
+            source.failures[target] = error.reason
         } catch let error as StructuredTextError {
             source.failures[target] = "It isn't valid JSON or YAML. \(error.message)"
         } catch {
@@ -110,7 +110,7 @@ public enum OpenAPILoader {
                 }
                 source.externalValues[target] = text
             } catch {
-                source.failures[target] = error.errorDescription ?? "It couldn't be loaded."
+                source.failures[target] = error.reason
             }
         }
     }

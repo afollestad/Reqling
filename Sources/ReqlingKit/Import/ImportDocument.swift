@@ -67,6 +67,20 @@ public enum ImportError: Error, Equatable, LocalizedError {
         }
     }
 
+    /// Why, without naming the document, for a line that names it already, as a reference's note does.
+    var reason: String {
+        switch self {
+        case .unreadable: "It couldn't be read."
+        case .notImportable: "It isn't a Postman collection or an OpenAPI 3 document."
+        case .syntax(_, let detail): "It isn't valid JSON or YAML. \(detail)"
+        case .swagger2: "It's a Swagger 2.0 document."
+        case .unsupportedOpenAPI(_, let version): "It's OpenAPI \(version)."
+        case .postman(let error): error.errorDescription ?? "It isn't a Postman collection."
+        case .fetch(_, let detail): detail
+        case .tooLarge: "It's larger than \(ByteCountFormatter.string(fromByteCount: Int64(LiveImportFetcher.maximumBytes), countStyle: .file))."
+        }
+    }
+
     /// A file's name, or a URL as it reads.
     static func displayName(of url: URL) -> String {
         url.isFileURL ? url.lastPathComponent : url.absoluteString

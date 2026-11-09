@@ -100,6 +100,13 @@ extension AppComponent {
         }
     }
 
+    /// Reads what the import sheet imports, from files and the network, keeping no cookies or cache.
+    var importFetcher: any ImportFetching {
+        shared {
+            LiveImportFetcher()
+        }
+    }
+
     /// The one folder or project run at a time, which the window and the MCP server share.
     var batchRunner: BatchRunner {
         shared {
@@ -119,6 +126,7 @@ extension AppComponent {
                 keychain: keychainIdentities,
                 pkcs12Probe: pkcs12ImportProbe,
                 system: systemIntegration,
+                importFetcher: importFetcher,
                 protoWorkspaces: protoWorkspaces,
                 protocTooling: protocTooling,
                 mcpServer: mcpServer,

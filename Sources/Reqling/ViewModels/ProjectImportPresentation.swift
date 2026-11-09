@@ -17,6 +17,8 @@ struct ProjectImportPresentation: Equatable {
     let title: String
     let summary: String
     let credentials: String?
+    /// The empty secret variables made for credentials a document only describes.
+    let credentialsToFill: String?
     let environments: [String]
     let groups: [Group]
     let notImported: String?
@@ -37,6 +39,8 @@ struct ProjectImportPresentation: Equatable {
         credentials = counts.credentials.isEmpty ? nil
             : "Literal passwords, tokens, and API keys are secret variables in Default now, kept in your Keychain: "
                 + Self.listed(counts.credentials) + "."
+        credentialsToFill = counts.credentialsToFill.isEmpty ? nil
+            : "Fill in these secret variables in Default, kept in your Keychain: " + Self.listed(counts.credentialsToFill) + "."
         environments = (plan.environmentChanges + [result.globalChange].compactMap(\.self)).compactMap(Self.line)
         groups = Self.groups(plan.notes)
         let omitted = ImportOmission.allCases.compactMap { kind in
@@ -45,6 +49,12 @@ struct ProjectImportPresentation: Equatable {
         notImported = omitted.isEmpty ? nil : "Not imported: \(Self.listed(omitted)), which Reqling has nowhere to keep."
         trust = plan.hasScripts ? "Its scripts run once you trust them: the first request you send with scripts asks." : nil
         globalProblem = result.globalProblem.map { "The globals couldn't be added to the Global environment: \($0)" }
+    }
+
+    /// The lines under the notes, in order: credentials, what needs filling in, a globals problem, what wasn't
+    /// imported, and trust.
+    var footnotes: [String] {
+        [credentials, credentialsToFill, globalProblem, notImported, trust].compactMap(\.self)
     }
 
     /// What an import did to one environment: `Staging: new, with 3 variables.`, or `Default: 2 updated, 1 added.`; `nil`

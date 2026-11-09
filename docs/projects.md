@@ -24,9 +24,13 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.
 - **Filter the sidebar** by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
 
-## Importing from Postman
+## Importing
 
-Choose **File ▸ Import Postman Collection…**, also in the sidebar's add menu, and pick a collection exported from Postman (Collection v2.1 or v2.0) with any of its environment and globals exports. Reqling makes a new project from them, then sums up what came over and what needs changes.
+Choose **File ▸ Import…** (⇧⌘I), also in the sidebar's add menu, and give it a Postman collection or an OpenAPI 3 document: choose a file, or type a URL or a file's path and press **Load**. Reqling tells which it is from what's inside, says what it found, then makes a new project and sums up what came over and what needs changes.
+
+### From Postman
+
+Load a collection exported from Postman (Collection v2.1 or v2.0), then add any of its environment and globals exports under **Environments**.
 
 - **Requests and folders** keep their order, with their methods, URLs, query parameters, headers, and bodies: raw, sent as the type Postman sent it as, form-data, URL-encoded, binary, and GraphQL. Turned-off rows stay turned off.
 - **Auth.** Basic, bearer, and API key auth carry over: the collection's becomes the project's, and each folder's its own. A password, token, or key typed into Postman's auth becomes a secret variable in Default, such as `{{bearerToken}}`, so it's kept in your Keychain rather than the project's files. Other auth types become none, and the summary lists them.
@@ -35,6 +39,19 @@ Choose **File ▸ Import Postman Collection…**, also in the sidebar's add menu
 - **Scripts** become each level's own, the collection's the project's, and run as they are ([Scripts from Postman](scripts.md#scripts-from-postman)). Since someone else wrote them, the project asks before running them. The summary lists what in them needs changes, as the editor underlines it.
 - **Not imported:** descriptions, saved example responses, folders' and requests' own variables, and settings Reqling doesn't have.
 - **Into a project you have.** To bring Postman environments or globals into an existing project, choose the import button under the list in its Environments sheet. Each merges into the environment of its name: Postman's values replace the saved ones, except that an empty value never blanks one and a secret stays secret. Done saves them.
+
+### From OpenAPI
+
+Load an OpenAPI 3.0, 3.1, or 3.2 document, in JSON or YAML. A Swagger 2.0 document needs converting to OpenAPI 3 first.
+
+- **Requests** are one per operation, named by its summary, then its `operationId`, then its method and path. Each sits in the folder of its first tag, in the order the document lists its tags, and 3.2's tag `parent` nests folders. Untagged operations sit at the top, after the folders.
+- **URLs** start with `{{baseUrl}}`. A path parameter that is a whole segment becomes a [path variable](requests.md#building-a-request) (`/pets/{petId}` becomes `/pets/:petId`) with its example as its value. One inside a segment, as in `/files/{name}.{ext}`, becomes a variable in Default instead.
+- **Servers.** The first server's URL is `baseUrl` in Default, with each server variable such as `{region}` as `{{region}}` beside it. With more than one server, each also gets an environment, named by its description. A relative server URL is relative to a document loaded from a URL; in a file, put the server's address in `baseUrl` yourself.
+- **Parameters** become query parameters and headers, turned on when required and off otherwise, each valued from its example. Cookie parameters make one `Cookie` header. `Accept`, `Content-Type`, and `Authorization` header parameters are left out, as OpenAPI says.
+- **Bodies** prefer JSON, then forms, then YAML, XML, and text, and anything else is a binary body whose file you choose. The example is the document's own or one made from its schema, without read-only properties. A multipart file part is left for you to choose.
+- **Auth.** Basic, bearer, and API key schemes in a header or the query carry over, as do OAuth 2.0 and OpenID Connect as bearer auth whose token you get yourself. Each scheme's credentials are empty secret variables in Default, such as `{{bearerToken}}`, for you to fill in. The document's security becomes the project's auth, a folder takes the auth every request in it shares, and a request whose security differs keeps its own.
+- **References** (`$ref`) are followed across the document and into other files beside it, or, for a document loaded from a URL, other URLs. A document loaded from a URL never reads files on this Mac. What couldn't be loaded shows under the source before you import, and in the summary where it's used.
+- **Not imported:** responses, callbacks, links, webhooks, and descriptions, which the summary counts.
 
 ## Environments
 

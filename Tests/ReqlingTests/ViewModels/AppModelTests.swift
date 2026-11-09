@@ -43,6 +43,7 @@ final class AppModelTests: XCTestCase {
             keychain: fixture.component.keychainIdentities,
             pkcs12Probe: fixture.component.pkcs12ImportProbe,
             system: fixture.system,
+            importFetcher: fixture.importFetcher,
             protoWorkspaces: fixture.component.protoWorkspaces,
             protocTooling: fixture.protoc.model,
             mcpServer: fixture.component.mcpServer,

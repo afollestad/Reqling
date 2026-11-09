@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Where a new project's folder goes: Reqling's projects folder unless the person chooses another, such as a folder in
-/// their API's repository. New Project and the Postman import share it.
+/// their API's repository. New Project and the import sheet share it.
 struct ProjectLocationRow: View {
     @Binding var location: URL?
     let system: any SystemIntegration

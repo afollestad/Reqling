@@ -15,6 +15,7 @@ final class AppFixture {
     let profile: AppStorageProfile
     let component: AppComponent
     let system = StubSystemIntegration()
+    let importFetcher = ImportFetcherStub()
     let protoc: ProtocToolingFixture
     let model: AppModel
 
@@ -39,6 +40,7 @@ final class AppFixture {
             keychain: component.keychainIdentities,
             pkcs12Probe: component.pkcs12ImportProbe,
             system: system,
+            importFetcher: importFetcher,
             protoWorkspaces: component.protoWorkspaces,
             protocTooling: protoc.model,
             mcpServer: component.mcpServer,

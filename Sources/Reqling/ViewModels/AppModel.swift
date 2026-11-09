@@ -23,7 +23,8 @@ enum SidebarItem: Hashable {
 
 enum AppSheet: Identifiable, Hashable {
     case newProject
-    case importPostman
+    /// A Postman collection or an OpenAPI document, as a new project.
+    case importProject
     case environments(ProjectID)
     case projectSettings(ProjectID)
     case batchRun(BatchRunScope)
@@ -113,6 +114,8 @@ final class AppModel {
     @ObservationIgnored let keychain: any KeychainIdentityStore
     @ObservationIgnored let pkcs12Probe: any PKCS12ImportProbe
     @ObservationIgnored let system: any SystemIntegration
+    /// What the import sheet reads documents through, files and URLs alike.
+    @ObservationIgnored let importFetcher: any ImportFetching
     /// One workspace per project with proto definitions, kept in step by `syncProtoWorkspaces()`.
     @ObservationIgnored let protoWorkspaces: ProtoWorkspaceStore
     @ObservationIgnored let protocTooling: ProtocToolingModel
@@ -135,6 +138,7 @@ final class AppModel {
         keychain: any KeychainIdentityStore,
         pkcs12Probe: any PKCS12ImportProbe,
         system: any SystemIntegration,
+        importFetcher: any ImportFetching,
         protoWorkspaces: ProtoWorkspaceStore,
         protocTooling: ProtocToolingModel,
         mcpServer: MCPServerController,
@@ -150,6 +154,7 @@ final class AppModel {
         self.keychain = keychain
         self.pkcs12Probe = pkcs12Probe
         self.system = system
+        self.importFetcher = importFetcher
         self.protoWorkspaces = protoWorkspaces
         self.protocTooling = protocTooling
         self.mcpServer = mcpServer

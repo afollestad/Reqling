@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// What a Postman import made: its counts, the environments it changed, and what needs changes, grouped by where it is,
+/// What an import made: its counts, the environments it changed, and what needs changes, grouped by where it is,
 /// as selectable text so it copies out.
-struct PostmanImportSummary: View {
+struct ImportSummary: View {
     let summary: ProjectImportPresentation
 
     var body: some View {
@@ -20,9 +20,9 @@ struct PostmanImportSummary: View {
                 Label("Nothing needs changes.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                PostmanImportNotes(groups: summary.groups)
+                ImportNotes(groups: summary.groups)
             }
-            ForEach([summary.credentials, summary.globalProblem, summary.notImported, summary.trust].compactMap(\.self), id: \.self) { text in
+            ForEach(summary.footnotes, id: \.self) { text in
                 Text(text)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -35,7 +35,7 @@ struct PostmanImportSummary: View {
 
 /// The notes, by folder, request, environment, or the project, in a scroll that keeps a long list from growing the
 /// sheet past the window.
-private struct PostmanImportNotes: View {
+private struct ImportNotes: View {
     let groups: [ProjectImportPresentation.Group]
 
     var body: some View {

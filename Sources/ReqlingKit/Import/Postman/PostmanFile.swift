@@ -49,6 +49,14 @@ public struct PostmanCollection: Sendable {
     public var name: String {
         root["info"]?["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
+
+    /// How many requests it holds, its folders' included, for the import sheet to say before Import.
+    public var requestCount: Int {
+        func count(_ items: PostmanJSON?) -> Int {
+            (items?.array ?? []).reduce(0) { total, item in total + (item["item"]?.array != nil ? count(item["item"]) : 1) }
+        }
+        return count(root["item"])
+    }
 }
 
 /// A Postman environment, or Postman's globals, as exported.

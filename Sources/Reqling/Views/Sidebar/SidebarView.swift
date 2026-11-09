@@ -99,12 +99,12 @@ private struct SidebarAddProjectMenu: View {
         Menu {
             Button("New Project…") { model.sheet = .newProject }
             Button("Add Project Folder…") { model.openProjectFolder() }
-            Button("Import Postman Collection…") { model.sheet = .importPostman }
+            Button("Import…") { model.sheet = .importProject }
         } label: {
             Label("Add a Project", systemImage: "plus")
         }
         .menuIndicator(.hidden)
-        .help("Create a project, add an existing project folder, or import a Postman collection")
+        .help("Create a project, add an existing project folder, or import a Postman collection or OpenAPI document")
         .accessibilityLabel("Add a project")
     }
 }
@@ -121,7 +121,7 @@ private struct SidebarEmptyState: View {
             Button("New Project…") { model.sheet = .newProject }
                 .buttonStyle(.borderedProminent)
             Button("Add Project Folder…") { model.openProjectFolder() }
-            Button("Import Postman Collection…") { model.sheet = .importPostman }
+            Button("Import…") { model.sheet = .importProject }
         }
     }
 }
@@ -160,7 +160,7 @@ private struct SidebarFooter: View {
                 Divider()
                 Button("New Project…") { model.sheet = .newProject }
                 Button("Add Project Folder…") { model.openProjectFolder() }
-                Button("Import Postman Collection…") { model.sheet = .importPostman }
+                Button("Import…") { model.sheet = .importProject }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .accessibilityLabel("More ways to add")
