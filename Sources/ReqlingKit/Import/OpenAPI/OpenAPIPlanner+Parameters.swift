@@ -39,7 +39,8 @@ extension OpenAPIPlanner {
             applyQueryString(media.flatMap { mediaExample($0, owner: owner) }, required: parameter.isRequired, to: &spec, owner: owner)
             return
         }
-        let value = example(of: parameter.node, owner: owner)
+        // A path variable left empty makes Send ask for it, where a made-up `string` would go out unnoticed.
+        let value = example(of: parameter.node, owner: owner, givenOnly: parameter.location == "path")
         let style = parameter.node["style"]?.value.string
         let explode = parameter.node["explode"]?.value.bool
         switch parameter.location {
@@ -63,7 +64,8 @@ extension OpenAPIPlanner {
     }
 
     /// The parameter's example: its own, then its first named one, then its media type's, then one from its schema.
-    mutating func example(of parameter: OpenAPINode, owner: ImportNote.Owner) -> YAMLValue? {
+    /// `givenOnly` takes only values the document gives, never one made from a schema's type.
+    mutating func example(of parameter: OpenAPINode, owner: ImportNote.Owner, givenOnly: Bool = false) -> YAMLValue? {
         if let example = parameter["example"] {
             return example.value
         }
@@ -74,7 +76,10 @@ extension OpenAPIPlanner {
             // A parameter given as content is serialized as its media type, JSON in practice.
             return mediaExample(media, owner: owner).map { .string($0.jsonText()) }
         }
-        return schemaExample(parameter["schema"], owner: owner)
+        guard givenOnly else {
+            return schemaExample(parameter["schema"], owner: owner)
+        }
+        return resolved(parameter["schema"], owner: owner).flatMap(OpenAPISchemaExample.givenValue)
     }
 
     private mutating func addCookie(_ parameter: Parameter, value: YAMLValue?, to spec: inout HTTPRequestSpec) {

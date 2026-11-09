@@ -12,6 +12,25 @@ extension OpenAPIImporterTests {
                        "Accept is left to the response")
     }
 
+    func testAPathVariableTakesOnlyAValueTheDocumentGives() async throws {
+        let plan = try await plan("""
+        openapi: 3.1.0
+        info: {title: Paths, version: '1'}
+        paths:
+          /orgs/{org}/teams/{team}:
+            get:
+              summary: Team
+              parameters:
+                - {name: org, in: path, required: true, schema: {type: string}}
+                - {name: team, in: path, required: true, schema: {type: string, default: core}}
+              responses: {}
+        """)
+
+        let values = try spec(plan, "Team").pathVariables.map { "\($0.key)=\($0.value)" }
+
+        XCTAssertEqual(values, ["org=", "team=core"], "Left empty, Send asks for it rather than sending a made-up “string”")
+    }
+
     func testAJSONBodyIsMadeFromItsSchemaAcrossFiles() async throws {
         let plan = try await petstore()
         let add = try spec(plan, "pets", "Add a pet")
