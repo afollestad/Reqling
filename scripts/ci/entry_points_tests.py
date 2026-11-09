@@ -12,7 +12,7 @@ SCRIPTS_DIRECTORY = CI_DIRECTORY.parent
 def entry_points() -> list[Path]:
     """The scripts the workflows and `RELEASING.md` run directly, by path."""
     scripts = [path for path in CI_DIRECTORY.iterdir() if path.suffix in (".sh", ".py") and not path.name.endswith("_tests.py")]
-    return sorted(scripts) + [SCRIPTS_DIRECTORY / "set-certificate-secrets.sh"]
+    return sorted(scripts) + [SCRIPTS_DIRECTORY / name for name in ("set-certificate-secrets.sh", "set-provisioning-profile-secret.sh")]
 
 
 class EntryPointsTests(unittest.TestCase):

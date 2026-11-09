@@ -4,6 +4,7 @@ These instructions cover the CI scripts under `scripts/ci/`; `RELEASING.md` docu
 
 - **Keep YAML thin.** Put logic here and keep `.github/workflows/*.yml` as orchestration. Keep both workflows on the same runner label and `DEVELOPER_DIR`, so releases build on the validated toolchain.
 - **Protect secrets.** Never print secret values, enable shell tracing, or write signing material outside `$RUNNER_TEMP`.
+- **Keep the release's entitlements exactly `Config/Entitlements/Reqling.entitlements` plus the profile's identifiers.** `verify-release-app.sh` compares them whole, so an added entitlement, such as `get-task-allow`, fails the release until the template says so.
 - **Fail before publishing.** Validate the version, tag, signatures, notarization, and packages before creating the tag or GitHub Release; only push-triggered `release` runs may do either.
 - **Let `detect-release-version.py` own the mode**, including the `RELEASES_ENABLED` gate. Workflows only compare its outputs and never recompute them from `github.event_name` or the variable.
 - **Read the bundle and dSYMs from `$EXPORT_PATH`.** Only `build-release-app.sh` sources `scripts/lib/common.sh`, so `.build/` layout stays with `scripts/build.sh`.

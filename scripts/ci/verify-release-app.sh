@@ -59,4 +59,10 @@ for executable in "${executables[@]}"; do
   fi
 done
 
-echo "Verified ${APP_NAME} ${VERSION} (${BUILD}): ${#executables[@]} executables, Developer ID signed, hardened runtime, arm64"
+# Exactly the iCloud and push entitlements sync needs, Production's, granted by a Developer ID profile signed with this
+# certificate and lasting at least 30 days more, since an app whose profile expires stops opening, updater included;
+# nothing else, such as get-task-allow or a hardened runtime exception, and nothing on the helpers.
+python3 -I "$(dirname "$0")/../lib/provisioning_profile.py" verify-app "$app_path" --team "$APPLE_TEAM_ID" \
+  --template "$(dirname "$0")/../../Config/Entitlements/Reqling.entitlements" --min-days 30
+
+echo "Verified ${APP_NAME} ${VERSION} (${BUILD}): ${#executables[@]} executables, Developer ID signed, hardened runtime, arm64, iCloud entitlements"

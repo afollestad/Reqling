@@ -8,3 +8,4 @@ These instructions cover developer scripts under `scripts/`; `scripts/ci/AGENTS.
 - Every entry point that compiles the app runs `generate_needle` (`scripts/lib/needle.sh`) first and applies `typecheck_budget_flags` (`scripts/lib/typecheck-budget.sh`); a differing flag set rebuilds the whole package graph.
 - Expand possibly empty arrays as `${array[@]+"${array[@]}"}`; macOS's bash 3.2 treats a bare empty expansion as unbound under `set -u`.
 - Keep honoring `CI=true` (setup skips the hooks); `.github/workflows/` run `setup.sh`, `lint.sh`, `build.sh`, and `test.sh` unchanged.
+- **Give the app iCloud and push entitlements only beside a profile `scripts/lib/provisioning_profile.py` checked.** macOS won't launch an app whose profile doesn't cover what it claims; `build.sh`, `set-provisioning-profile-secret.sh`, and `scripts/ci/verify-release-app.sh` share that tool, so a profile one refuses the others refuse too.

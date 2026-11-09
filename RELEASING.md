@@ -66,7 +66,7 @@ Release builds run as `com.afollestad.reqling`, with your real projects, Keychai
 
 Set these repository secrets (Settings → Secrets and variables → Actions, or `gh secret set`). Never commit signing material. Every mode signs, so Release runs fail at `scripts/ci/check-secrets.sh`, which names whatever is missing, until the signing secrets exist; canaries skip the App Store Connect ones.
 
-None of these values are app-specific, so other apps on the same team can use the same certificate and API key. GitHub never reveals stored secrets, though, so copy them from their sources rather than from another repository.
+Apart from the provisioning profile, none of these values are app-specific, so other apps on the same team can use the same certificate and API key. GitHub never reveals stored secrets, though, so copy them from their sources rather than from another repository.
 
 | Secret | Value |
 | --- | --- |
@@ -74,6 +74,7 @@ None of these values are app-specific, so other apps on the same team can use th
 | `MACOS_CERTIFICATE_P12_BASE64` | Base64 of the Developer ID Application certificate and private key, exported as `.p12` |
 | `MACOS_CERTIFICATE_PASSWORD` | The password chosen when exporting the `.p12` |
 | `MACOS_KEYCHAIN_PASSWORD` | Any random string; CI uses it for its temporary keychain |
+| `MACOS_PROVISIONING_PROFILE_BASE64` | Base64 of Reqling's Developer ID provisioning profile, which lets the release use iCloud and push |
 | `APP_STORE_CONNECT_API_KEY_P8_BASE64` | Base64 of an App Store Connect API key (`AuthKey_<KEY_ID>.p8`) used for notarization |
 | `APP_STORE_CONNECT_KEY_ID` | That key's ID, the `<KEY_ID>` in its file name |
 | `APP_STORE_CONNECT_ISSUER_ID` | The issuer ID shown above the App Store Connect API keys list |
@@ -88,6 +89,18 @@ None of these values are app-specific, so other apps on the same team can use th
    openssl rand -hex 24 | gh secret set MACOS_KEYCHAIN_PASSWORD -R afollestad/Reqling
    gh secret set APPLE_TEAM_ID -R afollestad/Reqling   # prompts for the team ID
    ```
+
+### Provisioning profile
+
+Releases embed a Developer ID provisioning profile, without which macOS won't let them use iCloud sync. `scripts/build.sh` refuses a release without a usable one, and `scripts/ci/verify-release-app.sh` checks the result.
+
+1. In Certificates, Identifiers & Profiles, the App ID `com.afollestad.reqling` needs **iCloud** (Include CloudKit support) with the container `iCloud.com.afollestad.reqling`, and **Push Notifications**, which needs no certificate. Save the App ID after changing either.
+2. Profiles → **+** → Distribution → **Developer ID**, for that App ID and the Developer ID Application certificate. Download it.
+3. Run `./scripts/set-provisioning-profile-secret.sh <profile>`. It checks the profile as the build does (Developer ID, App ID, team, the container and push, at least 30 days left), then sets `MACOS_PROVISIONING_PROFILE_BASE64`. Pass `--dry-run` to check without changing the secret.
+
+**Renew it before it expires.** Gatekeeper checks the profile at every launch, so installed copies stop opening when it expires, and the updater can't fix that. Release verification fails within 30 days of expiry. Regenerate the profile whenever the App ID's capabilities change, renewing the certificate included, and reset the secret.
+
+**Deploy the CloudKit schema before the first release that syncs.** Debug builds create record types in CloudKit's Development environment; releases use Production, which has only what CloudKit Console → Schema → **Deploy Schema Changes…** promotes. Deploy again whenever a release adds a record type or field. Production can never lose either.
 
 ### Notarization API key
 

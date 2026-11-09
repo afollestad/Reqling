@@ -49,6 +49,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `./scripts/screenshots.sh [-b]` | Captures the website's screenshots of a demo project, in light and dark |
 | `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against; `--token` requires a bearer token, `--no-introspection` refuses introspection |
 | `./scripts/set-certificate-secrets.sh [--dry-run]` | Exports your Developer ID certificate into the release workflow's signing secrets ([RELEASING.md](RELEASING.md)) |
+| `./scripts/set-provisioning-profile-secret.sh [--dry-run] <profile>` | Checks the Developer ID provisioning profile and stores it as the release workflow's secret ([RELEASING.md](RELEASING.md)) |
 | `./scripts/generate-protos.sh` | Regenerates protobuf code and descriptor sets after a `.proto` change |
 
 - **Launch through `run.sh`**, not `swift run` or Xcode. Reqling is a SwiftPM package, and only the `.app` bundle `build.sh` assembles has the Info.plist, the assets compiled with `actool`, the `ReqlingPKCS12Probe` and `ReqlingScriptRunner` helpers with the script runtime, and the signature.
@@ -77,6 +78,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 
 - **Separate identity.** Debug builds use `com.afollestad.reqling.debug` and appear as **Reqling Dev**, with their own preferences and Application Support folder, so they never touch a release build's data.
 - **Signing.** They're signed with your Apple Development certificate when one is installed, so Keychain access survives rebuilds; otherwise they're signed ad hoc, and macOS asks again after each build. Set `DEBUG_CODESIGN_IDENTITY` to pick an identity, or `-` to force ad hoc.
+- **iCloud sync.** Reqling Dev syncs, against CloudKit's Development environment, only when a macOS App Development profile for `com.afollestad.reqling.debug` lists this Mac and that certificate: `DEBUG_PROVISIONING_PROFILE`, or one in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. Without one it builds as before, and its iCloud settings say sync is unavailable. The App ID needs iCloud with the container `iCloud.com.afollestad.reqling`, and Push Notifications.
 
 ## Releases
 
@@ -84,7 +86,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 ./scripts/build.sh --release
 ```
 
-This builds `.build/app/release/Reqling.app` for Apple silicon, with a `dSYMs` folder beside it holding one dSYM per executable. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution; otherwise it's signed ad hoc.
+This builds `.build/app/release/Reqling.app` for Apple silicon, with a `dSYMs` folder beside it holding one dSYM per executable. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution, and `PROVISIONING_PROFILE` to the Developer ID profile it embeds for iCloud sync ([RELEASING.md](RELEASING.md)); otherwise it's signed ad hoc, without iCloud.
 
 CI builds, signs, notarizes, and publishes releases from `main`; [RELEASING.md](RELEASING.md) covers versioning, the publish gate, and the signing secrets.
 

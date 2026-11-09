@@ -8,8 +8,9 @@ usage() {
   echo "usage: $0 [--release] [--no-xcsift]" >&2
 }
 
-# Set CODESIGN_IDENTITY (e.g. "Developer ID Application") to sign either configuration for distribution. Otherwise releases
-# sign ad hoc, and debug builds sign with DEBUG_CODESIGN_IDENTITY (`-` for ad hoc), else an Apple Development identity, else ad hoc.
+# Set CODESIGN_IDENTITY (e.g. "Developer ID Application") to sign either configuration for distribution; a release signed
+# that way also needs PROVISIONING_PROFILE. Otherwise releases sign ad hoc, and debug builds sign with
+# DEBUG_CODESIGN_IDENTITY (`-` for ad hoc), else an Apple Development identity, else ad hoc.
 configuration=debug
 build_flags=()
 for arg in "$@"; do
@@ -74,7 +75,7 @@ done
 # SwiftPM can't compile asset catalogs or Icon Composer documents, so actool builds Assets.car and AppIcon.icns.
 # Pass absolute paths: actool runs in a shared daemon that resolves relative ones against its own working directory.
 partial_plist=$(mktemp -t reqling-actool)
-trap 'rm -f "$partial_plist"' EXIT
+trap 'rm -f "$partial_plist" "${entitlements_file:-}"' EXIT
 if ! actool_output=$(xcrun actool "$repo_root/Resources/Assets.xcassets" "$repo_root/Resources/AppIcon.icon" \
   --compile "$app/Contents/Resources" \
   --platform macosx \
@@ -115,15 +116,49 @@ else
   strip -rSTx "$app/Contents/MacOS/$app_name" "${helpers[@]}"
 fi
 
+# iCloud sync: macOS honors the iCloud and push entitlements only when the embedded provisioning profile allows them,
+# and won't launch an app that claims one its profile doesn't. So a profile is checked first
+# (`scripts/lib/provisioning_profile.py`), then embedded with its entitlements, or neither goes on. Only the app gets
+# them; the helpers use no iCloud.
+profile_tool=(python3 -I "$repo_root/scripts/lib/provisioning_profile.py")
+entitlement_flags=()
+
+# The SHA-1 of the certificate `codesign --sign "$1"` signs with.
+certificate_hash() {
+  if [[ $1 =~ ^[0-9A-Fa-f]{40}$ ]]; then
+    echo "$1"
+  else
+    security find-certificate -c "$1" -Z 2>/dev/null | awk '/SHA-1 hash:/ { print $3; exit }'
+  fi
+}
+
+# Embeds profile $1 and signs the app with template $2's entitlements plus the identifiers $1 grants.
+use_profile() {
+  entitlements_file=$(mktemp -t reqling-entitlements)
+  "${profile_tool[@]}" entitlements "$1" "$2" "$entitlements_file"
+  cp "$1" "$app/Contents/embedded.provisionprofile"
+  entitlement_flags=(--entitlements "$entitlements_file")
+}
+
 # Each branch signs the helpers before the bundle, the same way: the bundle's signature seals its nested code, and
 # updates verify it with `codesign --deep --strict`.
 identity=${CODESIGN_IDENTITY:--}
 if [ "$identity" != - ]; then
+  if [ "$configuration" = release ]; then
+    # A release without sync would ship silently, so a missing or unusable profile stops it.
+    if [ -z "${PROVISIONING_PROFILE:-}" ]; then
+      echo "error: set PROVISIONING_PROFILE to the Developer ID provisioning profile (RELEASING.md)" >&2
+      exit 1
+    fi
+    "${profile_tool[@]}" check "$PROVISIONING_PROFILE" --bundle-id com.afollestad.reqling \
+      --certificate "$(certificate_hash "$identity")" --distribution
+    use_profile "$PROVISIONING_PROFILE" "$repo_root/Config/Entitlements/Reqling.entitlements"
+  fi
   # Notarization requires the hardened runtime and a secure timestamp.
   for helper in "${helpers[@]}"; do
     codesign --force --options runtime --timestamp --sign "$identity" "$helper"
   done
-  codesign --force --options runtime --timestamp --sign "$identity" "$app"
+  codesign --force --options runtime --timestamp --sign "$identity" ${entitlement_flags[@]+"${entitlement_flags[@]}"} "$app"
 elif [ "$configuration" = debug ]; then
   # macOS ties Keychain items to the code that may read them twice: the ACL checks the designated requirement, and the
   # partition list checks the signer. Ad hoc code's partition is its cdhash, which every rebuild changes, so each build
@@ -134,13 +169,31 @@ elif [ "$configuration" = debug ]; then
   if [ -z "$debug_identity" ]; then
     debug_identity=$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: /{print $2}' | head -n 1 || true)
   fi
+  # Reqling Dev syncs against CloudKit's Development environment when a development profile for it lists this Mac:
+  # DEBUG_PROVISIONING_PROFILE, which must be usable, or the longest-lasting usable one Xcode's profile folder holds.
+  if [ "${debug_identity:--}" != - ]; then
+    certificate=$(certificate_hash "$debug_identity")
+    device=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/ { print $2; exit }')
+    debug_profile=${DEBUG_PROVISIONING_PROFILE:-}
+    if [ -n "$debug_profile" ]; then
+      "${profile_tool[@]}" check "$debug_profile" --bundle-id com.afollestad.reqling.debug --certificate "$certificate" --device "$device"
+    else
+      debug_profile=$("${profile_tool[@]}" find "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
+        --bundle-id com.afollestad.reqling.debug --certificate "$certificate" --device "$device" || true)
+    fi
+    if [ -n "$debug_profile" ]; then
+      use_profile "$debug_profile" "$repo_root/Config/Entitlements/ReqlingDebug.entitlements"
+    else
+      echo "note: no usable Reqling Dev provisioning profile, so this build can't sync with iCloud (README, Debug builds)" >&2
+    fi
+  fi
   # Only the app takes the requirement: the helpers read no Keychain item and hold no privacy grant.
   signed_helpers=true
   for helper in "${helpers[@]}"; do
     codesign --force --timestamp=none --sign "${debug_identity:--}" "$helper" || signed_helpers=false
   done
   if [ "$signed_helpers" != true ] \
-    || ! codesign --force --timestamp=none --sign "${debug_identity:--}" \
+    || ! codesign --force --timestamp=none --sign "${debug_identity:--}" ${entitlement_flags[@]+"${entitlement_flags[@]}"} \
       --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"; then
     # Over SSH the login keychain is usually locked, so codesign can't reach the identity's private key.
     if [ "${debug_identity:--}" != - ]; then

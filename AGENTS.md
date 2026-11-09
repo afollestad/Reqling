@@ -30,7 +30,7 @@ Read the nearest `AGENTS.md` before editing; every scoped folder pairs it with a
 - After changing a pin, run `swift package resolve` and confirm `.build/checkouts/<dep>` moved to the new revision before trusting a green build.
 - Never edit dependency sources under `.build/`; change the pin or the upstream package.
 - **`Tools/GraphQLFixtureServer` is a separate package**, used only by `ReqlingKitTests` and `scripts/graphql-server.sh`, so `scripts/build.sh` never builds it. Keep the pins it shares with the root identical and commit its own `Package.resolved`; a mismatched exact pin fails the root's resolution.
-- Debug builds are `com.afollestad.reqling.debug` ("Reqling Dev"). `scripts/build.sh` rewrites that identity and signs against `Config/CodeSigning/ReqlingDebugTCC.requirements`, so change both together.
+- Debug builds are `com.afollestad.reqling.debug` ("Reqling Dev"). `scripts/build.sh` rewrites that identity and signs against `Config/CodeSigning/ReqlingDebugTCC.requirements`, and its provisioning profiles' App IDs name it, so change them together.
 
 ## Build And Test
 
