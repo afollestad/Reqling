@@ -224,14 +224,18 @@ extension RequestRunnerTests {
         let project = try scriptedProject(base: server.baseURL, trust: .unknown)
         try setScripts(project, request: project.profile.id, ScriptSet(preRequest: "rq.request.headers.upsert('Authorization', 'trusted')"))
         try setScripts(project, request: project.login.id, ScriptSet(preRequest: "rq.variables.set('x', '1')"))
-        let decider = CountingTrustDecider(answer: true)
+        let decider = GatedTrustDecider()
         let runner = makeRunner()
         runner.trustDecider = decider
         let options = RunOptions(mayPromptForTrust: true)
 
-        async let first = runner.run(project.profile.id, in: project.id, options: options)
-        async let second = runner.run(project.login.id, in: project.id, options: options)
-        let (profile, _) = await (first, second)
+        // Me asks first, deterministically; Login starts while that question is still open.
+        let first = Task { await runner.run(project.profile.id, in: project.id, options: options) }
+        await waitUntil("Me asks about the scripts") { decider.questions == 1 }
+        let second = Task { await runner.run(project.login.id, in: project.id, options: options) }
+        decider.answer()
+        let profile = await first.value
+        _ = await second.value
         let again = await runner.run(project.profile.id, in: project.id, options: options)
 
         XCTAssertEqual(decider.questions, 1)
@@ -373,6 +377,27 @@ extension RequestRunnerTests {
 
     private func runner(exchange: RequestExchange) -> RunOutcomeKind {
         RunSummary(exchange).outcomeKind
+    }
+}
+
+/// Holds each trust question open until `answer()`, then trusts, so a test decides which concurrent run asks.
+/// Observable, so a test can wait for a question with `waitUntil`.
+@MainActor
+@Observable
+final class GatedTrustDecider: ScriptTrustDeciding {
+    private(set) var questions = 0
+    private(set) var lastFiles: [String] = []
+    @ObservationIgnored private let gate = TestGate()
+
+    func decideScriptTrust(projectName: String, files: [String]) async -> Bool? {
+        questions += 1
+        lastFiles = files
+        await gate.wait()
+        return true
+    }
+
+    func answer() {
+        gate.open()
     }
 }
 

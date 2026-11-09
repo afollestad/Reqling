@@ -64,12 +64,15 @@ final class MCPEventStreamToolsTests: XCTestCase {
 
     /// With no bound given, a stream is read for 30 seconds on the runner's clock.
     func testAStreamStopsAtItsTimeBound() async throws {
+        let key = RunKey(try XCTUnwrap(RequestNodeID(string: request)), in: project)
         let run = Task { try await fixture.success("execute_request", arguments) }
         var requests = sleeper.requests.makeAsyncIterator()
 
         await feed.opened()
         try await feed.send("data: one\n\n")
         let bound = await requests.next()
+        // The bound starts as the stream opens, so the event may still be on its way.
+        await waitUntil("the event arrives") { self.fixture.runner.latest[key]?.response?.eventStream?.eventCount == 1 }
         sleeper.wake()
         let result = try await run.value
 
