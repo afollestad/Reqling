@@ -71,7 +71,7 @@ let package = Package(
                 "ReqlingTemplating",
                 "ReqlingScriptProtocol"
             ],
-            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL", "Scripting")
+            exclude: guidanceFiles(in: "Storage", "Templating", "HTTP", "TLS", "GRPC", "MCP", "Updates", "History", "GraphQL", "Scripting", "Sync")
         ),
         // `{{variable}}` parsing, expansion, and precedence, Foundation only, so the script runner resolves templates
         // with the same code a run does.

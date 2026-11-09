@@ -59,7 +59,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 
 | Path | Holds |
 | --- | --- |
-| `Sources/ReqlingKit` | Everything that isn't UI: the project format, Postman and OpenAPI import, templating, HTTP, gRPC, WebSockets, GraphQL schemas, TLS, the request runner, and the MCP server. Tested without the app. |
+| `Sources/ReqlingKit` | Everything that isn't UI: the project format, Postman and OpenAPI import, templating, HTTP, gRPC, WebSockets, GraphQL schemas, TLS, the request runner, the MCP server, and iCloud sync. Tested without the app. |
 | `Sources/Reqling` | The app: lifecycle, dependency injection, view models, and views |
 | `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
 | `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |

@@ -1,7 +1,7 @@
 /// JSON as `JSONSerialization` cannot offer it: objects keep member order, so the gRPC codec's output follows field
 /// declaration order and an imported document's examples keep theirs, and numbers keep their source text, so 64-bit
 /// integers never round through `Double`.
-enum OrderedJSON: Equatable {
+enum OrderedJSON: Equatable, Sendable {
     case null
     case bool(Bool)
     /// The number's literal text, always valid JSON number grammar.
@@ -108,7 +108,7 @@ enum OrderedJSON: Equatable {
     }
 }
 
-struct OrderedJSONMember: Equatable {
+struct OrderedJSONMember: Equatable, Sendable {
     let key: String
     let value: OrderedJSON
 }

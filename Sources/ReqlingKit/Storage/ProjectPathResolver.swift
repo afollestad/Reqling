@@ -108,6 +108,11 @@ public struct ProjectPathResolver: Sendable {
         return target == container || target.hasPrefix(container + "/")
     }
 
+    /// Whether `url` sits in a git repository, by the same rule `sharesLocation` widens a shared location with.
+    static func isInsideRepository(_ url: URL, homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
+        repositoryRoot(atOrAbove: canonicalPath(of: url), below: canonicalPath(of: homeDirectory)) != nil
+    }
+
     /// The nearest folder at or above the resolved `start` holding `.git`, stopping short of the resolved `home` and its
     /// ancestors. Views describe file references on every render, so the walk starts from one resolved path, whose
     /// ancestors are real folders, rather than resolving each.
