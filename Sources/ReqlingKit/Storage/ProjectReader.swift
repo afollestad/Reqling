@@ -151,7 +151,7 @@ struct ProjectReader {
         func build(_ loaded: LoadedEnvironment) -> RequestEnvironment {
             let id = settled.id(for: loaded.path)
             if settled.replaced.contains(loaded.path) {
-                state.issues.append(ProjectLoadIssue(path: loaded.path, message: "A duplicate environment ID was replaced."))
+                state.issues.append(ProjectLoadIssue(path: loaded.path, message: "A duplicate environment ID was replaced.", losesContent: false))
             }
             state.index.environmentPaths[id] = loaded.path
             let variableClaims = loaded.statedVariableIDs.indices.map { index in

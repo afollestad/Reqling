@@ -77,6 +77,9 @@ struct MCPTLSTools {
             }
             let updated = tls
             try context.mutate(project.id) { $0.tls = updated }
+            if let document = context.library.document(project.id) {
+                context.lifecycle.markIdentityFiles(of: document)
+            }
             if !passphrases.isEmpty {
                 do {
                     try context.library.updateCertificatePassphrases(passphrases, in: project.id)

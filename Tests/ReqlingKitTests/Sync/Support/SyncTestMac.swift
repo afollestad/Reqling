@@ -10,10 +10,16 @@ final class SyncTestMac {
     let workspace: WorkspaceStateStore
     let runner: RequestRunner
     let lifecycle: ProjectLifecycle
-    let transport: SyncTestTransport
-    let sync: LibrarySync
+    private(set) var transport: SyncTestTransport
+    private(set) var sync: LibrarySync
+    private let cloud: SyncTestCloud
     private let suiteName = "com.afollestad.reqling.tests.sync.\(UUID().uuidString)"
-    var clock = Date(timeIntervalSince1970: 1_000_000)
+    /// How far this Mac's clock runs ahead of the true time, the server's.
+    var clockOffset: TimeInterval = 0
+
+    var clock: Date {
+        cloud.clock.addingTimeInterval(clockOffset)
+    }
 
     var library: ProjectLibrary {
         storage.library
@@ -39,6 +45,7 @@ final class SyncTestMac {
             changes: { _ in AsyncStream { $0.finish() } }
         ))
         lifecycle = ProjectLifecycle(library: storage.library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
+        self.cloud = cloud
         transport = SyncTestTransport(cloud: cloud)
         var now: () -> Date = { Date() }
         sync = LibrarySync(
@@ -52,15 +59,30 @@ final class SyncTestMac {
         now = { [unowned self] in clock }
     }
 
+    /// Quits Reqling and opens it again: what sync saved survives, and its transport's queue doesn't.
+    func restart() async {
+        sync.stop()
+        transport = SyncTestTransport(cloud: cloud)
+        sync = LibrarySync(
+            library: storage.library,
+            lifecycle: lifecycle,
+            secretStore: storage.secrets,
+            directory: storage.directory.file("Support/Sync"),
+            transport: transport,
+            now: { [unowned self] in clock }
+        )
+        await sync.start()
+    }
+
     func cleanUp() {
         sync.stop()
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         storage.directory.remove()
     }
 
-    /// Moves this Mac's clock forward, so its next edit is later than any before it.
+    /// Lets time pass, for every Mac and the server, so this Mac's next edit is later than any before it.
     func tick(_ seconds: TimeInterval = 1) {
-        clock += seconds
+        cloud.clock += seconds
     }
 
     func project(named name: String) -> LibraryProject? {

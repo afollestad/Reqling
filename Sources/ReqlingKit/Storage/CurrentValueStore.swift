@@ -163,8 +163,14 @@ public final class CurrentValueStore {
             updated.set(newValue, for: key, in: scope)
         }
         updateSecrets(scope.account, storing: stored, deleting: [])
+        let fileChanged = updated != file
         save(updated)
         updateSecrets(scope.account, storing: [:], deleting: deleted)
+        // A secret refreshed under the same marker changes only the Keychain, which views and sync must hear about too.
+        if !fileChanged, !stored.isEmpty || !deleted.isEmpty {
+            revision += 1
+            onChange?()
+        }
     }
 
     /// Drops the current values for `keys` in `scope`, or all of them when `keys` is `nil`: Reset in the Environments
@@ -228,12 +234,21 @@ public final class CurrentValueStore {
         onChange = notified
     }
 
-    /// Drops every current value of a deleted project. Its Keychain item goes with the project's secrets.
+    /// Drops every current value of a deleted project. Its Keychain item goes with the project's secrets. It tells
+    /// `onChange` nothing: the deletion itself is the change, and sync must not send these drops ahead of its tombstone.
     func forget(_ project: ProjectID) {
         var updated = file
         updated.projects[project.description] = nil
         unsavedSecrets[.project(project)] = nil
+        let notified = onChange
+        onChange = nil
         save(updated)
+        onChange = notified
+    }
+
+    /// Sync read `wasSetAside`; a later reconnect mustn't drop the bases again.
+    func acknowledgeSetAside() {
+        wasSetAside = false
     }
 
     private func secretValues(for account: SecretAccount) -> [String: String] {

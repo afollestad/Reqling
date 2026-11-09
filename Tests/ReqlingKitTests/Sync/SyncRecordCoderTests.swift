@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import ReqlingKit
 import XCTest
@@ -98,10 +99,38 @@ final class SyncRecordCoderTests: XCTestCase {
         ))
     }
 
-    /// The keys a payload can hold are the schema an older Mac may not understand: change them, and bump
-    /// `ProjectRecordCoder.schemaVersion` with this list, so an older Mac defers those records rather than strip them.
+    /// `sampleDocument` with the optional parts filled too, so the schema test sees each key a payload can hold.
+    private func richDocument() -> ProjectDocument {
+        var document = sampleDocument()
+        let body = HTTPBody(
+            mode: .formData,
+            raw: RawBody(text: "{}", contentType: "application/json"),
+            formData: [MultipartField(key: "avatar", kind: .file, file: .relative("avatar.png"), contentType: "image/png", isEnabled: false)],
+            urlEncoded: [KeyValuePair(key: "a", value: "b")],
+            binary: BinaryBody(file: .local(LocalPathID()), contentType: "application/octet-stream"),
+            graphQL: GraphQLBody(query: "{ me }", variables: "{}", operationName: "Me")
+        )
+        let upload = RequestItem(name: "Upload", kind: .http(HTTPRequestSpec(
+            method: .put,
+            url: "https://upload",
+            disabledAutoHeaders: ["User-Agent"],
+            body: body,
+            auth: .basic(username: "u", password: "p"),
+            options: HTTPRequestOptions(timeoutSeconds: 5, followRedirects: false, verifyTLS: false)
+        )))
+        document.items.append(.request(upload))
+        let identity = ClientCertificateSource.pem(certificate: .relative("c.pem"), key: .local(LocalPathID()))
+        document.tls = ProjectTLSConfiguration(
+            clientCertificates: [ClientCertificateEntry(hostPattern: "*.example.com", source: identity)],
+            caCertificates: [.relative("ca.pem")]
+        )
+        document.grpc = ProjectGRPCConfiguration(protoRoots: [.relative("protos")], protoFiles: ["echo.proto"], descriptorSets: [.relative("set.pb")])
+        return document
+    }
+
+    /// The key paths a payload can hold are the schema an older Mac may not understand: change them, and bump
+    /// `ProjectRecordCoder.schemaVersion` with this fingerprint, so an older Mac defers those records rather than strip them.
     func testThePayloadSchemaMatchesItsVersion() throws {
-        let document = sampleDocument()
         var keys: [SyncRecordType: Set<String>] = [:]
         func collect(_ json: OrderedJSON, into set: inout Set<String>, path: String) {
             switch json {
@@ -118,21 +147,17 @@ final class SyncRecordCoderTests: XCTestCase {
                 break
             }
         }
-        for record in try ProjectRecordCoder.records(for: document, secrets: [:]).values {
+        for record in try ProjectRecordCoder.records(for: richDocument(), secrets: [:]).values {
             collect(record.payload, into: &keys[record.type, default: []], path: "")
         }
+        let schema = keys.sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue): \($0.value.sorted().joined(separator: " "))" }
+            .joined(separator: "\n")
+        let fingerprint = SHA256.hash(data: Data(schema.utf8)).map { String(format: "%02x", $0) }.joined()
 
         XCTAssertEqual(ProjectRecordCoder.schemaVersion, 1)
-        XCTAssertEqual(keys[.project]?.filter { !$0.contains(".") }.sorted(), [
-            "auth", "defaultEnvironmentID", "environmentOrder", "grpc", "itemOrder", "name", "scripts", "tls"
-        ])
-        XCTAssertEqual(keys[.folder]?.filter { !$0.contains(".") }.sorted(), [
-            "auth", "id", "inheritScripts", "name", "order", "parentID", "scripts"
-        ])
-        XCTAssertEqual(keys[.request]?.filter { !$0.contains(".") }.sorted(), [
-            "grpc", "http", "id", "inheritScripts", "kind", "name", "parentID", "scripts", "websocket"
-        ])
-        XCTAssertEqual(keys[.environment]?.filter { !$0.contains(".") }.sorted(), ["id", "name", "variables"])
+        let expected = "9181156f8e1f49d52864750c4d0069e3686263d8de48790ebc293c472f84b0b4"
+        XCTAssertEqual(fingerprint, expected, "The payload keys are now:\n\(schema)\nBump the schema version, then set this to \(fingerprint).")
     }
 
     func testCurrentValuesKeepTheirSecretsOutOfThePayload() throws {

@@ -251,6 +251,9 @@ final class ProjectSettingsModel {
                 }
                 return ProjectSettingsBase(name: document.name, auth: document.auth, tls: document.tls, grpc: document.grpc)
             }
+            if let document = app.library.document(projectID) {
+                app.lifecycle.markIdentityFiles(of: document)
+            }
             try savePassphrasesAndIdentities()
             return merged
         }

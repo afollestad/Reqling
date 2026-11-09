@@ -10,14 +10,14 @@ extension ProjectDocument {
         })
     }
 
-    /// The local path IDs the project's client certificates read their identities from.
-    public var identityPathIDs: Set<LocalPathID> {
-        Set(tls.clientCertificates.flatMap(\.source.files).compactMap { reference in
-            if case .local(let id) = reference {
-                return id
-            }
-            return nil
-        })
+    /// The files the project's client certificates read their identities from.
+    public var identityReferences: [ProjectPathReference] {
+        tls.clientCertificates.flatMap(\.source.files)
+    }
+
+    /// How many fields hold the this-Mac-only reference `id`; copies of a request share their original's.
+    public func referenceCount(of id: LocalPathID) -> Int {
+        pathReferences.filter { $0 == .local(id) }.count
     }
 
     /// Every `ProjectPathReference.relative` path the project uses. `WorkspaceStateStore.reconcileChosenOutsidePaths`

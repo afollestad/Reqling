@@ -211,10 +211,15 @@ struct ProjectDiskIndex: Equatable, Sendable {
 public struct ProjectLoadIssue: Hashable, Sendable {
     public let path: String
     public let message: String
+    /// Whether the loaded document lacks, or holds a stand-in for, something on disk, such as a request file that
+    /// couldn't be read; one that only replaced a duplicate ID or restored an interrupted save doesn't. Sync neither
+    /// sends nor applies changes for a project with such an issue, since the stand-in would read as an edit.
+    public let losesContent: Bool
 
-    public init(path: String, message: String) {
+    public init(path: String, message: String, losesContent: Bool = true) {
         self.path = path
         self.message = message
+        self.losesContent = losesContent
     }
 }
 

@@ -15,19 +15,21 @@ public final class ProjectLibrary {
     public internal(set) var globalEnvironment = RequestEnvironment.global()
     /// Why Global loaded incomplete (its file set aside, or its secret values unreadable), if it did.
     public internal(set) var globalEnvironmentIssue: String?
-    /// Whether Global's file couldn't be read at launch and was set aside, so it loaded empty. Sync then treats Global as
-    /// unknown rather than as everything deleted.
+    /// Whether Global's file, or the list of projects, couldn't be read at launch and was set aside, so it loaded empty.
+    /// Sync then treats it as unknown rather than as everything deleted, or as every project removed.
     @ObservationIgnored var globalEnvironmentWasSetAside = false
+    @ObservationIgnored var registryWasSetAside = false
     /// What scripts set on this Mac over the saved values. Edits of saved values through `mutate` and
     /// `mutateGlobalEnvironment` drop the matching ones (`ProjectLibrary+CurrentValues.swift`).
     @ObservationIgnored public let currentValues: CurrentValueStore
     /// Told about every change to a project, Global, or current values made on this Mac (`LibraryChange`), never about
     /// one a sync applied (`ProjectLibrary+Sync.swift`), so applying a change never sends it back. Set once, by sync.
     @ObservationIgnored public var changeObserver: ((LibraryChange) -> Void)?
+    /// Set while a sync entry point writes, so even a reload after its failed save reports nothing back.
+    @ObservationIgnored var isApplyingSync = false
 
     @ObservationIgnored let configuration: Configuration
-    /// Whether Global's secret values still sit blank because loading could not read them; see
-    /// `reloadGlobalSecretsIfUnread`.
+    /// Whether Global's secret values still sit blank because loading could not read them (`reloadGlobalSecretsIfUnread`).
     @ObservationIgnored var globalSecretsUnread = false
     /// The projects whose secret values still sit blank because loading could not read them; see
     /// `reloadSecretsIfUnread(for:)`.
@@ -74,7 +76,7 @@ public final class ProjectLibrary {
         loadRegistry()
         loadGlobalEnvironment()
         currentValues.onChange = { [weak self] in
-            self?.changeObserver?(.currentValues)
+            self?.notify(.currentValues)
         }
     }
 
@@ -103,7 +105,7 @@ public final class ProjectLibrary {
         projects.append(LibraryProject(id: document.id, url: folder, status: .loaded(document)))
         startMonitoring(document.id, at: folder)
         saveRegistry()
-        changeObserver?(.project(document.id))
+        notify(.project(document.id))
         return document.id
     }
 
@@ -115,14 +117,14 @@ public final class ProjectLibrary {
             throw ProjectStorageError.alreadyInLibrary
         }
         register(result, at: url)
-        changeObserver?(.project(result.document.id))
+        notify(.project(result.document.id))
         return result.document.id
     }
 
     /// Forgets a project without touching its folder or secrets, so adding the folder back restores everything.
     public func removeProject(_ id: ProjectID) {
         unregister(id)
-        changeObserver?(.removed(id))
+        notify(.removed(id))
     }
 
     /// Lists and watches a folder just read, as adding it does.
@@ -153,7 +155,7 @@ public final class ProjectLibrary {
         try? configuration.secretStore.setSecrets([:], for: id)
         currentValues.forget(id)
         unregister(id)
-        changeObserver?(.deleted(id))
+        notify(.deleted(id))
     }
 
     /// Moves a project another Mac deleted to the Trash and removes it, keeping its secrets and current values, so Put
@@ -162,7 +164,7 @@ public final class ProjectLibrary {
         guard let project = project(id) else {
             throw ProjectStorageError.projectNotFound
         }
-        monitors.removeValue(forKey: id)?.stop()
+        // Trashed before it stops being watched or listed, so a failure leaves the project exactly as it was.
         if FileManager.default.fileExists(atPath: project.url.path) {
             try configuration.trasher.trash(project.url)
         }
@@ -197,7 +199,7 @@ public final class ProjectLibrary {
         let secrets = SecretChanges(old: Self.secretValues(in: old), new: Self.secretValues(in: new))
         try commit(new, at: position, storing: secrets.stored, deleting: secrets.deleted)
         resetCurrentValues(old: old.allEnvironments, new: new.allEnvironments) { .environment(id, $0) }
-        changeObserver?(.project(id))
+        notify(.project(id))
         return result
     }
 
@@ -205,6 +207,8 @@ public final class ProjectLibrary {
     /// without dropping current values (as a reload never does) or deleting secrets the change removed (so a deletion
     /// stays recoverable), and without telling the observer.
     func applySynced(_ document: ProjectDocument, storingSecrets secrets: [String: String]) throws {
+        isApplyingSync = true
+        defer { isApplyingSync = false }
         reloadProjectSecretsIfUnread(document.id)
         let (position, old) = try editableProject(document.id)
         guard document != old else {
@@ -231,6 +235,16 @@ public final class ProjectLibrary {
         guard project(document.id) == nil else {
             throw ProjectStorageError.alreadyInLibrary
         }
+        isApplyingSync = true
+        defer { isApplyingSync = false }
+        // A secret that didn't come along keeps the value this Mac's Keychain still holds, as from a project deleted
+        // elsewhere and restored, rather than loading blank.
+        var document = document
+        if let held = try? configuration.secretStore.secrets(for: document.id) {
+            for environment in document.allEnvironments {
+                document.updateEnvironment(environment.id) { Self.fillBlankSecrets(in: &$0, from: held) }
+            }
+        }
         let parent = configuration.defaultProjectsDirectory
         if let existing = unlistedFolder(with: document.id, in: parent) {
             register(try ProjectReader(root: existing).read(), at: existing)
@@ -253,6 +267,12 @@ public final class ProjectLibrary {
         projects.append(LibraryProject(id: document.id, url: folder, status: .loaded(document)))
         startMonitoring(document.id, at: folder)
         saveRegistry()
+    }
+
+    private func notify(_ change: LibraryChange) {
+        if !isApplyingSync {
+            changeObserver?(change)
+        }
     }
 
     /// A loaded, writable project's position and document.
@@ -304,10 +324,11 @@ public final class ProjectLibrary {
             let reloaded = makeLoadedProject(result, url: url)
             indexes[id] = result.index
             if reloaded != projects[position] {
-                let documentChanged = reloaded.document != projects[position].document
+                // Issues coming or going matter too: sync holds a project back while one loses content.
+                let changed = reloaded.document != projects[position].document || reloaded.issues != projects[position].issues
                 projects[position] = reloaded
-                if documentChanged {
-                    changeObserver?(.project(id))
+                if changed {
+                    notify(.project(id))
                 }
             }
         } catch {
@@ -326,6 +347,7 @@ public final class ProjectLibrary {
             } else {
                 // The next membership change rewrites the registry; keep the list it held for repair.
                 UndecodableFileBackup.preserve(configuration.registryURL)
+                registryWasSetAside = true
             }
         }
         var adoptedNewIDs = false
@@ -390,16 +412,10 @@ public final class ProjectLibrary {
                 Self.fillSecretValues(in: &document, from: secrets)
             } catch {
                 projectsWithUnreadSecrets.insert(document.id)
-                issues.append(ProjectLoadIssue(path: "", message: Self.unreadableSecretsMessage))
+                issues.append(ProjectLoadIssue(path: "", message: Self.unreadableSecretsMessage, losesContent: false))
             }
         }
-        return LibraryProject(
-            id: document.id,
-            url: url,
-            status: .loaded(document),
-            issues: issues,
-            isReadOnly: result.isReadOnly
-        )
+        return LibraryProject(id: document.id, url: url, status: .loaded(document), issues: issues, isReadOnly: result.isReadOnly)
     }
 
     private static func fillSecretValues(in document: inout ProjectDocument, from secrets: [String: String]) {

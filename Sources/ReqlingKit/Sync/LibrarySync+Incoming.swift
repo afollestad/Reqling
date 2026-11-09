@@ -1,17 +1,22 @@
 import Foundation
-import ReqlingTemplating
 
-/// Other Macs' changes on their way in. A zone applies only once its fetch completes and only while Reqling is in
-/// front; a record this version can't read holds its whole project back, rather than leaving gaps that would read as
-/// deletions; and nothing a merge resolves is written before the secrets it needs are in the Keychain.
+/// Other Macs' changes to projects on their way in. A zone applies only once its fetch completes and only while Reqling
+/// is in front; a record this version can't read holds its whole project back, rather than leaving gaps that would read
+/// as deletions; and nothing a merge resolves is written before the secrets it needs are in the Keychain.
 extension LibrarySync {
     func apply(_ fetched: SyncFetchedZone) {
-        guard store != nil else {
+        guard let store else {
             return
         }
         guard isActive else {
-            heldZones.append(fetched)
+            heldEvents.append(.zone(fetched))
             return
+        }
+        var fetched = fetched
+        if fetched.isWhole {
+            // A whole fetch reports no deletions: what synced before and is missing from it is gone.
+            let present = Set(fetched.changed.map(\.id))
+            fetched.deleted = store.baseIDs(in: fetched.zone).filter { !present.contains($0) }
         }
         switch fetched.zone {
         case .library:
@@ -22,100 +27,181 @@ extension LibrarySync {
     }
 
     func applyHeldChanges() {
-        let zones = heldZones
-        heldZones = []
-        zones.forEach(apply)
-        if heldFinish {
-            heldFinish = false
-            finishFetching()
+        let events = heldEvents
+        heldEvents = []
+        for event in events {
+            switch event {
+            case .zone(let fetched):
+                apply(fetched)
+            case .zoneDeletion(let zone, let reason):
+                heldZoneDeletions.append((zone, reason))
+            case .finish(let wholeDelivery, let date):
+                finish(wholeDelivery: wholeDelivery, fetchedAt: date)
+            }
         }
+    }
+
+    /// Whether anything fetched waits to be applied or judged. Nothing is sent meanwhile, since what's queued may be
+    /// about to merge with it.
+    var isHoldingFetchedChanges: Bool {
+        !heldEvents.isEmpty || !heldZoneDeletions.isEmpty
+    }
+
+    /// Whether nothing fetched for `id` may land here: removed here, held back, or deleted here with its deletion still on
+    /// its way out.
+    func isHeldBack(_ id: ProjectID) -> Bool {
+        guard let state = store?.state else {
+            return true
+        }
+        return state.excluded.contains(id) || state.detached.contains(id) || state.deferred.contains(id)
+            || state.outgoingTombstones.contains(id) || state.outgoingZoneDeletions.contains(id)
     }
 
     // MARK: - Projects
 
+    /// Whether this Mac's copy of `id`, if any, may take another Mac's changes now.
+    private func canApply(to id: ProjectID, local: LibraryProject?) -> Bool {
+        guard let store, !isHeldBack(id) else {
+            return false
+        }
+        guard let local else {
+            if store.hasBases(in: .project(id)) {
+                // Synced here before but gone from the list: what changed alone would rebuild it partly, and the next
+                // reconcile would then delete the rest everywhere. Fetched whole instead.
+                store.forget(.project(id))
+                refetchAfterFailure()
+                return false
+            }
+            return true
+        }
+        // A copy outside Reqling's folder (a repository) is left alone.
+        guard isInScope(local) else {
+            return false
+        }
+        // One whose files couldn't all be read waits for them, since what it lacks would merge as deleted here.
+        guard local.document != nil, isReadFully(local) else {
+            store.update { $0.unreadProjects.insert(id) }
+            return false
+        }
+        return true
+    }
+
     private func applyProject(_ id: ProjectID, _ fetched: SyncFetchedZone) {
-        guard let store, !store.state.excluded.contains(id), !store.state.detached.contains(id) else {
+        let local = library.project(id)
+        guard canApply(to: id, local: local) else {
             return
         }
         let zone = SyncZone.project(id)
-        let local = library.project(id)
-        // A copy outside Reqling's folder (a repository), or one that couldn't load, is left alone.
-        if let local, !isInScope(local) || local.document == nil {
+        var changed = fetched.changed.filter { isAcceptable($0, in: zone) }
+        if changed.contains(where: isTooNew) || local?.isReadOnly == true {
+            deferProject(id, untilUpdate: true)
             return
         }
-        let changed = fetched.changed.filter { isAcceptable($0, in: zone) }
-        if changed.contains(where: isTooNew) || (local?.isReadOnly ?? false) {
-            store.update { $0.deferred.insert(id) }
+        if local != nil {
+            changed = droppingEchoes(changed)
+        }
+        guard !changed.isEmpty || !fetched.deleted.isEmpty else {
             return
         }
-        store.update { $0.deferred.remove(id) }
         var working: [SyncRecordID: SyncRecord] = [:]
         if local != nil {
             // Applying only the server's records over a project this Mac couldn't encode would drop its own items.
             guard let held = localRecords(in: zone) else {
                 return
             }
-            working = held
+            working = held.merging(currentValuesRecords(in: zone)) { first, _ in first }
         }
         let outcome = merge(changed, deleted: fetched.deleted, into: &working, hasLocal: local != nil)
-        let arrived = Set(changed.map(\.id))
-        guard write(working, to: id, replacing: local?.document, arrived: arrived, deleted: fetched.deleted) else {
+        guard write(working, to: id, replacing: local?.document, arrived: Set(changed.map(\.id)), cleared: outcome.cleared) else {
             return
         }
         encoded[zone] = nil
-        for record in changed {
-            store.setBase(from: record)
-        }
-        for recordID in fetched.deleted {
-            store.removeBase(recordID)
-            if !outcome.kept.contains(recordID) {
-                store.setPending(recordID, at: nil)
-            }
-        }
-        queue(outcome.resend)
+        settle(changed, deleted: fetched.deleted, outcome: outcome)
+        queue(outcome.resend, from: working)
     }
 
-    /// Folds the server's changes into what this Mac holds, returning what to send back and which deleted records an
-    /// edit here keeps.
+    /// Records what was written as agreed with the server. A merge with nothing left to send holds this Mac's edit, if
+    /// any, so its pending entry goes; so does one for a record deleted on both sides.
+    private func settle(_ changed: [SyncRecord], deleted: [SyncRecordID], outcome: MergeOutcome) {
+        guard let store else {
+            return
+        }
+        for record in changed {
+            store.setBase(from: record)
+            if !outcome.resend.contains(.save(record.id)) {
+                store.clearPending(record.id)
+            }
+        }
+        for recordID in deleted {
+            store.removeBase(recordID)
+            if !outcome.kept.contains(recordID) {
+                store.clearPending(recordID)
+            }
+        }
+    }
+
+    /// `changed` without what this Mac already agrees with, such as its own saves coming back, whose only news, the
+    /// server's version, goes into the bases. One carrying secret values this Mac lacks is kept, to fill them in.
+    private func droppingEchoes(_ changed: [SyncRecord]) -> [SyncRecord] {
+        guard let store else {
+            return changed
+        }
+        return changed.filter { record in
+            guard differs(record, from: store.base(record.id)) || withheld.contains(record.id) else {
+                store.setBase(from: record)
+                return false
+            }
+            return true
+        }
+    }
+
+    /// Folds the server's changes into what this Mac holds.
     private func merge(
         _ changed: [SyncRecord],
         deleted: [SyncRecordID],
         into working: inout [SyncRecordID: SyncRecord],
         hasLocal: Bool
-    ) -> (resend: [SyncPendingChange], kept: Set<SyncRecordID>) {
+    ) -> MergeOutcome {
         guard let store else {
-            return ([], [])
+            return MergeOutcome()
         }
-        var resend: [SyncPendingChange] = []
+        var outcome = MergeOutcome()
         for record in changed {
-            let base = store.base(record.id)
             if let held = working[record.id] {
-                let merged = merge(held, with: record, base: base)
+                let merged = merge(held, with: record, base: store.base(record.id))
                 working[record.id] = merged
                 if merged.payload != record.payload || merged.secrets != record.secrets {
-                    resend.append(.save(record.id))
+                    outcome.resend.append(.save(record.id))
                 }
-            } else if base != nil, hasLocal, store.digester.fingerprint(record.payload) == base?.fingerprint {
-                // Deleted here but not sent yet, and untouched there: it stays deleted.
-                resend.append(.delete(record.id))
             } else {
-                // New, or deleted here while edited there: the edit beats the deletion, whose queued send a save replaces.
+                // New here, or deleted here while edited there: the edit beats the deletion, whose queued send a save
+                // replaces. Only a deletion actually queued counts; a record merely missing here is taken as new.
                 working[record.id] = record
-                if base != nil, hasLocal {
-                    resend.append(.save(record.id))
+                if hasLocal, store.pending(record.id)?.isDeletion == true {
+                    outcome.resend.append(.save(record.id))
                 }
             }
         }
-        var kept: Set<SyncRecordID> = []
         for recordID in deleted {
-            if let held = working[recordID], let base = store.base(recordID), store.digester.fingerprint(held.payload) != base.fingerprint {
-                kept.insert(recordID)
-                resend.append(.save(recordID))
+            if let held = working[recordID], isEditedHere(held) {
+                outcome.kept.insert(recordID)
+                outcome.resend.append(.save(recordID))
             } else {
                 working[recordID] = nil
+                outcome.cleared.insert(recordID)
             }
         }
-        return (resend, kept)
+        return outcome
+    }
+
+    /// Whether this Mac's `held` copy of a record deleted elsewhere beats the deletion: never synced, or edited here since
+    /// it last did, secrets included. An edit is one this Mac queued, not any difference from the base: an earlier fetch
+    /// can change a record here, as removing a request changes its folder's order, which mustn't keep it.
+    func isEditedHere(_ held: SyncRecord) -> Bool {
+        guard let store, let base = store.base(held.id) else {
+            return true
+        }
+        return store.pending(held.id).map { !$0.isDeletion } == true && differs(held, from: base)
     }
 
     /// Writes the merged project and its current values, first its secrets. `false` when nothing could be written.
@@ -124,42 +210,46 @@ extension LibrarySync {
         to id: ProjectID,
         replacing previous: ProjectDocument?,
         arrived: Set<SyncRecordID>,
-        deleted: [SyncRecordID]
+        cleared: Set<SyncRecordID>
     ) -> Bool {
-        guard let store else {
+        guard store != nil else {
             return false
         }
         do {
             let decoded = try ProjectRecordCoder.document(id, from: working.values.filter { $0.type != .currentValues }, local: previous)
             // Before another Mac's change lands, every file this Mac reads a client identity from is marked, so one that
-            // change moves into a request can't be read there (`ProjectWorkspaceState.identityPaths`).
-            let identities = (previous?.identityPathIDs ?? []).union(decoded.document.identityPathIDs)
-            lifecycle.workspace.markIdentityPaths(identities, in: id)
+            // change moves into a request can't be read there (`ProjectWorkspaceState.identityFiles`).
+            if let previous {
+                lifecycle.markIdentityFiles(of: previous)
+            }
             if previous == nil {
                 try library.adoptSyncedProject(decoded.document, storingSecrets: decoded.secrets)
             } else {
                 try library.applySynced(decoded.document, storingSecrets: decoded.secrets)
             }
             // Only the scopes that changed, so each fetch doesn't rewrite every secret current value in the Keychain.
-            applyCurrentValues(working.values.filter { $0.type == .currentValues && arrived.contains($0.id) }, deleted: deleted, in: decoded.document)
+            let values = working.values.filter { $0.type == .currentValues && arrived.contains($0.id) }
+            applyCurrentValues(values, cleared: cleared, in: decoded.document)
             noteChanges(from: previous, to: decoded.document)
             return true
-        } catch SyncRecordError.missingProject where previous == nil {
-            // A zone whose project record hasn't arrived yet waits for the fetch that brings it.
+        } catch let error as SyncRecordError where previous == nil && [.missingProject, .missingDefaultEnvironment].contains(error) {
+            // A project whose own records haven't all arrived, as when only some changed since the last fetch: fetched
+            // whole again later, so what came meanwhile isn't lost.
+            refetchAfterFailure()
             return false
         } catch is SyncRecordError {
-            store.update { $0.deferred.insert(id) }
+            deferProject(id, untilUpdate: false)
             return false
         } catch {
             // The Keychain or the disk refused: nothing changed here, so fetch it all again later.
-            store.update { $0.needsRefetch = true }
+            refetchAfterFailure()
             report("Changes to \(name(of: .project(id))) from another Mac couldn't be saved here: \(error.localizedDescription)")
             return false
         }
     }
 
     /// Whether `record` is a kind this zone may hold, under a name Reqling writes for it; anything else is ignored.
-    private func isAcceptable(_ record: SyncRecord, in zone: SyncZone) -> Bool {
+    func isAcceptable(_ record: SyncRecord, in zone: SyncZone) -> Bool {
         guard record.id.zone == zone, record.type.belongs(in: zone) else {
             return false
         }
@@ -173,16 +263,34 @@ extension LibrarySync {
         }
     }
 
-    private func isTooNew(_ record: SyncRecord) -> Bool {
+    /// Holds `id` back: `untilUpdate` for records from a newer version, which an update fetches again; otherwise, as for
+    /// a record that wouldn't decode, until the next launch (`SyncBaseStore.State.deferredAt`).
+    func deferProject(_ id: ProjectID, untilUpdate: Bool) {
+        store?.update { state in
+            Self.noteDeferral(untilUpdate: untilUpdate, in: &state)
+            state.deferred.insert(id)
+        }
+    }
+
+    /// `deferredAt` names the versions only while every deferral waits for an update; any other is judged each launch.
+    static func noteDeferral(untilUpdate: Bool, in state: inout SyncBaseStore.State) {
+        let wasDeferring = !state.deferred.isEmpty || state.libraryDeferred
+        let allWaitForUpdate = untilUpdate && (!wasDeferring || state.deferredAt != nil)
+        state.deferredAt = allWaitForUpdate ? SyncBaseStore.versions : nil
+    }
+
+    func isTooNew(_ record: SyncRecord) -> Bool {
         record.formatVersion > ProjectDocument.currentFormatVersion || record.schemaVersion > ProjectRecordCoder.schemaVersion
     }
 
-    /// `held` and `remote` merged field by field over `base`; a field both changed takes the later edit.
+    /// `held` and `remote` merged field by field over `base`; a field both changed takes the later edit, both edits'
+    /// times read on the server's clock.
     func merge(_ held: SyncRecord, with remote: SyncRecord, base: SyncBaseStore.Base?) -> SyncRecord {
         guard let store else {
             return remote
         }
-        let localIsNewer = (store.pendingEdit(remote.id) ?? .distantPast) > remote.trustedEditedAt
+        let localEdit = store.pendingEdit(remote.id).map { $0.addingTimeInterval(-clockSkew) } ?? .distantPast
+        let localIsNewer = localEdit > remote.trustedEditedAt
         var merged = remote
         let merger = SyncJSONMerge(digester: store.digester, localIsNewer: localIsNewer)
         merged.payload = merger.merge(base: base?.tree.json, local: held.payload, remote: remote.payload)
@@ -223,51 +331,6 @@ extension LibrarySync {
         return merged
     }
 
-    /// Writes each changed scope's current values, forcing secret any value this Mac knows to be one.
-    private func applyCurrentValues(_ records: [SyncRecord], deleted: [SyncRecordID], in document: ProjectDocument) {
-        for record in records {
-            guard let scope = LibraryRecordCoder.scope(of: record.id), let decoded = try? LibraryRecordCoder.currentValues(from: record) else {
-                continue
-            }
-            if case .environment(_, let environment) = scope, document.environment(environment) == nil {
-                continue
-            }
-            let (values, secrets) = secured(decoded.values, decoded.secrets, in: scope, document: document)
-            library.currentValues.applySynced(values, secrets: secrets, in: scope)
-        }
-        for id in deleted {
-            let isGone = !records.contains { $0.id == id }
-            if let scope = LibraryRecordCoder.scope(of: id), isGone {
-                library.currentValues.applySynced([:], secrets: [:], in: scope)
-            }
-        }
-    }
-
-    /// A plain value under a key this Mac holds as secret, or holding one of its secrets, becomes secret here.
-    func secured(
-        _ values: [String: StoredCurrentValue],
-        _ secrets: [String: String],
-        in scope: CurrentValueScope,
-        document: ProjectDocument?
-    ) -> ([String: StoredCurrentValue], [String: String]) {
-        var environments = [library.globalEnvironment]
-        if case .environment(_, let id) = scope, let environment = document?.environment(id) {
-            environments.append(environment)
-        }
-        let secretVariables = environments.flatMap(\.variables).filter(\.isSecret)
-        let secretKeys = Set(secretVariables.map(\.key))
-        let secretValues = Set(secretVariables.map(\.value)).union(secrets.values)
-        var values = values
-        var secrets = secrets
-        for (key, value) in values {
-            if case .plain(let text) = value, secretKeys.contains(key) || VariableLayers.contains(text, anyOf: secretValues) {
-                values[key] = .secret
-                secrets[key] = text
-            }
-        }
-        return (values, secrets)
-    }
-
     /// Asks about trust again when another Mac changed the scripts, and notes requests that left or arrived. A folder
     /// adopted again may carry trust from before it fell off the list, which covered scripts that may since have changed.
     private func noteChanges(from previous: ProjectDocument?, to document: ProjectDocument) {
@@ -305,170 +368,25 @@ extension LibrarySync {
         return scripts.filter { !$0.value.isEmpty }
     }
 
-    func queue(_ changes: [SyncPendingChange]) {
+    /// Queues what a merge sends back. A merged edit keeps the time of the edit here it carries, so it doesn't look newer
+    /// than an edit another Mac made since.
+    func queue(_ changes: [SyncPendingChange], from records: [SyncRecordID: SyncRecord]) {
         guard let store, !changes.isEmpty else {
             return
         }
-        for change in changes {
-            if case .save(let id) = change, store.pendingEdit(id) == nil {
-                store.setPending(id, at: now())
-            }
+        for case .save(let id) in changes {
+            store.notePending(id, fingerprint: records[id].map(contentFingerprint), at: store.pendingEdit(id) ?? now())
         }
         transport.enqueue(changes)
     }
-
-    // MARK: - Global and tombstones
-
-    private func applyLibrary(_ fetched: SyncFetchedZone) {
-        guard let store else {
-            return
-        }
-        let held = localRecords(in: .library) ?? [:]
-        var resend: [SyncPendingChange] = []
-        for record in fetched.changed where isAcceptable(record, in: .library) {
-            if isTooNew(record) {
-                continue
-            }
-            let merged = held[record.id].map { merge($0, with: record, base: store.base(record.id)) } ?? record
-            do {
-                switch record.type {
-                case .projectTombstone:
-                    if let project = LibraryRecordCoder.tombstonedProject(record.id) {
-                        store.update { $0.tombstones.insert(project) }
-                    }
-                case .globalEnvironment:
-                    let global = try LibraryRecordCoder.global(from: merged, local: library.globalEnvironment)
-                    try library.applySyncedGlobalEnvironment(global.variables, storingSecrets: global.secrets)
-                case .currentValues:
-                    let decoded = try LibraryRecordCoder.currentValues(from: merged)
-                    let (values, secrets) = secured(decoded.values, decoded.secrets, in: .global, document: nil)
-                    library.currentValues.applySynced(values, secrets: secrets, in: .global)
-                case .project, .folder, .request, .environment:
-                    continue
-                }
-            } catch {
-                store.update { $0.needsRefetch = true }
-                report("Global's changes from another Mac couldn't be saved here: \(error.localizedDescription)")
-                continue
-            }
-            store.setBase(from: record)
-            if merged.payload != record.payload || merged.secrets != record.secrets {
-                resend.append(.save(record.id))
-            }
-        }
-        for id in fetched.deleted {
-            // Only a reset deletes Global's records; this Mac keeps its own.
-            store.removeBase(id)
-        }
-        encoded[.library] = nil
-        queue(resend)
-    }
-
-    // MARK: - Zone deletions
-
-    func zoneDeleted(_ zone: SyncZone, reason: SyncZoneDeletionReason) {
-        heldZoneDeletions.append((zone, reason))
-    }
-
-    /// Runs once a fetch has delivered every zone, so tombstones are known before any deletion is judged.
-    func finishFetching() {
-        guard let store else {
-            return
-        }
-        guard isActive else {
-            heldFinish = true
-            return
-        }
-        let deletions = heldZoneDeletions
-        heldZoneDeletions = []
-        var candidates: [ProjectID] = []
-        for (zone, reason) in deletions {
-            switch reason {
-            case .purged:
-                stopAfterServerReset(.dataDeleted)
-                return
-            case .encryptedDataReset:
-                stopAfterServerReset(.encryptionReset)
-                return
-            case .deleted:
-                guard case .project(let id) = zone, store.hasBases(in: zone), library.project(id) != nil else {
-                    // Nothing here to keep: a project this Mac never had, or one removed from it.
-                    store.forget(zone)
-                    continue
-                }
-                if store.state.tombstones.contains(id), let project = library.project(id), isInScope(project) {
-                    candidates.append(id)
-                } else {
-                    // Gone without anyone deleting it: keep this Mac's copy, and stop syncing it.
-                    store.forget(zone)
-                    store.update { $0.detached.insert(id) }
-                    report("\(name(of: zone)) disappeared from iCloud, so it stays on this Mac and no longer syncs.")
-                }
-            }
-        }
-        if candidates.count > 1 {
-            awaitingConfirmation = candidates
-            status = .confirmingDeletions(candidates)
-        } else {
-            candidates.forEach(deleteRemotelyDeleted)
-        }
-        moveOrForgetHistory()
-        if let state = unsavedTransportState {
-            store.update { $0.transportState = state }
-            unsavedTransportState = nil
-        }
-        store.save()
-    }
-
-    func deleteRemotelyDeleted(_ id: ProjectID) {
-        try? lifecycle.deleteSyncedProject(id)
-        store?.forget(.project(id))
-        encoded[.project(id)] = nil
-    }
-
-    /// A request that left one project and arrived in another in one fetch was moved, so its history goes with it.
-    private func moveOrForgetHistory() {
-        for (project, requests) in removedRequests {
-            for request in requests {
-                if let destination = addedRequests.first(where: { $0.value.contains(request) })?.key, library.project(destination) != nil {
-                    lifecycle.runner.moveHistory(of: [request], from: project, to: destination)
-                } else {
-                    lifecycle.runner.forget(request, in: project)
-                }
-            }
-        }
-        removedRequests = [:]
-        addedRequests = [:]
-    }
 }
 
-extension LibrarySync: SyncTransportDelegate {
-    func record(for id: SyncRecordID) -> SyncRecord? {
-        outgoingRecord(for: id)
-    }
-
-    func transport(didFetch zone: SyncFetchedZone) {
-        apply(zone)
-    }
-
-    func transport(didDeleteZone zone: SyncZone, reason: SyncZoneDeletionReason) {
-        zoneDeleted(zone, reason: reason)
-    }
-
-    func transportDidFinishFetching() {
-        finishFetching()
-    }
-
-    func transport(didSend results: [SyncSendResult]) {
-        handleSent(results)
-        store?.save()
-    }
-
-    func transport(didUpdateState state: Data) {
-        unsavedTransportState = state
-    }
-
-    func transportAccountDidChange() {
-        Task { await connect() }
-    }
+/// What merging a fetched zone decided beyond the records it wrote.
+struct MergeOutcome {
+    /// Changes to send back: merged records the server lacks, and edits that beat a deletion.
+    var resend: [SyncPendingChange] = []
+    /// Records deleted elsewhere that an edit here keeps.
+    var kept: Set<SyncRecordID> = []
+    /// Records deleted elsewhere that go here too: unchanged here since they last synced, or deleted here as well.
+    var cleared: Set<SyncRecordID> = []
 }

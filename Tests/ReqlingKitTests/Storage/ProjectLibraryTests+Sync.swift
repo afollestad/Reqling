@@ -19,12 +19,14 @@ extension ProjectLibraryTests {
         fixture.library.reload(id)
         let other = try fixture.library.createProject(named: "Other")
         fixture.library.removeProject(other)
+        let defaultID = try XCTUnwrap(fixture.library.document(id)).defaultEnvironment.id
+        fixture.library.currentValues.apply(["page": .value(TemplateVariable(value: "2"))], in: .environment(id, defaultID))
         try fixture.library.deleteProject(id)
 
         XCTAssertEqual(changes, [
             .project(id), .project(id), .global, .currentValues, .project(id),
-            .project(other), .removed(other), .deleted(id)
-        ], "A reload that changes nothing reports nothing")
+            .project(other), .removed(other), .currentValues, .deleted(id)
+        ], "A reload that changes nothing reports nothing, and a deletion's dropped current values only the deletion")
     }
 
     /// Another Mac's change is written with exactly the secrets that came with it; secrets it removed stay in the
@@ -128,5 +130,36 @@ extension ProjectLibraryTests {
         try fixture.library.persistSettledIDs(id)
 
         XCTAssertTrue(try fixture.contents("requests/hand-made.json", in: id).contains(derived.description))
+    }
+
+    /// A project deleted elsewhere and restored keeps the secret values this Mac's Keychain still holds, rather than
+    /// loading blank where they didn't come along.
+    func testAdoptingFillsAbsentSecretsFromTheKeychain() throws {
+        var document = ProjectDocument(name: "Restored")
+        let token = Variable(key: "token", value: "", isSecret: true)
+        document.defaultEnvironment.variables = [token]
+        try fixture.secrets.setSecrets([SecretKey.variable(token.id, in: document.defaultEnvironment.id): "kept"], for: .project(document.id))
+
+        try fixture.library.adoptSyncedProject(document, storingSecrets: [:])
+
+        XCTAssertEqual(fixture.library.document(document.id)?.defaultEnvironment.variables.first?.value, "kept")
+    }
+
+    /// A sync write whose save fails reloads from disk, and that reload mustn't be reported as this Mac's edit.
+    func testAFailedSyncedSaveReportsNothing() throws {
+        let id = try fixture.library.createProject(named: "API")
+        var changes: [LibraryChange] = []
+        fixture.library.changeObserver = { changes.append($0) }
+        let requests = fixture.projectURL(id).appendingPathComponent("requests")
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: requests.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: requests.path) }
+        try fixture.write(#"{"id": "\#(id)", "name": "Edited outside", "formatVersion": 1}"#, to: "project.json", in: id)
+
+        var synced = try XCTUnwrap(fixture.library.document(id))
+        synced.items = [.request(.http("Can't be written"))]
+        XCTAssertThrowsError(try fixture.library.applySynced(synced, storingSecrets: [:]))
+
+        XCTAssertEqual(fixture.library.document(id)?.name, "Edited outside", "The failed save reloaded from disk")
+        XCTAssertEqual(changes, [])
     }
 }

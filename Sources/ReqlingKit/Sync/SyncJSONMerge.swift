@@ -135,8 +135,9 @@ struct SyncJSONMerge {
                 baseRows[identity] = members.first { $0.key == "v" }?.value
                 baseOrder.append(identity)
             }
-        } else if hasBase {
-            // The base held this as one value, so it can't say which rows changed.
+        } else if base != nil {
+            // The base held this as one value, so it can't say which rows changed. A list the base lacks entirely (an
+            // empty one the encoder leaves out) merges as an empty list, so both sides' first rows survive.
             return nil
         }
         let localRows = Dictionary(uniqueKeysWithValues: zip(localIDs, local))

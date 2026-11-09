@@ -164,8 +164,10 @@ public final class MCPToolContext {
             if let match {
                 return match
             }
-            // One field's reference chosen on another Mac keeps its ID, as the window's picker keeps it.
-            if existing.count == 1, case .local(let id) = existing[0], workspace.localPath(id, in: project.id) == nil {
+            // One field's reference chosen on another Mac keeps its ID, as the window's picker keeps it, unless a copy
+            // shares it.
+            if existing.count == 1, case .local(let id) = existing[0], workspace.localPath(id, in: project.id) == nil,
+               project.document?.referenceCount(of: id) == 1 {
                 workspace.setLocalPath(url.path, for: id, in: project.id)
                 return .local(id)
             }

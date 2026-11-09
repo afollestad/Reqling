@@ -7,9 +7,9 @@ public struct ProjectPathResolver: Sendable {
     /// Shared paths outside the project's folder and repository that the person chose on this Mac
     /// (`WorkspaceStateStore.chosenOutsidePaths(in:)`), which resolve even though they lead out.
     public let chosenOutsidePaths: Set<String>
-    /// Local paths chosen for a client certificate or key, which only `identityData(for:)` reads
-    /// (`ProjectWorkspaceState.identityPaths`).
-    public let identityPaths: Set<LocalPathID>
+    /// Resolved paths of files used for a client certificate or key, which only `identityData(for:)` reads
+    /// (`ProjectWorkspaceState.identityFiles`).
+    public let identityFiles: Set<String>
     /// The folder no repository at or above may widen a project's shared location to; see `sharesLocation`.
     let homeDirectory: URL
 
@@ -17,13 +17,13 @@ public struct ProjectPathResolver: Sendable {
         projectRoot: URL,
         localPaths: [LocalPathID: String] = [:],
         chosenOutsidePaths: Set<String> = [],
-        identityPaths: Set<LocalPathID> = []
+        identityFiles: Set<String> = []
     ) {
         self.init(
             projectRoot: projectRoot,
             localPaths: localPaths,
             chosenOutsidePaths: chosenOutsidePaths,
-            identityPaths: identityPaths,
+            identityFiles: identityFiles,
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         )
     }
@@ -32,13 +32,13 @@ public struct ProjectPathResolver: Sendable {
         projectRoot: URL,
         localPaths: [LocalPathID: String],
         chosenOutsidePaths: Set<String> = [],
-        identityPaths: Set<LocalPathID> = [],
+        identityFiles: Set<String> = [],
         homeDirectory: URL
     ) {
         self.projectRoot = projectRoot
         self.localPaths = localPaths
         self.chosenOutsidePaths = chosenOutsidePaths
-        self.identityPaths = identityPaths
+        self.identityFiles = identityFiles
         self.homeDirectory = homeDirectory
     }
 
@@ -49,7 +49,7 @@ public struct ProjectPathResolver: Sendable {
             projectRoot: projectRoot,
             localPaths: workspace.localPaths(in: project),
             chosenOutsidePaths: workspace.chosenOutsidePaths(in: project),
-            identityPaths: workspace.identityPaths(in: project)
+            identityFiles: workspace.identityFiles(in: project)
         )
     }
 
@@ -62,10 +62,15 @@ public struct ProjectPathResolver: Sendable {
     /// choice, so it may point anywhere, except that one chosen for a client certificate or key is read only as one
     /// (`identityData(for:)`).
     public func url(for reference: ProjectPathReference) -> URL? {
-        if case .local(let id) = reference, identityPaths.contains(id) {
+        guard let url = identityFileURL(for: reference), !identityFiles.contains(Self.canonicalPath(of: url)) else {
             return nil
         }
-        return identityFileURL(for: reference)
+        return url
+    }
+
+    /// The resolved paths of the files `references` reach, as `ProjectWorkspaceState.identityFiles` records them.
+    public func resolvedPaths(of references: [ProjectPathReference]) -> Set<String> {
+        Set(references.compactMap { identityFileURL(for: $0).map(Self.canonicalPath) })
     }
 
     /// `url(for:)`, but reaching client certificate and key files too: for TLS identities, and for describing them.

@@ -314,6 +314,32 @@ final class LibrarySyncTests: XCTestCase {
         XCTAssertFalse(cloud.zones.contains(.project(id)))
     }
 
+    func testAProjectThatCantGoToTheTrashStaysAndStopsSyncing() async throws {
+        let id = try await shareProject()
+
+        macB.storage.trash.isFailing = true
+        try macA.lifecycle.deleteProject(id)
+        await macA.sync.syncNow()
+        await macB.sync.syncNow()
+        try macB.library.mutate(id) { $0.name = "Still here" }
+        await macB.sync.syncNow()
+
+        XCTAssertEqual(macB.library.document(id)?.name, "Still here")
+        XCTAssertFalse(cloud.zones.contains(.project(id)), "Not uploaded again as new")
+        XCTAssertFalse(macB.sync.issues.isEmpty)
+    }
+
+    /// A project created and deleted before it ever synced, as an import rolled back, leaves nothing on the server.
+    func testAProjectDeletedBeforeItSyncedLeavesNoZone() async throws {
+        let id = try macA.lifecycle.createProject(named: "Rolled back")
+        try macA.lifecycle.deleteProject(id)
+
+        await macA.sync.syncNow()
+
+        XCTAssertFalse(cloud.zones.contains(.project(id)))
+        XCTAssertNil(cloud.record(LibraryRecordCoder.tombstoneRecordID(id)))
+    }
+
     func testRemovingAProjectStopsSyncingItOnThatMacOnly() async throws {
         let id = try await shareProject()
 
@@ -358,7 +384,7 @@ final class LibrarySyncTests: XCTestCase {
         XCTAssertNil(macB.library.project(second))
     }
 
-    private func caseValues(_ status: SyncStatus) -> [ProjectID] {
+    func caseValues(_ status: SyncStatus) -> [ProjectID] {
         if case .confirmingDeletions(let projects) = status {
             return projects
         }

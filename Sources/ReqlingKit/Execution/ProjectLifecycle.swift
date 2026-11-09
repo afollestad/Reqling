@@ -70,7 +70,7 @@ public struct ProjectLifecycle {
         if let document = library.document(project) {
             workspace.reconcileLocalPaths(in: project, keeping: document.localPathIDs)
             workspace.reconcileChosenOutsidePaths(in: project, keeping: document.relativePaths)
-            workspace.markIdentityPaths(document.identityPathIDs, in: project)
+            markIdentityFiles(of: document)
         }
     }
 
@@ -97,6 +97,15 @@ public struct ProjectLifecycle {
             keep.insert(project.id)
         }
         protoWorkspaces.retain(only: keep)
+    }
+
+    /// Marks the files `document`'s client certificates read as readable only for TLS, so nothing else can send them.
+    /// Called on load, when certificates are chosen (window and MCP), and before sync applies another Mac's change.
+    public func markIdentityFiles(of document: ProjectDocument) {
+        guard let resolver = pathResolver(for: document.id) else {
+            return
+        }
+        workspace.markIdentityFiles(resolver.resolvedPaths(of: document.identityReferences), in: document.id)
     }
 
     /// The resolver for `project`'s file references: its folder, and this Mac's paths for its local ones.

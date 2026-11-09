@@ -209,37 +209,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(fixture.component.workspaceState.chosenOutsidePaths(in: project), [path])
     }
 
-    /// A this-Mac-only reference chosen on another Mac keeps its ID when it's chosen here, so the other Mac's file for
-    /// it stays chosen there once the change syncs; one with a file here gets a new ID, leaving copies that share it.
-    func testChoosingAFileForAReferenceFromAnotherMacKeepsItsID() throws {
-        let project = try makeProject()
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("outside-\(UUID().uuidString).bin")
-        let fromElsewhere = ProjectPathReference.local(LocalPathID())
-        fixture.system.pathSharing = .thisMacOnly
-
-        let repointed = model.reference(for: outside, in: project, replacing: fromElsewhere)
-        let replaced = model.reference(for: outside, in: project, replacing: repointed)
-
-        XCTAssertEqual(repointed, fromElsewhere)
-        XCTAssertNotEqual(replaced, fromElsewhere)
-        guard case .local(let id) = fromElsewhere else {
-            return XCTFail("Expected a this-Mac-only reference")
-        }
-        XCTAssertEqual(fixture.component.workspaceState.localPath(id, in: project), outside.path)
-    }
-
-    /// A chosen outside path the project no longer references is forgotten on load, so the same path written in later
-    /// by someone else isn't trusted.
-    func testLoadingForgetsChosenOutsidePathsTheProjectNoLongerUses() throws {
-        let project = try makeProject()
-        let workspace = fixture.component.workspaceState
-        workspace.addChosenOutsidePath("../gone.bin", in: project)
-
-        model.lifecycle.reconcileLocalPaths(in: project)
-
-        XCTAssertEqual(workspace.chosenOutsidePaths(in: project), [])
-    }
-
     func testAFolderCannotMoveIntoItselfOrItsDescendants() throws {
         let project = try makeProject()
         model.newFolder()

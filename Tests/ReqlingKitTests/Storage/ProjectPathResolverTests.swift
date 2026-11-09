@@ -91,18 +91,28 @@ final class ProjectPathResolverTests: XCTestCase {
         XCTAssertNil(chosen.url(for: .relative("../Schemas/../Schemas/api.graphql")), "Only the exact path chosen")
     }
 
-    /// A file chosen for a client certificate or key reads only as one, so a request can't send it.
+    /// A file used for a client certificate or key reads only as one, by whatever reference reaches it, so a request
+    /// can't send it.
     func testAClientCertificatesFileIsReadOnlyForTLS() throws {
         let project = try folder("API.reqling")
-        let key = root.appendingPathComponent("client.p12")
+        try folder("API.reqling/certs")
+        let key = project.appendingPathComponent("certs/client.p12")
         try Data("identity".utf8).write(to: key)
         let id = LocalPathID()
-        let resolver = ProjectPathResolver(projectRoot: project, localPaths: [id: key.path], identityPaths: [id], homeDirectory: root)
+        let unmarked = ProjectPathResolver(projectRoot: project, localPaths: [id: key.path], homeDirectory: root)
+        let marked = ProjectPathResolver(
+            projectRoot: project,
+            localPaths: [id: key.path],
+            identityFiles: unmarked.resolvedPaths(of: [.relative("certs/client.p12")]),
+            homeDirectory: root
+        )
 
-        XCTAssertNil(resolver.url(for: .local(id)))
-        XCTAssertThrowsError(try resolver.data(for: .local(id)))
-        XCTAssertEqual(try resolver.identityData(for: .local(id)), Data("identity".utf8))
-        XCTAssertEqual(resolver.identityFileURL(for: .local(id))?.path, key.path)
+        for reference in [ProjectPathReference.local(id), .relative("certs/client.p12"), .relative("certs/../certs/client.p12")] {
+            XCTAssertNotNil(unmarked.url(for: reference))
+            XCTAssertNil(marked.url(for: reference), "\(reference)")
+            XCTAssertThrowsError(try marked.data(for: reference))
+            XCTAssertEqual(try marked.identityData(for: reference), Data("identity".utf8))
+        }
     }
 
     func testAThisMacPathMayPointAnywhere() throws {

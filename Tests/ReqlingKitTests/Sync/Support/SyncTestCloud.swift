@@ -6,6 +6,8 @@ import Foundation
 @MainActor
 final class SyncTestCloud {
     var account: String? = "account-a"
+    /// What reading the account throws, as when iCloud can't be reached.
+    var accountFailure: (any Error)?
     private(set) var zones: Set<SyncZone> = []
     private(set) var records: [SyncRecordID: SyncRecord] = [:]
     struct ZoneDeletion {
@@ -18,13 +20,21 @@ final class SyncTestCloud {
     private(set) var recordLog: [(sequence: Int, id: SyncRecordID)] = []
     private(set) var zoneLog: [ZoneDeletion] = []
     private(set) var sequence = 0
+    /// The server's clock, which is also the true time each test Mac's clock is offset from (`SyncTestMac.clock`).
     var clock = Date(timeIntervalSince1970: 1_000_000)
+    /// The largest payload a save accepts, in bytes; larger ones are refused as too large.
+    var payloadLimit: Int?
+    private(set) var saveAttempts: [SyncRecordID: Int] = [:]
 
     func record(_ id: SyncRecordID) -> SyncRecord? {
         records[id]
     }
 
     func save(_ record: SyncRecord) -> SyncSendResult {
+        saveAttempts[record.id, default: 0] += 1
+        if let payloadLimit, record.payload.prettyPrinted().utf8.count > payloadLimit {
+            return .tooLarge(record.id)
+        }
         guard zones.contains(record.id.zone) else {
             return .zoneMissing(record.id)
         }
@@ -42,8 +52,6 @@ final class SyncTestCloud {
             saved.secrets = records[record.id]?.secrets
         }
         saved.systemFields = Data("tag-\(sequence)".utf8)
-        // A server clock at least as late as the edit, as a real one would be.
-        clock = max(clock, record.editedAt)
         saved.serverModifiedAt = clock
         records[record.id] = saved
         recordLog.append((sequence, record.id))
@@ -91,11 +99,16 @@ final class SyncTestTransport: SyncTransport {
     }
 
     func accountID() async throws -> String? {
-        cloud.account
+        if let failure = cloud.accountFailure {
+            throw failure
+        }
+        return cloud.account
     }
 
+    /// As `CKSyncEngine` does, starts from the persisted state alone: a queue that wasn't persisted is gone.
     func start(with state: Data?) {
         seen = state.flatMap { String(bytes: $0, encoding: .utf8) }.flatMap(Int.init) ?? 0
+        pending = []
     }
 
     func enqueue(_ changes: [SyncPendingChange]) {
@@ -105,49 +118,80 @@ final class SyncTestTransport: SyncTransport {
         }
     }
 
-    /// Sends until nothing is queued, as `CKSyncEngine` keeps sending what its delegate queues in response.
-    func sendChanges() async {
-        for _ in 0..<10 where !pending.isEmpty {
-            let batch = pending.sorted { $0.sendOrder < $1.sendOrder }
-            pending = []
-            var results: [SyncSendResult] = []
-            for change in batch {
-                switch change {
-                case .saveZone(let zone):
-                    results.append(cloud.saveZone(zone))
-                case .save(let id):
-                    if let record = delegate?.record(for: id) {
-                        results.append(cloud.save(record))
-                    }
-                case .delete(let id):
-                    results.append(cloud.delete(id))
-                case .deleteZone(let zone):
-                    results.append(cloud.deleteZone(zone))
-                }
+    func cancelPending(in zone: SyncZone) {
+        pending.removeAll { change in
+            switch change {
+            case .saveZone(let pendingZone), .deleteZone(let pendingZone): pendingZone == zone
+            case .save(let id), .delete(let id): id.zone == zone
             }
-            delegate?.transport(didSend: results)
         }
     }
 
+    /// Sends until nothing is queued, as `CKSyncEngine` keeps sending what its delegate queues in response.
+    func sendChanges() async {
+        for _ in 0..<10 where !pending.isEmpty {
+            guard sendBatch() else {
+                return
+            }
+        }
+    }
+
+    /// Sends up to `limit` of what's ready, in the order queued, as one of `CKSyncEngine`'s batches; `false` when nothing
+    /// was ready.
+    @discardableResult
+    func sendBatch(limit: Int = .max) -> Bool {
+        let ready = pending.filter { delegate?.shouldSend($0) ?? false }
+        guard !ready.isEmpty else {
+            return false
+        }
+        let batch = Array(ready.enumerated()
+            .sorted { ($0.element.sendOrder, $0.offset) < ($1.element.sendOrder, $1.offset) }
+            .map(\.element)
+            .prefix(limit))
+        pending.removeAll { batch.contains($0) }
+        var results: [SyncSendResult] = []
+        for change in batch {
+            switch change {
+            case .saveZone(let zone):
+                results.append(cloud.saveZone(zone))
+            case .save(let id):
+                if let record = delegate?.record(for: id) {
+                    results.append(cloud.save(record))
+                }
+            case .delete(let id):
+                results.append(cloud.delete(id))
+            case .deleteZone(let zone):
+                results.append(cloud.deleteZone(zone))
+            }
+        }
+        delegate?.transport(didSend: results)
+        return true
+    }
+
+    /// As `CKSyncEngine` does, a fetch from no state is whole: it returns what exists, and no deletion of a zone or record.
     func fetchChanges() async {
-        for entry in cloud.zoneLog where entry.sequence > seen && !cloud.zones.contains(entry.zone) {
+        let isWhole = seen == 0
+        for entry in cloud.zoneLog where !isWhole && entry.sequence > seen && !cloud.zones.contains(entry.zone) {
             delegate?.transport(didDeleteZone: entry.zone, reason: entry.reason)
         }
         var changed: [SyncZone: Set<SyncRecordID>] = [:]
         for entry in cloud.recordLog where entry.sequence > seen && cloud.zones.contains(entry.id.zone) {
-            changed[entry.id.zone, default: []].insert(entry.id)
+            if !isWhole || cloud.record(entry.id) != nil {
+                changed[entry.id.zone, default: []].insert(entry.id)
+            }
         }
         for (zone, ids) in changed.sorted(by: { $0.key.name < $1.key.name }) {
             let sorted = ids.sorted { $0.description < $1.description }
             delegate?.transport(didFetch: SyncFetchedZone(
                 zone: zone,
                 changed: sorted.compactMap { cloud.record($0) },
-                deleted: sorted.filter { cloud.record($0) == nil }
+                deleted: sorted.filter { cloud.record($0) == nil },
+                isWhole: isWhole
             ))
         }
         seen = cloud.sequence
         delegate?.transport(didUpdateState: Data(String(seen).utf8))
-        delegate?.transportDidFinishFetching()
+        delegate?.transportDidFinishFetching(wasWhole: isWhole)
     }
 
     func resetState() {

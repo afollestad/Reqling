@@ -274,7 +274,8 @@ extension AppModel {
 
     /// Turns a chosen file into a reference: relative when it lives with the project, otherwise as the user picks.
     /// Choosing one again for `replacing`, a this-Mac-only reference with no path here (chosen on another Mac), keeps
-    /// its ID, so the other Mac's file for it stays chosen there; with a path here, a new ID leaves any copy sharing it.
+    /// its ID, so the other Mac's file for it stays chosen there. A new ID instead when it has a path here, or when a
+    /// copied request shares it, which would otherwise change too.
     func reference(for url: URL, in project: ProjectID, replacing existing: ProjectPathReference? = nil) -> ProjectPathReference? {
         guard let root = library.project(project)?.url else {
             return nil
@@ -298,7 +299,8 @@ extension AppModel {
             }
             return .relative(path)
         case .thisMacOnly:
-            if case .local(let id)? = existing, workspace.localPath(id, in: project) == nil {
+            if case .local(let id)? = existing, workspace.localPath(id, in: project) == nil,
+               library.document(project)?.referenceCount(of: id) == 1 {
                 workspace.setLocalPath(url.path, for: id, in: project)
                 return .local(id)
             }

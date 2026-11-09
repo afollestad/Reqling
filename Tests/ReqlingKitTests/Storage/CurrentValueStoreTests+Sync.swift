@@ -28,4 +28,21 @@ extension CurrentValueStoreTests {
         XCTAssertFalse(try String(contentsOf: directory.file("current-values.json"), encoding: .utf8).contains("leaked"))
         XCTAssertEqual(notified, 0)
     }
+
+    /// A script refreshing a secret under the same marker changes only the Keychain; views and sync still hear of it.
+    func testRefreshingASecretValueNotifiesThoughTheFileStaysTheSame() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let store = CurrentValueStore(url: directory.file("current-values.json"), secretStore: InMemorySecretStore())
+        store.apply(["token": .value(TemplateVariable(value: "old", isSecret: true))], in: .global)
+        var notified = 0
+        store.onChange = { notified += 1 }
+        let revision = store.revision
+
+        store.apply(["token": .value(TemplateVariable(value: "new", isSecret: true))], in: .global)
+
+        XCTAssertEqual(notified, 1)
+        XCTAssertGreaterThan(store.revision, revision)
+        XCTAssertEqual(store.values(in: .global)["token"], .value(TemplateVariable(value: "new", isSecret: true)))
+    }
 }

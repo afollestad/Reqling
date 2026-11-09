@@ -69,4 +69,11 @@ final class SyncJSONMergeTests: XCTestCase {
             XCTAssertFalse(tree.contains(text), text)
         }
     }
+
+    /// An empty list the encoder left out of the base merges as an empty list, so each side's first rows survive.
+    func testAListTheBaseLackedKeepsBothSidesFirstRows() throws {
+        let merged = try merge(#"{"name": "a"}"#, #"{"name": "a", "rows": [{"id": "x"}]}"#, #"{"name": "a", "rows": [{"id": "y"}]}"#)
+
+        XCTAssertEqual(merged, try json(#"{"name": "a", "rows": [{"id": "x"}, {"id": "y"}]}"#))
+    }
 }

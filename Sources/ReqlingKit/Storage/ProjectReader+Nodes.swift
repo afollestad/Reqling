@@ -203,7 +203,7 @@ extension ProjectReader {
             case .request(let loaded):
                 let id = settled.id(for: loaded.path)
                 if settled.replaced.contains(loaded.path) {
-                    state.issues.append(ProjectLoadIssue(path: loaded.path, message: "A duplicate request ID was replaced."))
+                    state.issues.append(ProjectLoadIssue(path: loaded.path, message: "A duplicate request ID was replaced.", losesContent: false))
                 }
                 state.index.nodePaths[id] = loaded.path
                 result.append(.request(RequestItem(
@@ -217,7 +217,7 @@ extension ProjectReader {
                 let id = settled.id(for: loaded.path)
                 if settled.replaced.contains(loaded.path) {
                     let folderFilePath = ProjectLayout.join(loaded.path, ProjectLayout.folderFile)
-                    state.issues.append(ProjectLoadIssue(path: folderFilePath, message: "A duplicate folder ID was replaced."))
+                    state.issues.append(ProjectLoadIssue(path: folderFilePath, message: "A duplicate folder ID was replaced.", losesContent: false))
                 }
                 state.index.nodePaths[id] = loaded.path
                 let children = build(loaded.children, settled: settled, state: &state)
@@ -261,7 +261,8 @@ extension ProjectReader {
             let items = count == 1 ? "1 item" : "\(count) items"
             state.issues.append(ProjectLoadIssue(
                 path: scratch,
-                message: "An interrupted save left \(items) behind; \(count == 1 ? "it was" : "they were") restored at the top level."
+                message: "An interrupted save left \(items) behind; \(count == 1 ? "it was" : "they were") restored at the top level.",
+                losesContent: false
             ))
         }
         return (nodes, environments)
