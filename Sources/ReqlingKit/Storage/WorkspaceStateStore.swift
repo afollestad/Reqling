@@ -53,6 +53,9 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
     /// The absolute paths behind this project's `ProjectPathReference.local` references, by `LocalPathID`. Scoped to
     /// the project so forgetting it forgets them, and so pruning one project's paths never sees another's.
     public var localPaths: [String: String] = [:]
+    /// Shared paths outside the project's folder and repository that the person chose on this Mac (Shared Path), the
+    /// only such paths `ProjectPathResolver` resolves; one anyone else wrote into the project counts as missing.
+    public var chosenOutsidePaths: Set<String> = []
     /// Whether this project's scripts may run on this Mac.
     public var scriptTrust: ScriptTrust = .unknown
 
@@ -64,6 +67,7 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
         expandedFolderIDs = try container.decodeIfPresent(Set<RequestNodeID>.self, forKey: .expandedFolderIDs) ?? []
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         localPaths = try container.decodeIfPresent([String: String].self, forKey: .localPaths) ?? [:]
+        chosenOutsidePaths = try container.decodeIfPresent(Set<String>.self, forKey: .chosenOutsidePaths) ?? []
         scriptTrust = (try? container.decodeIfPresent(ScriptTrust.self, forKey: .scriptTrust)) ?? .unknown
     }
 
@@ -72,6 +76,7 @@ public struct ProjectWorkspaceState: Codable, Equatable, Sendable {
         case expandedFolderIDs
         case isCollapsed
         case localPaths
+        case chosenOutsidePaths
         case scriptTrust
     }
 }
@@ -140,8 +145,9 @@ public final class WorkspaceStateStore {
             var kept = ProjectWorkspaceState()
             if keepingLocalPaths {
                 kept.localPaths = state.projects[id.description]?.localPaths ?? [:]
+                kept.chosenOutsidePaths = state.projects[id.description]?.chosenOutsidePaths ?? []
             }
-            state.projects[id.description] = kept.localPaths.isEmpty ? nil : kept
+            state.projects[id.description] = kept.localPaths.isEmpty && kept.chosenOutsidePaths.isEmpty ? nil : kept
             if state.selection?.projectID == id {
                 state.selection = nil
             }
@@ -186,6 +192,27 @@ public final class WorkspaceStateStore {
             if projectState != (state.projects[project.description] ?? ProjectWorkspaceState()) {
                 state.projects[project.description] = projectState
             }
+        }
+    }
+
+    /// The shared paths outside `project`'s folder and repository the person chose on this Mac, for its
+    /// `ProjectPathResolver`.
+    public func chosenOutsidePaths(in project: ProjectID) -> Set<String> {
+        projectState(project).chosenOutsidePaths
+    }
+
+    /// Records that the person chose to share `path`, outside `project`'s folder and repository, on this Mac.
+    public func addChosenOutsidePath(_ path: String, in project: ProjectID) {
+        updateProject(project) { $0.chosenOutsidePaths.insert(path) }
+    }
+
+    /// Keeps only the chosen outside paths `project` still references (`ProjectDocument.relativePaths`), so a path the
+    /// person stopped using can't come back as allowed when someone else writes it in. Called with
+    /// `reconcileLocalPaths(in:keeping:)`, on load only, for the same reason.
+    public func reconcileChosenOutsidePaths(in project: ProjectID, keeping referenced: Set<String>) {
+        let kept = chosenOutsidePaths(in: project).intersection(referenced)
+        if kept != chosenOutsidePaths(in: project) {
+            updateProject(project) { $0.chosenOutsidePaths = kept }
         }
     }
 

@@ -49,11 +49,14 @@ final class WorkspaceStateStoreTests: XCTestCase {
         let project = ProjectID()
         store.updateProject(project) { $0.isCollapsed = true }
         _ = store.addLocalPath("/protos", in: project)
+        store.addChosenOutsidePath("../schemas/api.graphql", in: project)
 
         store.forgetProject(project)
 
         XCTAssertFalse(store.projectState(project).isCollapsed)
         XCTAssertEqual(store.localPaths(in: project).count, 1, "Adding the folder back still finds its files")
+        XCTAssertEqual(store.chosenOutsidePaths(in: project), ["../schemas/api.graphql"])
+        XCTAssertEqual(WorkspaceStateStore(fileURL: directory.file("workspace.json")).chosenOutsidePaths(in: project), ["../schemas/api.graphql"])
 
         store.forgetProject(project, keepingLocalPaths: false)
 

@@ -199,6 +199,26 @@ final class AppModelTests: XCTestCase {
 
         fixture.system.pathSharing = nil
         XCTAssertNil(model.reference(for: outside, in: project))
+
+        fixture.system.pathSharing = .shared
+        let shared = try XCTUnwrap(model.reference(for: outside, in: project))
+        guard case .relative(let path) = shared else {
+            return XCTFail("Expected a shared reference")
+        }
+        XCTAssertEqual(model.pathResolver(for: project)?.url(for: shared)?.lastPathComponent, outside.lastPathComponent)
+        XCTAssertEqual(fixture.component.workspaceState.chosenOutsidePaths(in: project), [path])
+    }
+
+    /// A chosen outside path the project no longer references is forgotten on load, so the same path written in later
+    /// by someone else isn't trusted.
+    func testLoadingForgetsChosenOutsidePathsTheProjectNoLongerUses() throws {
+        let project = try makeProject()
+        let workspace = fixture.component.workspaceState
+        workspace.addChosenOutsidePath("../gone.bin", in: project)
+
+        model.lifecycle.reconcileLocalPaths(in: project)
+
+        XCTAssertEqual(workspace.chosenOutsidePaths(in: project), [])
     }
 
     func testAFolderCannotMoveIntoItselfOrItsDescendants() throws {

@@ -278,7 +278,8 @@ extension AppModel {
             return nil
         }
         let sharing: PathSharing
-        if ProjectPathResolver.sharesLocation(url, with: root) {
+        let isInside = ProjectPathResolver.sharesLocation(url, with: root)
+        if isInside {
             sharing = .shared
         } else {
             guard let choice = system.choosePathSharing(for: url) else {
@@ -288,7 +289,12 @@ extension AppModel {
         }
         switch sharing {
         case .shared:
-            return .relative(ProjectPathResolver.relativePath(from: root, to: url))
+            let path = ProjectPathResolver.relativePath(from: root, to: url)
+            if !isInside {
+                // Only this choice lets a shared path outside the project resolve (`ProjectPathResolver.url(for:)`).
+                workspace.addChosenOutsidePath(path, in: project)
+            }
+            return .relative(path)
         case .thisMacOnly:
             return workspace.addLocalPath(url.path, in: project)
         }

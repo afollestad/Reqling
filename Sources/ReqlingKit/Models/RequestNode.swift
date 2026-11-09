@@ -214,6 +214,14 @@ public enum RequestNode: Hashable, Sendable, Identifiable {
         return [id] + folder.children.flatMap(\.subtreeIDs)
     }
 
+    /// Whether this request, or this folder or anything inside it, has a script.
+    var containsScripts: Bool {
+        switch self {
+        case .request(let request): !request.scripts.isEmpty
+        case .folder(let folder): !folder.scripts.isEmpty || folder.children.contains(where: \.containsScripts)
+        }
+    }
+
     /// The IDs of this request, or of every request inside this folder.
     var requestIDs: [RequestNodeID] {
         switch self {

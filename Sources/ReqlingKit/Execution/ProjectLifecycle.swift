@@ -61,6 +61,7 @@ public struct ProjectLifecycle {
     public func reconcileLocalPaths(in project: ProjectID) {
         if let document = library.document(project) {
             workspace.reconcileLocalPaths(in: project, keeping: document.localPathIDs)
+            workspace.reconcileChosenOutsidePaths(in: project, keeping: document.relativePaths)
         }
     }
 
@@ -91,7 +92,7 @@ public struct ProjectLifecycle {
 
     /// The resolver for `project`'s file references: its folder, and this Mac's paths for its local ones.
     public func pathResolver(for project: ProjectID) -> ProjectPathResolver? {
-        library.project(project).map { ProjectPathResolver(projectRoot: $0.url, localPaths: workspace.localPaths(in: project)) }
+        library.project(project).map { ProjectPathResolver(projectRoot: $0.url, workspace: workspace, project: project) }
     }
 }
 

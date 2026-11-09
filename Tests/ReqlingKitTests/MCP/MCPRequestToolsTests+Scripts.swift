@@ -99,3 +99,42 @@ extension MCPRequestToolsTests {
         XCTAssertTrue(reference["reference"]?.stringValue?.contains("### `Reqling`") ?? false)
     }
 }
+
+extension MCPRequestToolsTests {
+    /// Trust covers the scripts the person saw when granting it, so scripts moved in from a project this Mac never
+    /// trusted ask again; a move without scripts, or out of a trusted project, leaves trust alone.
+    func testMovingScriptsInFromAnUntrustedProjectAsksAboutTrustAgain() async throws {
+        let imported = try await fixture.makeProject("Imported")
+        fixture.workspace.updateProject(imported) { $0.scriptTrust = .unknown }
+        let scripted = try await fixture.success("create_request", [
+            "project": .string(imported.description),
+            "name": "Exfiltrate",
+            "scripts": ["preRequest": "steal();"]
+        ])
+        let plain = try await fixture.success("create_request", ["project": .string(imported.description), "name": "Plain"])
+        let trusted = try await fixture.makeProject("Trusted")
+
+        _ = try await fixture.success("move_request", [
+            "project": .string(imported.description),
+            "request": try XCTUnwrap(plain["request"]?["id"]),
+            "destinationProject": .string(trusted.description)
+        ])
+        XCTAssertEqual(fixture.workspace.projectState(trusted).scriptTrust, .trusted, "A move without scripts")
+
+        _ = try await fixture.success("move_request", [
+            "project": .string(imported.description),
+            "request": try XCTUnwrap(scripted["request"]?["id"]),
+            "destinationProject": .string(trusted.description)
+        ])
+        XCTAssertEqual(fixture.workspace.projectState(trusted).scriptTrust, .unknown)
+
+        fixture.workspace.updateProject(trusted) { $0.scriptTrust = .trusted }
+        let signed = try await fixture.success("create_request", ["project": projectArgument, "name": "Signed", "scripts": ["preRequest": "sign();"]])
+        _ = try await fixture.success("move_request", [
+            "project": projectArgument,
+            "request": try XCTUnwrap(signed["request"]?["id"]),
+            "destinationProject": .string(trusted.description)
+        ])
+        XCTAssertEqual(fixture.workspace.projectState(trusted).scriptTrust, .trusted, "Out of a trusted project")
+    }
+}

@@ -373,7 +373,7 @@ public final class RequestRunner {
             document: document,
             resolver: resolver,
             redaction: redaction,
-            paths: ProjectPathResolver(projectRoot: project.url, localPaths: workspace.localPaths(in: projectID)),
+            paths: ProjectPathResolver(projectRoot: project.url, workspace: workspace, project: projectID),
             environmentName: environment.name
         )
     }

@@ -37,6 +37,7 @@ extension ProjectLifecycle {
             rebased(reference, from: origin, to: target, localized: &localized)
         }
         try library.mutate(destination) { try $0.insert(moved, into: parent, at: index) }
+        revokeTrustIfUntrustedScriptsArrive(with: node, from: source, to: destination)
         do {
             try library.mutate(source) { _ = try $0.removeNode(id) }
         } catch {
@@ -50,6 +51,19 @@ extension ProjectLifecycle {
             }
         }
         return ProjectNodeMove(nodeID: moved.id, localizedPaths: localized)
+    }
+
+    /// Asks about `destination`'s scripts again when `node` brings scripts from a project whose scripts this Mac never
+    /// trusted, such as an imported collection. Trust covers the scripts the person saw when granting it; without
+    /// this, dragging a request in would run someone else's script silently, with every secret in scope. A declined
+    /// destination stays declined.
+    func revokeTrustIfUntrustedScriptsArrive(with node: RequestNode, from source: ProjectID, to destination: ProjectID) {
+        guard node.containsScripts,
+              workspace.projectState(source).scriptTrust != .trusted,
+              workspace.projectState(destination).scriptTrust == .trusted else {
+            return
+        }
+        workspace.updateProject(destination) { $0.scriptTrust = .unknown }
     }
 
     /// `reference` as `destination` reaches the same file. A shared path stays shared while the file is inside the

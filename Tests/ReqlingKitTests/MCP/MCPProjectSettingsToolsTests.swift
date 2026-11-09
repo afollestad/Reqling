@@ -38,6 +38,7 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
             "protoRoots": [["path": "protos"], ["path": .string(outside), "local": true]]
         ])
         let refused = await fixture.failure("update_proto_config", ["project": projectArgument, "protoRoots": [["path": .string(outside)]]])
+        let climbing = await fixture.failure("update_proto_config", ["project": projectArgument, "protoRoots": [["path": "../../.ssh"]]])
 
         let grpc = try fixture.document(project).grpc
         XCTAssertEqual(grpc.protoRoots.first, .relative("protos"))
@@ -47,6 +48,8 @@ final class MCPProjectSettingsToolsTests: XCTestCase {
         XCTAssertEqual(again["protoRoots"]?.arrayValue?.last?["shared"], false)
         XCTAssertFalse(try fixture.storage.contents("project.json", in: project).contains(outside))
         XCTAssertTrue(refused.contains("local: true"), refused)
+        XCTAssertTrue(climbing.contains("outside the project's folder and repository"), climbing)
+        XCTAssertEqual(try fixture.document(project).grpc.protoRoots.first, .relative("protos"), "A refused update changes nothing")
     }
 
     func testADescriptorSetIsBrowsableWithoutProtoc() async throws {

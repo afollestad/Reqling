@@ -160,15 +160,17 @@ public final class MCPToolContext {
             }
             return workspace.addLocalPath(url.path, in: project.id)
         }
-        guard path.hasPrefix("/") || path.hasPrefix("~") else {
-            return .relative(path)
-        }
-        let url = try MCPProjectTools.absoluteURL(path, field: "\(entry.path).path")
+        let isAbsolute = path.hasPrefix("/") || path.hasPrefix("~")
+        let url = isAbsolute
+            ? try MCPProjectTools.absoluteURL(path, field: "\(entry.path).path")
+            : project.url.appendingPathComponent(path).standardizedFileURL
+        // A relative path is checked too: the resolver would treat one that leads out as missing (`url(for:)`), so
+        // saving it would only leave a broken reference.
         guard ProjectPathResolver.sharesLocation(url, with: project.url) else {
             throw MCPToolError("\(path) is outside the project's folder and repository, so others couldn't resolve it; pass "
-                + "`local: true` to keep it on this Mac only.")
+                + "an absolute path with `local: true` to keep it on this Mac only.")
         }
-        return .relative(ProjectPathResolver.relativePath(from: project.url, to: url))
+        return .relative(isAbsolute ? ProjectPathResolver.relativePath(from: project.url, to: url) : path)
     }
 
     /// A reference as tools report it: its path on this Mac, whether it is shared through the project, and whether the

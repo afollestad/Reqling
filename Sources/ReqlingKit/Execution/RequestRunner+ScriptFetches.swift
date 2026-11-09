@@ -41,7 +41,7 @@ extension RequestRunner {
         guard let project = library.project(session.project), let document = project.document else {
             throw RunFailure(kind: .invalidRequest, message: "The project is not available.")
         }
-        let paths = ProjectPathResolver(projectRoot: project.url, localPaths: workspace.localPaths(in: project.id))
+        let paths = ProjectPathResolver(projectRoot: project.url, workspace: workspace, project: project.id)
         let prepared: PreparedFetch
         switch fetch {
         case .send(let request):

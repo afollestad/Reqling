@@ -172,6 +172,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 - **Projects you create** in Reqling, or that an agent creates through MCP, are trusted from the start. One [imported from Postman](projects.md#from-postman) with scripts asks first, since someone else wrote them.
 - **Without trust,** requests go out without their scripts, and the response says so, with a **Trust Scripts** button for the next run. Agents' runs and background schema lookups never ask; they skip the scripts.
 - **Running a folder or project** asks once for the whole run, listing every script it would run ([Running folders and projects](running-folders.md)).
+- **Moving scripts in.** Moving a request or folder with scripts from a project you haven't trusted into one you have asks again before the next run, since you haven't seen those scripts.
 - **Change it** in the project's pane, under its scripts.
 
 ## Libraries and limits

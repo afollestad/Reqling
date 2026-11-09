@@ -4,7 +4,8 @@ import Foundation
 /// configuration or local-path change alters what it compiles.
 struct ProtoWorkspacePlan: Hashable, Sendable {
     struct Path: Hashable, Sendable {
-        /// `nil` for a this-Mac-only path recorded on another Mac, or a relative one outside the project.
+        /// `nil` for a this-Mac-only path recorded on another Mac, or a relative one outside the project that wasn't
+        /// chosen on this Mac.
         let url: URL?
         let description: String
     }
@@ -19,15 +20,11 @@ struct ProtoWorkspacePlan: Hashable, Sendable {
         descriptorSets = configuration.descriptorSets.map { Self.path(for: $0, resolver: resolver) }
     }
 
-    /// A relative path must stay inside the project's folder or repository: whoever shares the project file wrote
-    /// it, and `../../..` would have Reqling walk, watch, and hash the user's home folder. One outside is treated as
-    /// missing. A this-Mac-only path is the user's own choice, so it may point anywhere.
+    /// A relative path outside the project's folder or repository resolves to `nil` unless the person chose it on this
+    /// Mac (`ProjectPathResolver.url(for:)`), so a cloned `../../..` never has Reqling walk, watch, and hash the home
+    /// folder.
     private static func path(for reference: ProjectPathReference, resolver: ProjectPathResolver) -> Path {
-        let url = resolver.url(for: reference)
-        if case .relative = reference, let url, !ProjectPathResolver.sharesLocation(url, with: resolver.projectRoot) {
-            return Path(url: nil, description: "\(resolver.describe(reference)) (outside the project’s folder and repository)")
-        }
-        return Path(url: url, description: resolver.describe(reference))
+        Path(url: resolver.url(for: reference), description: resolver.describe(reference))
     }
 
     var isEmpty: Bool {
