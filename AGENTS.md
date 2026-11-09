@@ -22,7 +22,7 @@ Built per the global `static-site-rules` skill, as a sibling of the Alveary, Chr
 
 `images/{request,graphql,grpc,events,websocket,scripts,batch}-{light,dark}.webp` are 1920x1248 captures of the main window from `main`'s screenshot mode, which seeds a fixed demo project (`ScreenshotDemoProject`), so the alt text describes that data. To regenerate:
 
-1. On `main`, run `./scripts/screenshots.sh -b` on a Retina display. It writes 2400x1560 PNGs of the window alone, with transparent rounded corners, to `.build/screenshots/<scene>-<light|dark>.png`.
+1. On `main`, run `./scripts/screenshots.sh -b` on a Retina display with the Multicolor accent, or controls take the system accent instead of the app's purple. Each scene and theme takes focus while it's captured, so the window shows its active appearance. It writes 2400x1560 PNGs of the window alone, with transparent rounded corners, to `.build/screenshots/<scene>-<light|dark>.png`.
 2. Downscale each by four fifths, which keeps both sides integral: `sips -z 1248 1920 <scene>-<theme>.png --out <tmp>.png`.
 3. `cwebp -lossless -z 9 -alpha_q 100 <tmp>.png -o images/<scene>-<theme>.webp`. Every capture shares one size, repeated in `.screenshot`'s `aspect-ratio` and each `<img>`'s `width`/`height`.
 4. Update the alt text if the demo data changed, and re-render the link preview if `request-dark.webp` did.
