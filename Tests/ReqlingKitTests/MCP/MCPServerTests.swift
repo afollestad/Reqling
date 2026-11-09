@@ -225,10 +225,26 @@ final class MCPServerTests: XCTestCase {
             + "Accept: application/json\r\nContent-Length: \(contentLength)\r\n\r\n"
     }
 
-    /// Sends `request` as written, for headers URLSession won't send as given, and returns the status code. A connection
-    /// that fails, waits to retry, or gets no reply in time throws, naming how far it got: one of these once never
-    /// finished its send or receive, and left the suite waiting forever.
+    /// Sends `request` as written, for headers URLSession won't send as given, and returns the status code.
+    ///
+    /// A connect refused with EADDRINUSE, which a busy runner's loopback traffic can cause, is tried again on a fresh
+    /// connection, which takes another local port, up to three in all; a waiting `NWConnection` never retries on
+    /// loopback by itself, where no path change comes.
     private func raw(_ request: String) async throws -> Int {
+        for _ in 1..<3 {
+            do {
+                return try await rawAttempt(request)
+            } catch NWError.posix(.EADDRINUSE) {
+                continue
+            }
+        }
+        return try await rawAttempt(request)
+    }
+
+    /// One connection's try at `raw(_:)`. A connection that fails or waits to retry throws its error, and one with no
+    /// reply in time throws how far it got: one of these once never finished its send or receive, and left the suite
+    /// waiting forever.
+    private func rawAttempt(_ request: String) async throws -> Int {
         let connection = NWConnection(host: "127.0.0.1", port: try XCTUnwrap(NWEndpoint.Port(rawValue: UInt16(port))), using: .tcp)
         defer { connection.cancel() }
         let outcome = RawOutcome()
