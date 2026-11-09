@@ -32,6 +32,7 @@ def profile(*, distribution: bool = False, **changes: object) -> dict:
         "com.apple.developer.icloud-container-identifiers": ["iCloud.com.afollestad.reqling"],
         "com.apple.developer.icloud-services": "*",
         "com.apple.developer.aps-environment": "production" if distribution else "development",
+        "com.apple.developer.icloud-container-environment": "Production" if distribution else ["Production", "Development"],
     }
     entitlements.update(changes.pop("entitlements", {}))  # type: ignore[arg-type]
     result: dict = {
@@ -107,6 +108,18 @@ class ProblemsTests(unittest.TestCase):
         ), min_days=30)
 
         self.assertEqual(len(found), 3, found)
+
+    def test_an_expired_profile_says_so(self) -> None:
+        found = self.check(profile(ExpirationDate=NOW - datetime.timedelta(days=1)), min_days=30)
+
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("it expired", found[0])
+
+    def test_every_template_entitlement_is_one_the_profile_check_confirms(self) -> None:
+        for template in (Path(__file__).parents[2] / "Config" / "Entitlements").glob("*.entitlements"):
+            with self.subTest(template=template.name):
+                keys = set(plistlib.loads(template.read_bytes()))
+                self.assertLessEqual(keys, tool.CHECKED_ENTITLEMENTS)
 
     def test_signed_entitlements_add_the_identifiers_the_profile_grants(self) -> None:
         template = {"com.apple.developer.aps-environment": "development"}

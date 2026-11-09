@@ -32,9 +32,12 @@ if [ -z "$profile" ]; then
   exit 1
 fi
 
-certificate=$(security find-certificate -c "Developer ID Application" -Z 2>/dev/null | awk '/SHA-1 hash:/ { print $3; exit }')
-if [ -z "$certificate" ]; then
-  echo "error: no Developer ID Application certificate in the keychain to check the profile against" >&2
+# The one valid Developer ID Application identity, as CI's keychain holds one; an expired certificate left beside its
+# renewal shares the name but can't sign.
+certificate=$(security find-identity -v -p codesigning 2>/dev/null \
+  | awk '/"Developer ID Application: / { print $2 }' | sort -u || true)
+if [ -z "$certificate" ] || [ "$(printf '%s\n' "$certificate" | wc -l | tr -d ' ')" -ne 1 ]; then
+  echo "error: expected one valid Developer ID Application identity in the keychain to check the profile against" >&2
   exit 1
 fi
 python3 -I "$repo_root/scripts/lib/provisioning_profile.py" check "$profile" \

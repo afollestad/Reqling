@@ -22,6 +22,14 @@ import tempfile
 from pathlib import Path
 
 CONTAINER = "iCloud.com.afollestad.reqling"
+# The entitlements `problems` confirms a profile grants, besides the identifiers; a template entitlement outside these
+# would pass the check and then stop the app launching (`provisioning_profile_tests.py` keeps them in step).
+CHECKED_ENTITLEMENTS = {
+    "com.apple.developer.icloud-container-identifiers",
+    "com.apple.developer.icloud-services",
+    "com.apple.developer.aps-environment",
+    "com.apple.developer.icloud-container-environment",
+}
 APPLICATION_IDENTIFIER = "com.apple.application-identifier"
 TEAM_IDENTIFIER = "com.apple.developer.team-identifier"
 CONTAINERS = "com.apple.developer.icloud-container-identifiers"
@@ -64,8 +72,10 @@ def problems(
     if certificate.upper() not in certificates:
         found.append("it doesn't include the signing certificate; regenerate it with that certificate")
     expiry = profile.get("ExpirationDate")
-    if expiry is None or expiry <= now + datetime.timedelta(days=min_days):
-        found.append(f"it expires {expiry}, within {min_days} days" if min_days else f"it expired {expiry}")
+    if expiry is None or expiry <= now:
+        found.append(f"it expired {expiry}")
+    elif expiry <= now + datetime.timedelta(days=min_days):
+        found.append(f"it expires {expiry}, within {min_days} days")
     if distribution:
         if profile.get("ProvisionedDevices") or not profile.get("ProvisionsAllDevices"):
             found.append("it's a development profile; releases need a Developer ID one")
@@ -79,6 +89,10 @@ def problems(
     push = "production" if distribution else "development"
     if entitlements.get(PUSH) != push:
         found.append(f"its push environment is {entitlements.get(PUSH)}, expected {push}; enable Push Notifications on the App ID")
+    environments = entitlements.get("com.apple.developer.icloud-container-environment")
+    environments = [environments] if isinstance(environments, str) else (environments or [])
+    if distribution and "Production" not in environments:
+        found.append("it doesn't allow CloudKit's Production environment")
     return found
 
 

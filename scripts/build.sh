@@ -123,12 +123,17 @@ fi
 profile_tool=(python3 -I "$repo_root/scripts/lib/provisioning_profile.py")
 entitlement_flags=()
 
-# The SHA-1 of the certificate `codesign --sign "$1"` signs with.
+# The SHA-1 of the identity `codesign --sign "$1"` signs with, or nothing unless exactly one valid identity matches: an
+# expired certificate left beside its renewal shares the name but has no say in which one signs.
 certificate_hash() {
   if [[ $1 =~ ^[0-9A-Fa-f]{40}$ ]]; then
     echo "$1"
-  else
-    security find-certificate -c "$1" -Z 2>/dev/null | awk '/SHA-1 hash:/ { print $3; exit }'
+    return
+  fi
+  local matches
+  matches=$(security find-identity -v -p codesigning 2>/dev/null | awk -v name="\"$1" 'index($0, name) { print $2 }' | sort -u || true)
+  if [ -n "$matches" ] && [ "$(printf '%s\n' "$matches" | wc -l | tr -d ' ')" -eq 1 ]; then
+    echo "$matches"
   fi
 }
 
@@ -150,8 +155,14 @@ if [ "$identity" != - ]; then
       echo "error: set PROVISIONING_PROFILE to the Developer ID provisioning profile (RELEASING.md)" >&2
       exit 1
     fi
+    certificate=$(certificate_hash "$identity")
+    if [ -z "$certificate" ]; then
+      echo "error: no single valid signing identity matches \"$identity\"" >&2
+      exit 1
+    fi
+    # As long as release verification and the secret script require, so a release they'd refuse never builds.
     "${profile_tool[@]}" check "$PROVISIONING_PROFILE" --bundle-id com.afollestad.reqling \
-      --certificate "$(certificate_hash "$identity")" --distribution
+      --certificate "$certificate" --distribution --min-days 30
     use_profile "$PROVISIONING_PROFILE" "$repo_root/Config/Entitlements/Reqling.entitlements"
   fi
   # Notarization requires the hardened runtime and a secure timestamp.
@@ -171,9 +182,12 @@ elif [ "$configuration" = debug ]; then
   fi
   # Reqling Dev syncs against CloudKit's Development environment when a development profile for it lists this Mac:
   # DEBUG_PROVISIONING_PROFILE, which must be usable, or the longest-lasting usable one Xcode's profile folder holds.
-  if [ "${debug_identity:--}" != - ]; then
-    certificate=$(certificate_hash "$debug_identity")
-    device=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/ { print $2; exit }')
+  certificate=$(certificate_hash "${debug_identity:--}" 2>/dev/null || true)
+  if [ "${debug_identity:--}" != - ] && [ -z "$certificate" ]; then
+    echo "error: no single valid signing identity matches \"$debug_identity\"; set DEBUG_CODESIGN_IDENTITY=- to sign ad hoc" >&2
+    exit 1
+  elif [ "${debug_identity:--}" != - ]; then
+    device=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/ { print $2; exit }' || true)
     debug_profile=${DEBUG_PROVISIONING_PROFILE:-}
     if [ -n "$debug_profile" ]; then
       "${profile_tool[@]}" check "$debug_profile" --bundle-id com.afollestad.reqling.debug --certificate "$certificate" --device "$device"
