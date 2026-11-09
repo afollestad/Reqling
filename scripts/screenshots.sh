@@ -12,9 +12,11 @@ Each is the window alone at 2x, with transparent rounded corners and no shadow. 
 
 Each launch runs a copy of the debug app re-identified as `com.afollestad.reqling.shots`, with
 `-DebugScreenshotScene` seeding a demo project into throwaway storage, so neither the dev build's projects nor its
-preferences are touched. Nothing is clicked or typed: the copy opens without taking focus, so it shows the inactive
-window appearance, and its window ignores the pointer, so no hover effect shows and clicks pass through it. Needs a
-Retina display and Screen Recording access for the terminal.
+preferences are touched. Nothing is clicked or typed. Each copy comes to the front with its sidebar focused, so the
+window shows its active appearance: it takes focus once per scene and theme, and when another app takes focus before
+the capture, the copy is brought back, up to 3 times. Its window ignores the pointer, so no hover effect shows and
+clicks pass through it, and keys typed while it's in front are thrown away. Set the system accent color to Multicolor,
+or controls show it instead of Reqling's purple. Needs a Retina display and Screen Recording access for the terminal.
 USAGE
 }
 
@@ -52,6 +54,11 @@ while [ $# -gt 0 ]; do
 done
 if [ ${#scenes[@]} -eq 0 ]; then
   scenes=(request grpc graphql events websocket scripts batch)
+fi
+
+# Multicolor stores no accent, which leaves the app its own; any other choice replaces it on the active window's controls.
+if defaults read -g AppleAccentColor >/dev/null 2>&1; then
+  echo "warning: the system accent color isn't Multicolor, so controls show it instead of Reqling's purple" >&2
 fi
 
 app=$(app_path debug)
@@ -113,6 +120,10 @@ is_spot() {
   [ $((right - left)) -le "$spot_limit" ] && [ $((bottom - top)) -le "$spot_limit" ]
 }
 
+# How many times one capture brings the copy back to the front before giving up, so a prompt that keeps focus isn't
+# fought for the whole 30 seconds of every capture.
+max_reactivations=3
+
 # A copy under its own bundle identifier keeps its window frame and saved state out of the dev build's preferences.
 # Re-identifying breaks the signature, so it is signed again ad hoc; screenshot mode never reaches the Keychain.
 ditto "$app" "$shots_app"
@@ -139,12 +150,14 @@ wait_for_window() {
 
 # Captures process `$1`'s main window to `$2` once it stops changing: two frames a second apart that match, at the same
 # width, or that differ only where something animates in place (`is_spot`), as a live connection's spinner does. The
-# window still grows to its default size after it first appears, so it is looked up again for every frame. Prints the
-# window's final width in points. Gives up after 30 seconds.
+# window still grows to its default size after it first appears, so it is looked up again for every frame. Only frames
+# taken while the copy is the active app count, since only then does its window draw as key; while another app has
+# focus, the copy is brought back to the front, up to `max_reactivations` times. Prints the window's final width in
+# points. Gives up after 30 seconds.
 capture_settled() {
   local pid=$1 destination=$2
   local previous="$work_dir/frames/previous.png" current="$work_dir/frames/current.png"
-  local attempt window previous_window="" window_id width difference previous_difference=""
+  local attempt window previous_window="" window_id width active difference previous_difference="" reactivations=0
   for attempt in $(seq 1 30); do
     sleep 1
     # Checked explicitly: this runs inside `$(...)`, where bash 3.2 ignores `set -e`.
@@ -152,7 +165,19 @@ capture_settled() {
       echo "error: the screenshot window closed or left the screen" >&2
       return 1
     fi
-    read -r window_id width <<<"$window"
+    read -r window_id width active <<<"$window"
+    if [ "$active" != 1 ]; then
+      if [ "$reactivations" -ge "$max_reactivations" ]; then
+        echo "error: another app keeps taking focus from the screenshot window" >&2
+        return 1
+      fi
+      reactivations=$((reactivations + 1))
+      echo "note: another app has focus; bringing the screenshot window back to the front" >&2
+      # Without -n, this activates the running copy. Its output stays off stdout, which carries the width.
+      open -a "$shots_app" >&2 || true
+      previous_window=""
+      continue
+    fi
     if ! screencapture -x -o -l"$window_id" "$current"; then
       echo "error: screencapture failed; give the terminal Screen Recording access" >&2
       return 1
@@ -180,8 +205,8 @@ for scene in "${scenes[@]}"; do
   for theme in light dark; do
     stop_app
     defaults delete "$shots_bundle_id" >/dev/null 2>&1 || true
-    # -g keeps it from taking focus; -n opens a new copy even while another runs.
-    open -n -g -a "$shots_app" --args \
+    # -n opens a new copy even while another runs. It comes to the front, so its window draws as key.
+    open -n -a "$shots_app" --args \
       -DebugScreenshotScene "$scene" -DebugScreenshotTheme "$theme" -ApplePersistenceIgnoreState YES
     pid=$(wait_for_window)
     destination="$output_dir/$scene-$theme.png"

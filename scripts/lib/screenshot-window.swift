@@ -1,7 +1,9 @@
 // Used by screenshots.sh, compiled once with `xcrun swiftc`, as `screenshot-window <pid>`. Prints
-// "<id> <width>" for the process's main window, its largest normal-layer window on screen, with the width in points;
-// exits 1 while there is none. It only reads the window list.
+// "<id> <width> <active>" for the process's main window, its largest normal-layer window on screen, with the width in
+// points and `active` 1 while the process is the active app, which is what draws that window as key, or 0; exits 1
+// while there is no such window. It only reads the window list and the process's state.
 
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -27,4 +29,5 @@ let frames = windows.compactMap { window -> (Int, CGRect)? in
 guard let (id, frame) = frames.max(by: { $0.1.width * $0.1.height < $1.1.width * $1.1.height }) else {
     exit(1)
 }
-print(id, Int(frame.width))
+let isActive = NSRunningApplication(processIdentifier: pid)?.isActive == true
+print(id, Int(frame.width), isActive ? 1 : 0)

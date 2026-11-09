@@ -31,6 +31,10 @@ struct ScreenshotMode {
 
     /// The `websocket` scene's chat, kept for the whole run so its connection stays open until the capture.
     @MainActor private static var liveChat: ScreenshotLiveChat?
+    /// Throws away every key press. The copy takes focus for each capture, so typing meant for another app would
+    /// otherwise land in the sidebar, selecting another row or starting a rename. AppKit doesn't document the order
+    /// monitors run in, so this one is installed before any view exists to install its own.
+    @MainActor private static var keyMonitor: Any?
 
     /// `nil` for an ordinary launch. Read once, so `AppDI` and the window agree for the whole run; launch arguments
     /// land in `UserDefaults`' argument domain.
@@ -47,6 +51,7 @@ struct ScreenshotMode {
     /// exactly the same window. Runs before the window exists: `AppModel` restores the seeded selection as it is built.
     @MainActor
     func makeComponent(fileManager: FileManager = .default) -> AppComponent {
+        Self.keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { _ in nil }
         let profile = AppStorageProfile.screenshots(fileManager: fileManager)
         let component = AppComponent(storageProfile: profile)
         component.settingsStore.update { settings in
@@ -72,7 +77,8 @@ struct ScreenshotMode {
 }
 
 /// Makes the window it sits in ignore the pointer, so a capture shows no hover effect wherever the pointer rests, and
-/// a stray click lands on the window beneath rather than changing the scene.
+/// a stray click lands on the window beneath rather than changing the scene. That click takes focus from the copy,
+/// which `scripts/screenshots.sh` then brings back to the front.
 struct ScreenshotWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         ScreenshotWindowAnchorView()
@@ -81,10 +87,60 @@ struct ScreenshotWindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Runs `focus` a turn after each time the window it sits in becomes key, for the sidebar to take the keyboard, so the
+/// selected row shows the fill a click leaves and no field shows a caret. The window hands its first text field the
+/// keyboard as it appears, so waiting a turn comes after that; acting on every activation covers `scripts/screenshots.sh`
+/// bringing the copy back to the front.
+struct ScreenshotSidebarFocus: NSViewRepresentable {
+    let focus: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ScreenshotKeyWindowView()
+        view.onBecomeKey = focus
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ScreenshotKeyWindowView)?.onBecomeKey = focus
+    }
+}
+
 private final class ScreenshotWindowAnchorView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.ignoresMouseEvents = true
+    }
+}
+
+private final class ScreenshotKeyWindowView: NSView {
+    var onBecomeKey: (@MainActor () -> Void)?
+    private var windowObserver: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        windowObserver.map(NotificationCenter.default.removeObserver)
+        windowObserver = nil
+        guard let window else {
+            return
+        }
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.becameKey()
+            }
+        }
+        if window.isKeyWindow {
+            becameKey()
+        }
+    }
+
+    private func becameKey() {
+        Task { @MainActor [weak self] in
+            self?.onBecomeKey?()
+        }
     }
 }
 

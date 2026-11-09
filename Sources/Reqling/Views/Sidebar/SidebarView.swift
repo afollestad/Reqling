@@ -33,6 +33,13 @@ struct SidebarView: View {
                 .listStyle(.sidebar)
                 .onDeleteCommand(perform: moveSelectionToTrash)
             )
+            #if DEBUG
+            .background {
+                if ScreenshotMode.current != nil {
+                    ScreenshotSidebarFocus { [drag] in drag.listHost.focusTable() }
+                }
+            }
+            #endif
             .onChange(of: model.renaming) { _, item in
                 if let item {
                     reveal(item, with: proxy)
