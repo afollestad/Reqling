@@ -37,6 +37,9 @@ extension LibrarySync {
                 heldZoneDeletions.append((zone, reason))
             case .finish(let wholeDelivery, let date):
                 finish(wholeDelivery: wholeDelivery, fetchedAt: date)
+            case .sent(let results):
+                handleSent(results)
+                store?.save()
             }
         }
     }
@@ -92,11 +95,12 @@ extension LibrarySync {
             return
         }
         let zone = SyncZone.project(id)
-        var changed = fetched.changed.filter { isAcceptable($0, in: zone) }
-        if changed.contains(where: isTooNew) || local?.isReadOnly == true {
+        // Judged before acceptance: a record of a kind a newer version added holds its project back, not dropped.
+        if fetched.changed.contains(where: isTooNew) || local?.isReadOnly == true {
             deferProject(id, untilUpdate: true)
             return
         }
+        var changed = fetched.changed.filter { isAcceptable($0, in: zone) }
         if local != nil {
             changed = droppingEchoes(changed)
         }

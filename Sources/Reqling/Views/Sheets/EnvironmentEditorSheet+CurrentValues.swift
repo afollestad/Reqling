@@ -21,7 +21,7 @@ struct CurrentValuesSection: View {
                             .help("Drop every value scripts set here, so the saved values apply again")
                     }
                 }
-                Text("Set by scripts on this Mac. They override the saved values by key and never go into the project.")
+                Text("Set by scripts. They override the saved values by key and never go into the project's files.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 if let issue = editor.currentValueIssue {

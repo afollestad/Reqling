@@ -25,6 +25,7 @@ final class AppFixture {
         protocLocator: StubProtocLocator = StubProtocLocator(),
         protocInstaller: StubProtocInstaller = StubProtocInstaller(),
         updates: AppUpdateManager? = nil,
+        sync: ((AppComponent, StubSystemIntegration) -> ICloudSyncModel)? = nil,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
     ) {
         self.profile = profile
@@ -45,6 +46,13 @@ final class AppFixture {
             protocTooling: protoc.model,
             mcpServer: component.mcpServer,
             updates: updates ?? component.appUpdates,
+            iCloud: sync?(component, system) ?? ICloudSyncModel(
+                sync: nil,
+                library: component.projectLibrary,
+                settings: component.settingsStore,
+                system: system,
+                profileExpiry: nil
+            ),
             sleep: sleep
         )
     }
@@ -74,6 +82,7 @@ final class StubSystemIntegration: SystemIntegration {
     private(set) var quitConfirmations = 0
     private(set) var pasteboard: String?
     private(set) var revealed: [URL] = []
+    private(set) var opened: [URL] = []
     private(set) var broughtToFront = 0
 
     func chooseDirectory(prompt: String) -> URL? {
@@ -95,6 +104,10 @@ final class StubSystemIntegration: SystemIntegration {
 
     func chooseSaveLocation(suggestedName: String) -> URL? {
         saveLocation
+    }
+
+    func open(_ url: URL) {
+        opened.append(url)
     }
 
     func reveal(_ url: URL) {

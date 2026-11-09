@@ -66,6 +66,7 @@ struct ContentView: View {
                 Text(change.consequences)
             }
             .modifier(TrashConfirmationDialog(model: model))
+            .modifier(FirstSyncNotice(model: model))
             .modifier(HistoryClearConfirmation(model: model))
             .modifier(ScriptTrustAlert(model: model, isInSheet: false))
     }
@@ -125,6 +126,25 @@ private struct ScriptTrustAlert: ViewModifier {
                 model.answerScriptTrust(nil)
             }
         })
+    }
+}
+
+/// Says what syncs as an iCloud account first syncs on this Mac, since sync is on by default and uploads what's here.
+private struct FirstSyncNotice: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.alert(
+            "Reqling Syncs with iCloud",
+            isPresented: Binding(get: { model.iCloud.showsFirstSyncNotice }, set: { model.iCloud.showsFirstSyncNotice = $0 })
+        ) {
+            Button("OK") {}
+            Button("Open Settings") { model.showSettings(.iCloud) }
+        } message: {
+            Text("Projects in Reqling's own folder, Global, and current values sync with your other Macs signed in to this "
+                + "iCloud account, end-to-end encrypted. A copy of everything from before is kept, and Settings ▸ iCloud "
+                + "shows it or turns sync off.")
+        }
     }
 }
 

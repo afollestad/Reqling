@@ -110,8 +110,8 @@ struct MCPProjectTools {
         MCPTool(
             "delete_project",
             title: "Delete project",
-            description: "Moves the project's folder to the Trash, removes it from Reqling, and deletes its secrets. "
-                + "To close a project but keep it, use remove_project.",
+            description: "Moves the project's folder to the Trash, removes it from Reqling, and deletes its secrets; one that "
+                + "syncs with iCloud goes to the Trash on every Mac. To close a project but keep it, use remove_project.",
             properties: ["project": MCPSchema.project],
             required: ["project"],
             annotations: .edit
@@ -150,7 +150,8 @@ struct MCPProjectTools {
         MCPTool(
             "remove_project",
             title: "Remove project from Reqling",
-            description: "Closes a project in Reqling without touching its folder or secrets; add_project_folder opens it again.",
+            description: "Closes a project in Reqling without touching its folder or secrets, or other Macs that sync it; "
+                + "add_project_folder opens it again.",
             properties: ["project": MCPSchema.project],
             required: ["project"],
             annotations: .edit

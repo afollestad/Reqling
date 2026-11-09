@@ -92,8 +92,8 @@ struct MCPEnvironmentTools {
         MCPTool(
             "delete_environment",
             title: "Delete environment",
-            description: "Moves an environment's file to the Trash. Default can't be deleted; if the deleted one was active, "
-                + "Default becomes active.",
+            description: "Moves an environment's file to the Trash, on every Mac its project syncs to. Default can't be "
+                + "deleted; if the deleted one was active, Default becomes active.",
             properties: ["project": MCPSchema.project, "environment": MCPSchema.string("The environment's ID or name.")],
             required: ["project", "environment"],
             annotations: .edit
@@ -133,7 +133,7 @@ struct MCPEnvironmentTools {
         MCPTool(
             "list_variables",
             title: "List variables",
-            description: "An environment's variables, and the current values scripts set on this Mac over them. Secret ones "
+            description: "An environment's variables, and the current values scripts set over them. Secret ones "
                 + "show `secret: true` and never their value.",
             properties: [
                 "project": MCPSchema.variablesProject,
@@ -252,8 +252,8 @@ struct MCPEnvironmentTools {
         MCPTool(
             "delete_variables",
             title: "Delete variables",
-            description: "Removes variables from an environment (Default unless named, or Global) by key, deleting any secret "
-                + "values. Fails, removing none, if a key doesn't exist.",
+            description: "Removes variables from an environment (Default unless named, or Global) by key, on every Mac it "
+                + "syncs to, deleting any secret values from this Mac's Keychain. Fails, removing none, if a key doesn't exist.",
             properties: [
                 "project": MCPSchema.variablesProject,
                 "environment": MCPSchema.variablesEnvironment,
@@ -280,7 +280,7 @@ struct MCPEnvironmentTools {
         MCPTool(
             "reset_current_values",
             title: "Reset current values",
-            description: "Drops current values scripts set on this Mac in an environment (Default unless named, or Global), so "
+            description: "Drops current values scripts set in an environment (Default unless named, or Global), so "
                 + "the saved values apply again. Omit `keys` to drop them all.",
             properties: [
                 "project": MCPSchema.variablesProject,

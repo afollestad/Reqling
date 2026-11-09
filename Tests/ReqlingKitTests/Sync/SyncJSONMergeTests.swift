@@ -76,4 +76,12 @@ final class SyncJSONMergeTests: XCTestCase {
 
         XCTAssertEqual(merged, try json(#"{"name": "a", "rows": [{"id": "x"}, {"id": "y"}]}"#))
     }
+
+    /// The compact form iCloud records carry reads back as the same JSON, member order and number text included.
+    func testCompactTextRoundTrips() throws {
+        let json = try OrderedJSONParser.parse(#"{"b": [1, 2.50, {"c": null}], "a": "line\nbreak \"q\"", "e": {}, "f": [], "t": true}"#)
+
+        XCTAssertEqual(json.compactText(), #"{"b":[1,2.50,{"c":null}],"a":"line\nbreak \"q\"","e":{},"f":[],"t":true}"#)
+        XCTAssertEqual(try OrderedJSONParser.parse(json.compactText()), json)
+    }
 }

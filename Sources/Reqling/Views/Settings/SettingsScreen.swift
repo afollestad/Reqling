@@ -69,6 +69,8 @@ private struct SettingsDetail: View {
                     GRPCSettingsPage(settings: model.settings, tooling: model.protocTooling)
                 case .history:
                     HistorySettingsPage(model: model)
+                case .iCloud:
+                    ICloudSettingsPage(model: model.iCloud)
                 case .interface:
                     InterfaceSettingsPage(settings: model.settings)
                 case .mcp:

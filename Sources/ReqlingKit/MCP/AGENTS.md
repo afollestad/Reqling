@@ -17,7 +17,7 @@ These instructions cover `Sources/ReqlingKit/MCP/`: the built-in MCP server (`Se
 - **Read and write specs, auth, and certificate entries in their on-disk JSON,** so what `get_request` returns is exactly what `create_request` and `update_request` take. Row IDs follow `Sources/ReqlingKit/Storage/AGENTS.md`. Scripts are the exception: they live in `.js` files, so they travel as `MCPScripts`'s object.
 - **Give every streaming run an agent starts a time bound** (`RunOptions.streamLimit`, as `MCPExecutionTools.streamLimit` does), or the tool waits out its timeout and returns none of what arrived.
 - **Reach the window only through `MCPAppHost`.** It is `nil` in tests and before launch, so a tool that needs it says so instead of failing silently.
-- Mark deletions `destructive: false` and apply them without a confirmation round trip: they move files to the Trash. Clearing run history and deleting cookies delete for good, so they are `.destroy`.
+- Mark deletions `destructive: false` and apply them without a confirmation round trip: they move files to the Trash, on other Macs that sync the project too, which keep its secret values. Clearing run history and deleting cookies delete for good, so they are `.destroy`.
 
 ### Transport
 

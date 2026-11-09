@@ -24,6 +24,8 @@ final class SyncTestCloud {
     var clock = Date(timeIntervalSince1970: 1_000_000)
     /// The largest payload a save accepts, in bytes; larger ones are refused as too large.
     var payloadLimit: Int?
+    /// Why every save fails, as a full quota fails them, which drops them from the queue as iCloud does.
+    var saveFailure: String?
     private(set) var saveAttempts: [SyncRecordID: Int] = [:]
 
     func record(_ id: SyncRecordID) -> SyncRecord? {
@@ -32,6 +34,9 @@ final class SyncTestCloud {
 
     func save(_ record: SyncRecord) -> SyncSendResult {
         saveAttempts[record.id, default: 0] += 1
+        if let saveFailure {
+            return .failed(record.id, saveFailure)
+        }
         if let payloadLimit, record.payload.prettyPrinted().utf8.count > payloadLimit {
             return .tooLarge(record.id)
         }
@@ -93,6 +98,16 @@ final class SyncTestTransport: SyncTransport {
     let cloud: SyncTestCloud
     private(set) var pending: [SyncPendingChange] = []
     private var seen = 0
+    /// How often sync asked to fetch over from the start.
+    private(set) var resets = 0
+    /// Whether a fetch from the start falls short, as one whose zone failed, rather than arriving whole.
+    var fallsShort = false
+    /// Whether a fetch from the start arrives but isn't reported whole, as when the engine folds it into one of its own.
+    var foldsWhole = false
+    /// Runs while a batch is out, after the server took it and before its results are reported.
+    var whileSending: (() -> Void)?
+    /// A zone the next fetch fails to deliver, as when its fetch failed, which drops its changes.
+    var dropsZoneOnce: SyncZone?
 
     init(cloud: SyncTestCloud) {
         self.cloud = cloud
@@ -108,6 +123,11 @@ final class SyncTestTransport: SyncTransport {
     /// As `CKSyncEngine` does, starts from the persisted state alone: a queue that wasn't persisted is gone.
     func start(with state: Data?) {
         seen = state.flatMap { String(bytes: $0, encoding: .utf8) }.flatMap(Int.init) ?? 0
+        pending = []
+    }
+
+    /// As `CKSyncEngine` does when it's released, drops the queue.
+    func stop() {
         pending = []
     }
 
@@ -150,6 +170,12 @@ final class SyncTestTransport: SyncTransport {
             .prefix(limit))
         pending.removeAll { batch.contains($0) }
         var results: [SyncSendResult] = []
+        defer {
+            // As `CKSyncEngine` does, what was sent leaves the queue as its results come back, with any equal change
+            // queued while it was out; what the results handler queues stays.
+            pending.removeAll { batch.contains($0) }
+            delegate?.transport(didSend: results)
+        }
         for change in batch {
             switch change {
             case .saveZone(let zone):
@@ -164,13 +190,18 @@ final class SyncTestTransport: SyncTransport {
                 results.append(cloud.deleteZone(zone))
             }
         }
-        delegate?.transport(didSend: results)
+        whileSending?()
         return true
     }
 
     /// As `CKSyncEngine` does, a fetch from no state is whole: it returns what exists, and no deletion of a zone or record.
     func fetchChanges() async {
         let isWhole = seen == 0
+        if isWhole, fallsShort {
+            delegate?.transportFetchFailed("Fell short", lostChanges: true)
+            delegate?.transportDidFinishFetching(wasWhole: false)
+            return
+        }
         for entry in cloud.zoneLog where !isWhole && entry.sequence > seen && !cloud.zones.contains(entry.zone) {
             delegate?.transport(didDeleteZone: entry.zone, reason: entry.reason)
         }
@@ -180,7 +211,9 @@ final class SyncTestTransport: SyncTransport {
                 changed[entry.id.zone, default: []].insert(entry.id)
             }
         }
-        for (zone, ids) in changed.sorted(by: { $0.key.name < $1.key.name }) {
+        let dropped = dropsZoneOnce
+        dropsZoneOnce = nil
+        for (zone, ids) in changed.sorted(by: { $0.key.name < $1.key.name }) where zone != dropped {
             let sorted = ids.sorted { $0.description < $1.description }
             delegate?.transport(didFetch: SyncFetchedZone(
                 zone: zone,
@@ -189,13 +222,20 @@ final class SyncTestTransport: SyncTransport {
                 isWhole: isWhole
             ))
         }
+        // As with `CKSyncEngine`, the tokens move past a zone that failed, so its changes are lost to fetches from here.
         seen = cloud.sequence
         delegate?.transport(didUpdateState: Data(String(seen).utf8))
-        delegate?.transportDidFinishFetching(wasWhole: isWhole)
+        if dropped != nil, changed[dropped ?? .library] != nil {
+            delegate?.transportFetchFailed("Dropped", lostChanges: true)
+            delegate?.transportDidFinishFetching(wasWhole: false)
+            return
+        }
+        delegate?.transportDidFinishFetching(wasWhole: isWhole && !foldsWhole)
     }
 
     func resetState() {
         seen = 0
+        resets += 1
     }
 }
 

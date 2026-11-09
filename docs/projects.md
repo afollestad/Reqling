@@ -20,12 +20,27 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 - **Create** a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar.
 - **Open a shared one** with **Add Project Folder…**.
 - **Renaming.** A new folder or request starts with its name ready to type, and Return renames the selected item in place. Renames move files rather than rewriting them.
-- **Deleting** asks first, then moves the files to the Trash.
+- **Deleting** asks first, then moves the files to the Trash, on every Mac that [syncs](#syncing-with-icloud) the project.
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.
 - **Files** a request or the project uses, such as a body, a schema, or a certificate, are shared by a path relative to the project when they sit inside its folder or repository. For a file elsewhere, Reqling asks whether to share its path, for everyone with the same folder layout, or remember it on this Mac only.
   - A shared path that leads outside the folder and repository, directly or through a symlink, works only on a Mac where someone chose it. Elsewhere it counts as missing until it's chosen there, so a project someone else wrote can't read your other files.
   - A file kept on this Mac only, or a shared path chosen outside the folder and repository, works only in the field it was chosen for, and in copies you make of its request by duplicating or moving it. If someone else's change, from a repository or another Mac, puts it in another field, it's missing there until you choose it again.
 - **Filter the sidebar** by name, method, URL, or gRPC service, and narrow it by protocol, by method, or by how each request's last run went.
+
+## Syncing with iCloud
+
+Reqling syncs through your iCloud account, so each Mac signed in to it has the same projects. It's on by default; Settings ▸ iCloud turns it off.
+
+- **What syncs:** projects in Reqling's own folder, Global, and current values, secret values included. A project anywhere else, such as in a repository, stays on its Mac, for git to share. Run history, the active environment, the files requests use, Keychain identities, and certificate passphrases stay on each Mac too.
+- **What Apple sees.** Everything you write is end-to-end encrypted. Apple sees only each record's kind (a project, folder, request, or environment), its ID, its size, and when it changed.
+- **Every Mac signed in to the account can change** the projects that sync. Scripts another Mac changed ask for [trust](scripts.md#trust) again before they run here, and a file chosen on one Mac stays missing on another until it's chosen there.
+- **Edits on two Macs** merge field by field. Where both changed the same field, the later edit wins.
+- **On a new Mac,** the first sync brings every project, Global, and current value, secret values into its Keychain. Projects with scripts ask for trust before they first run.
+- **A backup** of Reqling's projects folder, Global, and current values is taken before a Mac first syncs. **Show Backup in Finder** in Settings ▸ iCloud opens it.
+- **Deleting** a project, folder, or request that syncs moves it to the Trash on every Mac, where Finder can put it back; the other Macs keep its secret values in their Keychains. When several projects are deleted at once, Reqling asks before trashing them. **Remove from Reqling** only stops syncing it on this Mac.
+- **Another iCloud account** signing in pauses sync until you choose which of this Mac's projects merge into it, if any.
+- **Deleting Reqling's data** from iCloud in System Settings (**Open iCloud Settings…**) turns sync off and leaves your project folders as they are. Turning it on again uploads them.
+- **A project changed by a newer Reqling** stops syncing on this Mac, as Settings ▸ iCloud lists, until you update. Edits you make to it meanwhile sync then.
 
 ## Importing
 
@@ -59,7 +74,7 @@ Load an OpenAPI 3.0, 3.1, or 3.2 document, in JSON or YAML. A Swagger 2.0 docume
 ## Environments
 
 - **Default.** Every project has its own. Add others (Staging, Production) to override its variables by key, and pick the active one from the toolbar.
-- **Global** sits at the top of every project's Environments sheet and holds variables every project shares. It's kept on your Mac, never in a project, and each project's environments override it by key.
+- **Global** sits at the top of every project's Environments sheet and holds variables every project shares. It's kept apart from your projects, and each project's environments override it by key.
 - **The active environment** is never written into the project, nor is anything else specific to your Mac.
 
 ## Variables
@@ -67,12 +82,12 @@ Load an OpenAPI 3.0, 3.1, or 3.2 document, in JSON or YAML. A Swagger 2.0 docume
 - **Reference** one as `{{name}}` in the URL, parameters, headers, bodies, and auth.
 - **Built-ins** generate a value on each send: `{{$uuid}}`, `{{$timestamp}}` (Unix seconds), `{{$isoTimestamp}}`, and `{{$randomInt}}` (0 to 1,000), plus Postman's random values, such as `{{$randomEmail}}`, `{{$randomFullName}}`, `{{$randomIP}}`, `{{$randomPrice}}`, and `{{$randomDatePast}}`. Typing `{{$` lists them all. Postman's `{{$guid}}` and `{{$randomUUID}}` work as `{{$uuid}}`.
 - **Pills.** Variables render as pills, red when undefined, and typing `{{` offers completion.
-- **Secrets.** Mark a variable secret to keep its value in your Keychain instead of the project's files.
+- **Secrets.** Mark a variable secret to keep its value in your Keychain instead of the project's files. [iCloud sync](#syncing-with-icloud) carries it to your other Macs' Keychains, end-to-end encrypted.
 
 ## Current values
 
-- **Set by scripts.** When a script sets an environment or Global variable, the value is kept on your Mac as that environment's *current value*, which overrides the saved value by key. It never goes into the project, so running requests never changes `git status`.
+- **Set by scripts.** When a script sets an environment or Global variable, the value is kept as that environment's *current value*, which overrides the saved value by key. It never goes into the project's files, so running requests never changes `git status`.
 - **Secret ones** stay in your Keychain and are masked wherever they show. A value is secret when its variable is, when the script asks for it, or when it contains another secret, such as `"Bearer " + token`.
 - **Unset.** A script that unsets a variable hides its saved value until you reset it.
 - **In the Environments sheet,** current values are listed under the variables. Reset one, or all of them, to use the saved values again, or Save as Value to make one the saved value everyone shares.
-- **Editing a variable's saved value** in Reqling drops its current value, so your edit takes effect. Changes pulled from git leave current values alone.
+- **Editing a variable's saved value** in Reqling drops its current value, so your edit takes effect, on every Mac that syncs it. Changes pulled from git leave current values alone.

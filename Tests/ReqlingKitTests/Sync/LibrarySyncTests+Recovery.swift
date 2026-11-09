@@ -160,4 +160,28 @@ extension LibrarySyncTests {
         XCTAssertNil(cloud.record(LibraryRecordCoder.tombstoneRecordID(id)))
         XCTAssertEqual(request(in: macB, id)?.name, "List users")
     }
+
+    /// A project put back and then reopened before its tombstone's deletion went out still withdraws the tombstone, so
+    /// other Macs keep sending its edits.
+    func testAProjectPutBackWithdrawsItsTombstoneAcrossARelaunch() async throws {
+        let id = try await shareProject()
+        try macA.lifecycle.deleteProject(id)
+        await macA.sync.syncNow()
+        await macB.sync.syncNow()
+        await macA.sync.syncNow()
+
+        let trashed = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: macA.storage.trashDirectory.path).first)
+        let restored = macA.library.configuration.defaultProjectsDirectory.appendingPathComponent("API.reqling")
+        try FileManager.default.moveItem(at: macA.storage.trashDirectory.appendingPathComponent(trashed), to: restored)
+        _ = try macA.lifecycle.addProjectFolder(restored)
+        await macA.restart()
+        await macA.sync.syncNow()
+        await macB.sync.syncNow()
+        try macB.library.mutate(id) { $0.name = "Edited on B" }
+        await macB.sync.syncNow()
+        await macA.sync.syncNow()
+
+        XCTAssertNil(cloud.record(LibraryRecordCoder.tombstoneRecordID(id)))
+        XCTAssertEqual(macA.library.document(id)?.name, "Edited on B")
+    }
 }

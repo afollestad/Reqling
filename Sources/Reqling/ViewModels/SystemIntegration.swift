@@ -13,6 +13,8 @@ protocol SystemIntegration {
     func chooseFiles(prompt: String, message: String?, allowedTypes: [UTType]) -> [URL]
     func chooseSaveLocation(suggestedName: String) -> URL?
     func reveal(_ url: URL)
+    /// Opens `url` in the app that handles it, such as a System Settings pane.
+    func open(_ url: URL)
     func copyToPasteboard(_ string: String)
     /// Asks how to store a file outside the project's folder and repository; `nil` means cancelled.
     func choosePathSharing(for url: URL) -> PathSharing?
@@ -80,6 +82,10 @@ struct AppKitSystemIntegration: SystemIntegration {
         panel.nameFieldStringValue = suggestedName
         panel.canCreateDirectories = true
         return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    func open(_ url: URL) {
+        NSWorkspace.shared.open(url)
     }
 
     func reveal(_ url: URL) {

@@ -73,6 +73,9 @@ final class SyncBaseStore {
         var clockSkew: TimeInterval = 0
         /// A digest of a fixed text, to tell whether the bases were made with the key in use.
         var keyCheck: String?
+        /// Whether the copy taken before syncing starts from no bases was made, so a quit midway doesn't retake it from
+        /// what was half merged. Losing the bases, as a reset or a lost key does, loses it too.
+        var backedUp = false
 
         init() {}
 
@@ -100,6 +103,7 @@ final class SyncBaseStore {
             needsRefetch = field(.needsRefetch, false)
             clockSkew = field(.clockSkew, 0)
             keyCheck = field(.keyCheck, nil)
+            backedUp = field(.backedUp, false)
         }
 
         /// Takes every field `choices` keeps from it.
@@ -300,12 +304,40 @@ final class SyncBaseStore {
         kept.excluded = state.excluded
         kept.detached = state.detached
         kept.libraryDetached = state.libraryDetached
-        try? FileManager.default.removeItem(at: directory)
+        // The backup is the person's safety net, not a cache of the server's, so it stays.
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name != Self.backupFolderName {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
         state = kept
         savedChoices = nil
         isDirty = true
         save()
     }
+
+    /// The projects that synced with the account whose state is in `folder`, read without opening it, as for an
+    /// account no longer signed in.
+    static func syncedProjects(in folder: URL) -> Set<ProjectID> {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("state.json")),
+              let state = try? JSONDecoder().decode(State.self, from: data) else {
+            return []
+        }
+        return Set(state.bases.keys.compactMap { key in
+            guard case .project(let id)? = key.split(separator: "/").first.flatMap({ SyncZone(name: String($0)) }) else {
+                return nil
+            }
+            return id
+        })
+    }
+
+    /// Whether syncing starts from no bases, unbacked: an account's first sync on this Mac, or the first after its bases
+    /// were lost, before which `LibrarySync` backs up, since a merge without bases takes the server's values.
+    var isFirstSync: Bool {
+        !state.backedUp
+    }
+
+    /// The folder in an account's that holds the copy made before its first sync (`LibrarySync.backUp`).
+    static let backupFolderName = "Backup"
 }
 
 /// `OrderedJSON` stored as its JSON text.

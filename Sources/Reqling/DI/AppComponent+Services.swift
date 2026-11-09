@@ -130,7 +130,8 @@ extension AppComponent {
                 protoWorkspaces: protoWorkspaces,
                 protocTooling: protocTooling,
                 mcpServer: mcpServer,
-                updates: appUpdates
+                updates: appUpdates,
+                iCloud: iCloudSync
             )
         }
     }

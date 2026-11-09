@@ -125,8 +125,8 @@ private struct EnvironmentDetail: View {
             if editor.isGlobalSelected {
                 FixedEnvironmentHeader(
                     title: RequestEnvironment.globalName,
-                    caption: "Every request in every project sees these variables, kept on this Mac. Each project's environments "
-                        + "override them by key."
+                    caption: "Every request in every project sees these variables, kept apart from any project. Each project's "
+                        + "environments override them by key."
                 )
                 if let issue = editor.globalEnvironmentIssue {
                     Label(issue, systemImage: "exclamationmark.triangle")

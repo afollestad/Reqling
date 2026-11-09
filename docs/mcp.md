@@ -27,4 +27,4 @@ claude mcp add --transport http reqling http://127.0.0.1:39717/mcp --header "Aut
 - **Secrets are write-only.** No tool returns one, and resolved requests and responses show them masked, even where a server echoes one back. Values a script makes secret are masked too, in past runs as well. After Reqling relaunches, a past run whose scripts made a value secret for that run alone has its response left out, since nothing holds that value any more.
 - **Scripts run only in projects you trust.** An agent can't trust a project for you; in one you haven't trusted, its requests go out without their scripts, and the agent is told why.
 - **Cookie values stay out of `list_cookies`.** An agent sees each cookie's name, domain, path, expiry, and flags. Values still reach agents in the `Set-Cookie` headers of responses, and in whatever a script an agent runs prints.
-- **Deletions** go to the Trash, except clearing run history and deleting cookies, which can't be undone.
+- **Deletions** go to the Trash, on every Mac a project [syncs](projects.md#syncing-with-icloud) to, except clearing run history and deleting cookies, which can't be undone.

@@ -13,7 +13,8 @@ extension LibrarySync {
             return
         }
         let incoming = changed.filter { $0.type != .projectTombstone }
-        if incoming.contains(where: isTooNew) {
+        // Judged before acceptance too, as for a project (`applyProject`).
+        if fetched.changed.contains(where: { $0.type != .projectTombstone && isTooNew($0) }) {
             deferLibrary(untilUpdate: true)
             return
         }

@@ -202,11 +202,12 @@ extension AppModel {
         guard let document = library.document(item.projectID) else {
             return nil
         }
+        let syncs = iCloud.sync?.syncs(item.projectID) ?? false
         switch item {
         case .project:
-            return TrashConfirmation(item: item, name: document.name, kind: .project)
+            return TrashConfirmation(item: item, name: document.name, kind: .project, syncs: syncs)
         case .node(_, let id):
-            return document.node(id).map { TrashConfirmation(item: item, name: $0.name, kind: $0.isFolder ? .folder : .request) }
+            return document.node(id).map { TrashConfirmation(item: item, name: $0.name, kind: $0.isFolder ? .folder : .request, syncs: syncs) }
         }
     }
 

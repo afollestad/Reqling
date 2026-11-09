@@ -45,6 +45,9 @@ public struct AppSettings: Hashable, Sendable, Codable {
     public var scriptTimeLimitSeconds: Double = 10 {
         didSet { scriptTimeLimitSeconds = Self.clampScriptTimeLimit(scriptTimeLimitSeconds) }
     }
+    /// Whether projects in Reqling's own folder, Global, and current values sync through iCloud. On by default, so a
+    /// second Mac signed in to the same account finds everything; Settings ▸ iCloud turns it off. MCP never sees it.
+    public var syncsWithICloud = true
 
     public init() {}
 
@@ -72,6 +75,7 @@ public struct AppSettings: Hashable, Sendable, Codable {
         historySizeLimit = (try? container.decodeIfPresent(HistorySizeLimit.self, forKey: .historySizeLimit)) ?? defaults.historySizeLimit
         let scriptTimeLimit = try? container.decodeIfPresent(Double.self, forKey: .scriptTimeLimitSeconds)
         scriptTimeLimitSeconds = Self.clampScriptTimeLimit(scriptTimeLimit ?? defaults.scriptTimeLimitSeconds)
+        syncsWithICloud = (try? container.decodeIfPresent(Bool.self, forKey: .syncsWithICloud)) ?? defaults.syncsWithICloud
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -87,6 +91,7 @@ public struct AppSettings: Hashable, Sendable, Codable {
         case historyRetention
         case historySizeLimit
         case scriptTimeLimitSeconds
+        case syncsWithICloud
     }
 
     private static func clamp(_ value: Double) -> Double {

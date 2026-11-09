@@ -122,6 +122,7 @@ final class AppModel {
     @ObservationIgnored let lifecycle: ProjectLifecycle
     @ObservationIgnored let mcpServer: MCPServerController
     @ObservationIgnored let updates: AppUpdateManager
+    @ObservationIgnored let iCloud: ICloudSyncModel
     /// Set once the user has agreed to quit for an update, so the update's own quit doesn't ask again.
     @ObservationIgnored var isQuittingForUpdate = false
     @ObservationIgnored private(set) lazy var mcpSettings = MCPSettingsModel(server: mcpServer, settings: settings, system: system)
@@ -143,6 +144,7 @@ final class AppModel {
         protocTooling: ProtocToolingModel,
         mcpServer: MCPServerController,
         updates: AppUpdateManager,
+        iCloud: ICloudSyncModel,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.library = library
@@ -159,6 +161,7 @@ final class AppModel {
         self.protocTooling = protocTooling
         self.mcpServer = mcpServer
         self.updates = updates
+        self.iCloud = iCloud
         self.sleep = sleep
         lifecycle = ProjectLifecycle(library: library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
         for project in library.projects {
@@ -426,6 +429,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case updates
     case grpc
     case history
+    case iCloud
     case interface
     case mcp
     case requests
@@ -439,6 +443,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .updates: "App Updates"
         case .grpc: "gRPC"
         case .history: "History"
+        case .iCloud: "iCloud"
         case .interface: "Interface"
         case .mcp: "MCP"
         case .requests: "Requests"
@@ -450,6 +455,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .updates: "arrow.down.circle"
         case .grpc: "point.3.connected.trianglepath.dotted"
         case .history: "clock.arrow.circlepath"
+        case .iCloud: "icloud"
         case .interface: "paintbrush"
         case .mcp: "sparkles"
         case .requests: "arrow.up.arrow.down"
@@ -461,6 +467,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .updates: "New versions of Reqling, downloaded and verified before they install."
         case .grpc: "The protoc that compiles project protos, and defaults for gRPC calls."
         case .history: "Each request's past runs, kept on this Mac and never in the project."
+        case .iCloud: "Projects, Global, and current values on every Mac signed in to your iCloud account."
         case .interface: "How Reqling looks."
         case .mcp: "A local server that lets AI agents on this Mac use your projects and send requests."
         case .requests: "Defaults for every request; a request's own options override them."

@@ -42,6 +42,7 @@ extension LibrarySync {
         case .currentValues:
             reconcileCurrentValues()
         }
+        onLocalChange?()
     }
 
     /// Whether `id`, listed again, comes back after this Mac removed or deleted it, or after another Mac deleted it: an
@@ -328,6 +329,12 @@ extension LibrarySync {
         for (id, local) in records {
             let record = sendable(local)
             guard differs(record, from: store.base(id)) else {
+                if store.pending(id)?.isDeletion == true {
+                    // Back as last synced, as after Put Back: queuing a save withdraws the deletion, and is then dropped
+                    // as unchanged (`outgoingRecord`).
+                    store.clearPending(id)
+                    saves.append(id)
+                }
                 continue
             }
             let fingerprint = contentFingerprint(record)
@@ -433,7 +440,8 @@ extension LibrarySync {
         }
         let zone = SyncZone.project(id)
         transport.cancelPending(in: zone)
-        guard store.hasBases(in: zone) else {
+        // Records out for saving may land yet, as when a project goes during its first upload.
+        guard store.hasBases(in: zone) || sentEdits.keys.contains(where: { $0.zone == zone }) else {
             // Never sent, as with an import rolled back: nothing on the server to delete or leave behind.
             store.forget(zone)
             return

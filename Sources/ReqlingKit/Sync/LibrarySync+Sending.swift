@@ -46,17 +46,18 @@ extension LibrarySync {
         }
         var conflicts: [SyncZone: [SyncRecord]] = [:]
         for result in results {
-            if case .saved = result {} else if let id = result.recordID {
-                sentEdits[id] = nil
-            }
+            noteOutcome(of: result)
             switch result {
             case .saved(let record):
                 saved(record)
             case .deleted(let id):
                 store.removeBase(id)
                 store.clearPending(id)
-            case .zoneSaved:
-                break
+            case .zoneSaved(let zone):
+                failingZones.remove(zone)
+            case .zoneSaveFailed(let zone, let message):
+                reportFailure(message)
+                failingZones.insert(zone)
             case .zoneDeleted(let zone):
                 store.forget(zone)
                 if case .project(let project) = zone {
@@ -71,22 +72,17 @@ extension LibrarySync {
                 }
                 conflicts[id.zone, default: []].append(server)
             case .zoneMissing(let id):
-                if case .project(let project) = id.zone, store.state.tombstones.contains(project) {
-                    // Deleted on another Mac; the fetch that brought the tombstone deletes it here.
-                    store.clearPending(id)
-                } else if !store.hasBases(in: id.zone) {
-                    // Sent before its zone was: a first upload.
-                    transport.enqueue([.saveZone(id.zone), .save(id)])
-                }
-                // Otherwise the zone existed and is gone, which only the next fetch can explain: deleted with a
-                // tombstone, or vanished, and either way judged there (`judgeDeletion(of:)`), never recreated here.
+                zoneMissing(for: id, in: store)
             case .missingOnServer(let id):
                 store.update { $0.bases[id.description]?.systemFields = nil }
                 transport.enqueue([.save(id)])
             case .tooLarge(let id):
                 refusedAsTooLarge(id)
-            case .failed(_, let message):
-                status = .failed(message)
+            case .failed(let id, let message):
+                reportFailure(message)
+                if id == nil {
+                    zoneChangeFailed = true
+                }
             }
         }
         // Each zone's conflicts merge and write once, not once per record. An edit here that the merge didn't settle, as
@@ -99,18 +95,69 @@ extension LibrarySync {
         }
     }
 
-    /// Takes `record` as agreed, measuring the clock skew from it, and its edit as sent unless edited again since.
+    /// Forgets the edit time sent with a record that wasn't saved, and keeps one that failed to send for the next sync.
+    private func noteOutcome(of result: SyncSendResult) {
+        guard let id = result.recordID else {
+            return
+        }
+        switch result {
+        case .saved:
+            failedSends.remove(id)
+        case .failed:
+            sentEdits[id] = nil
+            failedSends.insert(id)
+        default:
+            sentEdits[id] = nil
+            failedSends.remove(id)
+        }
+    }
+
+    /// Queues again what merely failed to send, as a deletion when that's what this Mac has pending: iCloud drops such a
+    /// change rather than retrying it, as for a full quota. Only Sync Now does, and a relaunch rebuilds the rest, so a
+    /// change that keeps failing isn't sent again after every edit.
+    func resendFailures() {
+        guard let store else {
+            return
+        }
+        transport.enqueue(failedSends.sorted { $0.description < $1.description }.map { id in
+            store.pending(id)?.isDeletion == true ? .delete(id) : .save(id)
+        })
+        failedSends = []
+        failingZones = []
+        if zoneChangeFailed {
+            zoneChangeFailed = false
+            transport.enqueue(store.state.outgoingTombstones.map { .save(LibraryRecordCoder.tombstoneRecordID($0)) })
+            transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.project($0)) })
+        }
+    }
+
+    /// Takes `record` as agreed, measuring the clock skew from it, and its edit as sent unless this Mac's copy differs
+    /// from it still.
     private func saved(_ record: SyncRecord) {
         guard let store else {
             return
         }
-        let sent = sentEdits.removeValue(forKey: record.id)
+        sentEdits[record.id] = nil
         if let server = record.serverModifiedAt {
             store.update { $0.clockSkew = self.now().timeIntervalSince(server) }
         }
+        if case .project(let project) = record.id.zone,
+           store.state.outgoingTombstones.contains(project) || store.state.outgoingZoneDeletions.contains(project) {
+            // Saved as the project was deleted here: its zone goes, so nothing of it is kept.
+            return
+        }
         tombstoneSaved(record.id)
         store.setBase(from: record)
-        if let pending = store.pendingEdit(record.id), pending <= sent ?? record.editedAt.addingTimeInterval(clockSkew) {
+        guard let pending = store.pending(record.id), !pending.isDeletion else {
+            return
+        }
+        // Judged by content, not by edit times, which two quick edits can share. A copy here that still differs was
+        // edited while this save was out, and iCloud drops a save queued meanwhile with the one it took, so it goes again.
+        let isValues = record.id.name.hasPrefix(SyncRecordID.currentValuesPrefix)
+        let held = isValues ? currentValuesRecords(in: record.id.zone)[record.id] : localRecords(in: record.id.zone)?[record.id]
+        if let held, differs(sendable(held), from: store.base(record.id)) {
+            transport.enqueue([.save(record.id)])
+        } else {
             store.clearPending(record.id)
         }
     }
@@ -138,6 +185,39 @@ extension LibrarySync {
             state.outgoingZoneDeletions.insert(project)
         }
         transport.enqueue([.deleteZone(.project(project))])
+    }
+
+    /// A save refused because its zone is gone. Sent before its zone was, as in a first upload, it goes again with the
+    /// zone; a zone that failed to save holds it until Sync Now (`failingZones`). Otherwise the zone existed and is gone,
+    /// which only the next fetch can explain: deleted with a tombstone, or vanished, and either way judged there
+    /// (`judgeDeletion(of:)`), never recreated here.
+    private func zoneMissing(for id: SyncRecordID, in store: SyncBaseStore) {
+        if case .project(let project) = id.zone, store.state.tombstones.contains(project) {
+            // Deleted on another Mac; the fetch that brought the tombstone deletes it here.
+            store.clearPending(id)
+        } else if failingZones.contains(id.zone) {
+            failedSends.insert(id)
+        } else if !store.hasBases(in: id.zone), isStillSyncing(id.zone) {
+            transport.enqueue([.saveZone(id.zone), .save(id)])
+        }
+    }
+
+    /// Whether `zone` is still one to sync into: Global's, or a project's that's here and syncs.
+    private func isStillSyncing(_ zone: SyncZone) -> Bool {
+        guard case .project(let project) = zone else {
+            return true
+        }
+        return library.project(project).map(isSyncable) ?? false
+    }
+
+    /// Shows a failure in Settings, unless sync is paused for a choice that saying so would hide.
+    func reportFailure(_ message: String) {
+        switch status {
+        case .accountChanged, .confirmingDeletions, .stopped, .off, .unavailable, .signedOut:
+            break
+        case .syncing, .upToDate, .failed:
+            status = .failed(message)
+        }
     }
 
     func name(of zone: SyncZone) -> String {

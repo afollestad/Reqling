@@ -35,6 +35,38 @@ enum OrderedJSON: Equatable, Sendable {
         return output
     }
 
+    /// No whitespace at all, for where size counts, such as a record iCloud caps at 1 MB.
+    func compactText() -> String {
+        var output = ""
+        writeCompact(to: &output)
+        return output
+    }
+
+    private func writeCompact(to output: inout String) {
+        switch self {
+        case .null, .bool, .number:
+            write(to: &output, indent: 0)
+        case .string(let text):
+            Self.writeQuoted(text, to: &output)
+        case .array(let items):
+            output += "["
+            for (index, item) in items.enumerated() {
+                output += index == 0 ? "" : ","
+                item.writeCompact(to: &output)
+            }
+            output += "]"
+        case .object(let members):
+            output += "{"
+            for (index, member) in members.enumerated() {
+                output += index == 0 ? "" : ","
+                Self.writeQuoted(member.key, to: &output)
+                output += ":"
+                member.value.writeCompact(to: &output)
+            }
+            output += "}"
+        }
+    }
+
     private func write(to output: inout String, indent: Int) {
         switch self {
         case .null:

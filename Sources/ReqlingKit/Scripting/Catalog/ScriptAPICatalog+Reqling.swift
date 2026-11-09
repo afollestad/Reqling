@@ -22,7 +22,7 @@ extension ScriptAPICatalog {
                     "In a folder or project run, runs the request with this name or ID next; `null` ends the iteration. "
                         + "Ignored when the request runs on its own.")
         ]),
-        variableType("Environment", "The active environment's variables: its saved values, with this Mac's current values over them.",
+        variableType("Environment", "The active environment's variables: its saved values, with current values over them.",
                      source: .environment, named: true),
         variableType("DefaultEnvironment", "The project's Default environment's variables.", source: .defaultEnvironment, named: true),
         variableType("Globals", "The Global environment's variables, which every project shares.", source: .globals, named: true),
@@ -71,7 +71,7 @@ extension ScriptAPICatalog {
 
     private static let reqlingMembers: [ScriptMember] = [
         .property("info", .named("Info"), "Where this script runs: its phase, level, request, and environment."),
-        .property("environment", .named("Environment"), "The active environment's variables. A value set here is kept on this Mac."),
+        .property("environment", .named("Environment"), "The active environment's variables. A value set here is kept as a current value."),
         .property("defaultEnvironment", .named("DefaultEnvironment"), "The project's Default environment's variables."),
         .property("globals", .named("Globals"), "The Global environment's variables."),
         .property("variables", .named("Variables"), "Every variable as `{{name}}` resolves it; a value set here lasts for this run."),

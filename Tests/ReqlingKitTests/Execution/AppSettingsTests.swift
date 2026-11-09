@@ -26,6 +26,16 @@ final class AppSettingsTests: XCTestCase {
     }
 
     /// Settings saved before history existed keep 30 days within 500 MB; an unknown choice falls back the same way.
+    /// Settings saved before iCloud sync existed sync, as a new install does; turned off, it stays off.
+    func testICloudSyncDefaultsOnAndRoundTrips() throws {
+        let missing = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        var off = AppSettings()
+        off.syncsWithICloud = false
+
+        XCTAssertTrue(missing.syncsWithICloud)
+        XCTAssertFalse(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(off)).syncsWithICloud)
+    }
+
     func testHistorySettingsDefaultAndDecodeLeniently() throws {
         let missing = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
         let invalid = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"historyRetention": "fortnight", "historySizeLimit": 3}"#.utf8))

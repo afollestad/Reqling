@@ -32,6 +32,24 @@ extension LibrarySync {
         await syncNow()
     }
 
+    /// The projects the choice after another account signed in is about: each in scope, and whether it synced with the
+    /// account signed in before, whose data it may be rather than the person's own; empty unless that choice is open.
+    public var accountChangeCandidates: [AccountChangeCandidate] {
+        guard status == .accountChanged else {
+            return []
+        }
+        let previous = lastAccountFolder().map { SyncBaseStore.syncedProjects(in: directory.appendingPathComponent($0, isDirectory: true)) }
+        return library.projects.filter(isInScope).map { project in
+            AccountChangeCandidate(id: project.id, name: project.name, syncedWithPreviousAccount: previous?.contains(project.id) == true)
+        }
+    }
+
+    /// Whether `project` syncs now: in scope, and neither kept out nor held back. A deletion here reaches other Macs only
+    /// then.
+    public func syncs(_ project: ProjectID) -> Bool {
+        library.project(project).map(isSyncable) ?? false
+    }
+
     /// After another account signed in: syncs the projects in `merging` into it and keeps the rest on this Mac only,
     /// out of sync, so one account's data never reaches another's unasked. Global and current values go along only when
     /// `merging` isn't empty.
@@ -115,4 +133,12 @@ extension LibrarySync {
             }
         }
     }
+}
+
+/// A project the choice after another account signed in offers to merge into it.
+public struct AccountChangeCandidate: Identifiable, Hashable, Sendable {
+    public let id: ProjectID
+    public let name: String
+    /// Whether it synced with the account signed in before, which offers it unticked: it may be that account's data.
+    public let syncedWithPreviousAccount: Bool
 }

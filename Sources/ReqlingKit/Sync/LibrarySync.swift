@@ -49,6 +49,12 @@ public final class LibrarySync {
     @ObservationIgnored var store: SyncBaseStore?
     /// Called when sync turns itself off (its iCloud data was deleted or reset), so the setting can follow.
     @ObservationIgnored public var onStop: ((SyncStopReason) -> Void)?
+    /// Called once a change made here is queued, so the app can sync soon: sending alone never sends a deletion, which
+    /// waits for a fetch (`shouldSend`).
+    @ObservationIgnored public var onLocalChange: (() -> Void)?
+    /// Called as an account first syncs on this Mac, once `backUp` has copied what's here and before anything is sent
+    /// or applied, so the app can say what syncs.
+    @ObservationIgnored public var onFirstSync: (() -> Void)?
 
     /// Each zone's project, folder, request, environment, or Global records as this Mac holds them, built once per change
     /// rather than once per record sent. Current values are built fresh, since scripts change them on every run.
@@ -67,7 +73,8 @@ public final class LibrarySync {
     @ObservationIgnored var refetchRaised = false
     /// Whether a whole fetch left something to fetch again, which another won't fix before a relaunch or Sync Now.
     @ObservationIgnored var wholeFetchFellShort = false
-    /// The edit time each record went out with, as this Mac's clock read it, to tell whether a save covers the edit.
+    /// The records out for saving, with the edit time each went out with: a project deleted while one is out may
+    /// still be saved by it, so it gets a tombstone (`sendTombstone`).
     @ObservationIgnored var sentEdits: [SyncRecordID: Date] = [:]
     /// When the last fetch finished, which a deletion must postdate before it goes out (`shouldSend`).
     @ObservationIgnored var lastFetchFinished: Date = .distantPast
@@ -84,6 +91,17 @@ public final class LibrarySync {
     @ObservationIgnored var connection = 0
     /// Whether reading the account failed, rather than finding none signed in, so coming forward or Sync Now tries again.
     @ObservationIgnored var needsReconnect = false
+    /// Records whose sending merely failed, which iCloud drops rather than retrying, to send again on the next sync.
+    @ObservationIgnored var failedSends: Set<SyncRecordID> = []
+    /// Whether a zone's save or deletion failed, so the zone deletions this Mac still owes go out again.
+    @ObservationIgnored var zoneChangeFailed = false
+    /// Zones whose save failed for good, so a record refused for want of one waits for Sync Now (`failedSends`)
+    /// rather than queuing the zone again, round after round.
+    @ObservationIgnored var failingZones: Set<SyncZone> = []
+    /// Whether a sync runs, and whether another was asked for meanwhile, which it runs next rather than alongside: two
+    /// at once would each fetch over from the start, cancelling the other's.
+    @ObservationIgnored var isSyncing = false
+    @ObservationIgnored var syncAsked: (retryingFailures: Bool, asked: Bool) = (false, false)
 
     init(
         library: ProjectLibrary,
@@ -192,6 +210,10 @@ public final class LibrarySync {
         let store = SyncBaseStore(directory: directory, account: account, key: key)
         self.store = store
         status = .syncing
+        if store.isFirstSync {
+            // An account the person just chose what to merge into needs no word on what syncs.
+            beginFirstSync(in: store, announcing: merging == nil)
+        }
         if let merging {
             keepOutOfNewAccount(allBut: merging)
         }
@@ -204,10 +226,12 @@ public final class LibrarySync {
         await syncNow()
     }
 
-    /// Forgets the connection in use, so nothing of a previous account's applies to the next, even should it fail.
+    /// Forgets the connection in use, so nothing of a previous account's applies to the next, even should it fail, and
+    /// nothing syncs until one is made.
     private func dropConnection() {
         store?.save()
         store = nil
+        transport.stop()
         heldEvents = []
         heldZoneDeletions = []
         deliveredZones = []
@@ -218,6 +242,9 @@ public final class LibrarySync {
         lastFetchFinished = .distantPast
         withheld = []
         needsReconnect = false
+        failedSends = []
+        zoneChangeFailed = false
+        failingZones = []
     }
 
     /// Picks up where `store` left off: what a newer version wrote is judged again once this one is newer than when it
@@ -233,6 +260,13 @@ public final class LibrarySync {
         }
         transport.enqueue(store.state.outgoingTombstones.map { .save(LibraryRecordCoder.tombstoneRecordID($0)) })
         transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.project($0)) })
+        // A tombstone withdrawn as its project came back (`readd`) has no record here to reconcile, so its deletion,
+        // kept pending, is queued again; left on the server, it would stop other Macs sending the project's edits.
+        let tombstones = SyncZone.library.name + "/" + SyncRecordID.tombstonePrefix
+        transport.enqueue(store.state.pending.filter { $0.value.isDeletion && $0.key.hasPrefix(tombstones) }
+            .compactMap { ProjectID(string: String($0.key.dropFirst(tombstones.count))) }
+            .sorted()
+            .map { .delete(LibraryRecordCoder.tombstoneRecordID($0)) })
         forgetSetAsideScopes()
         reconcileListedProjects()
         reconcileEverything(stampingFromFiles: true)
@@ -246,9 +280,27 @@ public final class LibrarySync {
     /// What couldn't be applied (`State.needsRefetch`) is fetched whole first, and once more in front should this fetch
     /// leave something, such as a project only part of whose records arrived. A whole fetch that still falls short isn't
     /// repeated on every activation: `retryingFailures`, as Sync Now does, or a relaunch tries again.
+    ///
+    /// One asked for while another runs runs right after it, once however often it was asked for.
     public func syncNow(retryingFailures: Bool = false) async {
+        guard !isSyncing else {
+            syncAsked = (syncAsked.retryingFailures || retryingFailures, true)
+            return
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+        var retrying = retryingFailures
+        repeat {
+            syncAsked = (false, false)
+            await syncOnce(retryingFailures: retrying)
+            retrying = syncAsked.retryingFailures
+        } while syncAsked.asked
+    }
+
+    private func syncOnce(retryingFailures: Bool) async {
         guard let store else {
-            if needsReconnect {
+            // Signing in while Reqling was open may have gone unnoticed, so this looks again.
+            if needsReconnect || status == .signedOut {
                 await connect()
             }
             return
@@ -265,6 +317,9 @@ public final class LibrarySync {
             return
         }
         if isActive {
+            if retryingFailures {
+                resendFailures()
+            }
             await transport.sendChanges()
             guard attempt == connection else {
                 return
@@ -282,13 +337,21 @@ public final class LibrarySync {
     /// stop or another connection replaced `attempt` meanwhile.
     private func fetch(into store: SyncBaseStore, attempt: Int) async -> Bool {
         for _ in 0..<2 {
-            if store.state.needsRefetch, !wholeFetchFellShort {
+            // Only in front: in the background a whole fetch's end waits to be applied, so each sync there would start
+            // another, every change made meanwhile fetching the whole account again.
+            let refetching = isActive && store.state.needsRefetch && !wholeFetchFellShort
+            if refetching {
                 transport.resetState()
             }
             refetchRaised = false
             await transport.fetchChanges()
             guard attempt == connection else {
                 return false
+            }
+            // A refetch that didn't settle what it was for, whether it asked for another or wasn't whole, as when the
+            // engine folded it into one of its own, waits for Sync Now rather than repeating on every sync.
+            if refetching, refetchRaised || store.state.needsRefetch {
+                wholeFetchFellShort = true
             }
             guard isActive, store.state.needsRefetch, !wholeFetchFellShort else {
                 break
@@ -353,7 +416,7 @@ public final class LibrarySync {
         directory.appendingPathComponent("account")
     }
 
-    private func lastAccountFolder() -> String? {
+    func lastAccountFolder() -> String? {
         (try? String(contentsOf: accountMarker, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
@@ -365,9 +428,10 @@ public final class LibrarySync {
     /// Turns sync off after the account's data for Reqling was deleted or reset: the SDK requires dropping what was
     /// cached and never sending it back on its own. Project folders are the person's files, so they stay.
     func stopAfterServerReset(_ reason: SyncStopReason) {
+        // The transport isn't reset here, which would hand what's queued to a new engine for it to send; stopping ends
+        // the engine, queue and all, and turning sync on again starts from no state.
         store?.reset()
         store = nil
-        transport.resetState()
         halt()
         status = .stopped(reason)
         onStop?(reason)
@@ -380,4 +444,7 @@ enum HeldFetchEvent {
     case zoneDeletion(SyncZone, SyncZoneDeletionReason)
     /// A fetch finished, when it did, with the zones it delivered when it was whole.
     case finish(wholeDelivery: Set<SyncZone>?, finishedAt: Date)
+    /// What a send that was out reported, in its place among the rest: applied before the fetch it followed is judged,
+    /// it would make a zone saved meanwhile read as one that fetch should have delivered.
+    case sent([SyncSendResult])
 }

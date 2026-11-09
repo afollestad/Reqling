@@ -73,7 +73,8 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("global-environment.json")
     }
 
-    /// What iCloud sync keeps on this Mac (`SyncBaseStore`): digests of what it last synced, never content or secrets.
+    /// What iCloud sync keeps on this Mac (`SyncBaseStore`): digests of what it last synced, never secrets, and no
+    /// content but the copy of what was here before an account first synced (`Backup/`).
     var syncDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("Sync", isDirectory: true)
     }

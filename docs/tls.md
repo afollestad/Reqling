@@ -6,7 +6,7 @@ A project's **Project Settings** hold its client certificates and extra CA certi
 
 - **Formats.** A PKCS#12 file (`.p12`/`.pfx`), a PEM certificate and private key (`.crt`/`.key`, RSA or EC, encrypted or not), or an identity already in your Keychain.
 - **Matched by host**, such as `api.example.com`, `*.internal`, or `host:8443`.
-- **Passphrases** are stored in your Keychain. Certificates and keys are read in memory and never added to it.
+- **Passphrases** are stored in your Keychain. Certificates and keys are read in memory and never added to it. Passphrases and Keychain identities stay on each Mac, so with [iCloud sync](projects.md#syncing-with-icloud) you choose them again on another.
 
 ## CA certificates
 

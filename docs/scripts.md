@@ -76,7 +76,7 @@ rq.onMessage((message) => {
 
 ## Variables
 
-- **`rq.environment`** is the active environment, **`rq.defaultEnvironment`** the project's Default, and **`rq.globals`** Global. A value set through them is kept on this Mac as a [current value](projects.md#current-values), which overrides the saved one and never goes into the project.
+- **`rq.environment`** is the active environment, **`rq.defaultEnvironment`** the project's Default, and **`rq.globals`** Global. A value set through them is kept as a [current value](projects.md#current-values), which overrides the saved one and never goes into the project's files.
 - **`rq.variables`** reads every variable as `{{name}}` resolves it. A value set through it lasts only for the run, and beats every environment's.
 - **Secrets.** Scripts can read secret values. A value set with `{ secret: true }`, under a secret variable's name, or containing another secret is masked wherever it shows, and an environment's or Global's is kept in the Keychain.
 - **Partial runs.** Values a script sets before it throws or is stopped are kept.
@@ -173,6 +173,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 - **Without trust,** requests go out without their scripts, and the response says so, with a **Trust Scripts** button for the next run. Agents' runs and background schema lookups never ask; they skip the scripts.
 - **Running a folder or project** asks once for the whole run, listing every script it would run ([Running folders and projects](running-folders.md)).
 - **Moving scripts in.** Moving a request or folder with scripts from a project you haven't trusted into one you have asks again before the next run, since you haven't seen those scripts.
+- **Changes from another Mac.** Scripts changed on another Mac through [iCloud sync](projects.md#syncing-with-icloud) ask again before they next run here. Changes pulled from git don't.
 - **Change it** in the project's pane, under its scripts.
 
 ## Libraries and limits
@@ -209,7 +210,7 @@ Every name a script can use, as Reqling's editor completes and describes it. A m
 Reqling's script API.
 
 - `info: Info`: Where this script runs: its phase, level, request, and environment.
-- `environment: Environment`: The active environment's variables. A value set here is kept on this Mac.
+- `environment: Environment`: The active environment's variables. A value set here is kept as a current value.
 - `defaultEnvironment: DefaultEnvironment`: The project's Default environment's variables.
 - `globals: Globals`: The Global environment's variables.
 - `variables: Variables`: Every variable as `{{name}}` resolves it; a value set here lasts for this run.
@@ -291,7 +292,7 @@ Where this script runs.
 
 ### `Environment`
 
-The active environment's variables: its saved values, with this Mac's current values over them.
+The active environment's variables: its saved values, with current values over them.
 
 - `get(name: string): string | null`: The variable's value, or `undefined`.
 - `set(name: string, value: any, options?: VariableOptions): void`: Sets a value; anything but a string is stored as JSON. `{ secret: true }` keeps it in the Keychain and masked.

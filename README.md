@@ -19,7 +19,7 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 
 ## User guide
 
-- [Projects](docs/projects.md): the project format, importing from Postman and OpenAPI, environments, and variables
+- [Projects](docs/projects.md): the project format, importing from Postman and OpenAPI, environments, variables, and iCloud sync
 - [Requests](docs/requests.md): HTTP requests, responses, event streams, and run history
 - [GraphQL](docs/graphql.md): schema-aware queries and the schema browser
 - [gRPC](docs/grpc.md): calls, streams, and schema sources

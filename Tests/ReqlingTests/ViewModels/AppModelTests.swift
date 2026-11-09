@@ -47,7 +47,8 @@ final class AppModelTests: XCTestCase {
             protoWorkspaces: fixture.component.protoWorkspaces,
             protocTooling: fixture.protoc.model,
             mcpServer: fixture.component.mcpServer,
-            updates: fixture.component.appUpdates
+            updates: fixture.component.appUpdates,
+            iCloud: fixture.model.iCloud
         )
     }
 

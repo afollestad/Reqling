@@ -33,7 +33,15 @@ extension LibrarySync {
         lastFetchFinished = fetchedAt
         var deletions = heldZoneDeletions
         heldZoneDeletions = []
+        if refetchRaised, wholeDelivery == nil {
+            // The tombstone saying a zone went on purpose may be among what this fetch dropped, so a deletion waits for
+            // the refetch, which knows them all; a reset of the account's data can't wait.
+            heldZoneDeletions = deletions.filter { $0.1 == .deleted }
+            deletions = deletions.filter { $0.1 != .deleted }
+        }
         if let wholeDelivery {
+            // A zone this fetch delivered exists, whatever an earlier fetch said of it.
+            deletions = deletions.filter { !wholeDelivery.contains($0.0) || $0.1 != .deleted }
             deletions += finishWholeFetch(delivering: wholeDelivery, judging: Set(deletions.map(\.0)))
         }
         var candidates: [ProjectID] = []
@@ -213,7 +221,12 @@ extension LibrarySync: SyncTransportDelegate {
         finishFetching(wasWhole: wasWhole)
     }
 
+    /// Results that arrive while fetched changes wait in the background wait with them, in order (`HeldFetchEvent.sent`).
     func transport(didSend results: [SyncSendResult]) {
+        guard heldEvents.isEmpty else {
+            heldEvents.append(.sent(results))
+            return
+        }
         handleSent(results)
         store?.save()
     }
@@ -229,6 +242,15 @@ extension LibrarySync: SyncTransportDelegate {
         } else {
             store.update { $0.transportState = state }
             unsavedTransportState = nil
+        }
+    }
+
+    /// Changes dropped undelivered are fetched again whole (`syncNow`); a fetch that merely failed says so in Settings.
+    func transportFetchFailed(_ message: String, lostChanges: Bool) {
+        if lostChanges {
+            refetchAfterFailure()
+        } else {
+            reportFailure(message)
         }
     }
 
