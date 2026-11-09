@@ -96,6 +96,23 @@ final class CloudKitFetchAssemblyTests: XCTestCase {
         XCTAssertTrue(whole.dropsChangesIfAbandoned)
     }
 
+    /// A fresh engine's own fetch runs alongside the one sync asks for: they end together, whichever ends last, as
+    /// sync's. The engine's own fetch alone never is, though sync's call be out as it ends.
+    func testJoinedFetchesEndTogetherAndAreSyncsOnlyWithOneItAskedFor() {
+        var joined = CloudKitFetchAssembly(isWhole: true)
+        var own = CloudKitFetchAssembly(isWhole: true)
+        joined.join()
+        joined.join()
+        own.join()
+
+        XCTAssertFalse(joined.leave(asked: true), "The engine's own is still open")
+        XCTAssertTrue(joined.leave(asked: false))
+        XCTAssertTrue(own.leave(asked: false))
+
+        XCTAssertTrue(joined.isAsked)
+        XCTAssertFalse(own.isAsked)
+    }
+
     /// The last word on a record wins: one deleted after changing arrives deleted, and the reverse.
     func testTheLatestWordOnARecordWins() throws {
         var fetch = CloudKitFetchAssembly(isWhole: false)

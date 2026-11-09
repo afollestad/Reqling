@@ -49,6 +49,8 @@ final class CloudKitSyncTransport: SyncTransport {
     /// What the engine reported while `unconfirmed` waited, handled once it's settled, so that fetch's end is judged
     /// with only its own zones delivered (`LibrarySync.deliveredZones`), not a later fetch's.
     var waitingEvents: [CKSyncEngine.Event] = []
+    /// Sync's calls that returned while a fetch joined to theirs was still open, each waiting for it to end.
+    var fetchEndWaiters: [CheckedContinuation<Void, Never>] = []
     /// Whether `shouldSend` refused a change since the last fetch, which the end of the next one offers again.
     var refusedChanges = false
     /// Send results reported during a whole fetch, held until it ends: a zone sync saved meanwhile, which the fetch may
@@ -151,9 +153,17 @@ final class CloudKitSyncTransport: SyncTransport {
         let generation = generation
         do {
             try await engine.fetchChanges()
-            if generation == self.generation {
-                confirmFetch()
+            guard generation == self.generation else {
+                return
             }
+            if fetch != nil {
+                // The engine's own fetch, joined to this one, is still open: this one ends with it.
+                await withCheckedContinuation { fetchEndWaiters.append($0) }
+                guard generation == self.generation else {
+                    return
+                }
+            }
+            confirmFetch()
         } catch {
             if generation == self.generation {
                 failFetch(error)
@@ -235,6 +245,7 @@ final class CloudKitSyncTransport: SyncTransport {
         heldResults = []
         unconfirmed = nil
         waitingEvents = []
+        resumeFetchEndWaiters()
     }
 
     /// Hands the engine the zone changes `shouldSend` allows now; the rest wait for the next send or fetch.

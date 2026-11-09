@@ -30,9 +30,28 @@ struct CloudKitFetchAssembly {
     private var failed = false
     /// The engine's latest state.
     var state: Data?
+    /// How many of the engine's fetches this joins, begun and not yet ended; the SDK promises one end for each begin. A
+    /// fresh engine schedules one of its own as it starts, which runs alongside the one sync asks for, so the two are
+    /// one fetch, ending when both have.
+    private var open = 0
+    /// Whether a fetch sync asked for ended among those joined, so this one is sync's whichever ends last. Without one,
+    /// it's the engine's own, never taken as whole: ending while sync's call is out doesn't make it that call's.
+    private(set) var isAsked = false
 
     init(isWhole: Bool) {
         self.isWhole = isWhole
+    }
+
+    /// A fetch the engine began, joined to this one.
+    mutating func join() {
+        open += 1
+    }
+
+    /// A fetch the engine ended, `asked` when sync asked for it; whether this one ends with it, none it joined still open.
+    mutating func leave(asked: Bool) -> Bool {
+        open = max(open - 1, 0)
+        isAsked = isAsked || asked
+        return open == 0
     }
 
     mutating func name(_ zone: SyncZone) {
@@ -69,7 +88,7 @@ struct CloudKitFetchAssembly {
     }
 
     /// The zone to deliver now that its fetch completed; `nil` when it failed, which drops what it held, or never began
-    /// here, as one begun before an abandoned fetch, which would arrive incomplete. A whole fetch's zones wait for the
+    /// here, as one begun before a failed fetch was dropped, which would arrive incomplete. A whole fetch's zones wait for the
     /// end instead (`Outcome.zones`).
     mutating func finish(_ zone: SyncZone, failed zoneFailed: Bool) -> SyncFetchedZone? {
         guard let fetched = zones.removeValue(forKey: zone) else {

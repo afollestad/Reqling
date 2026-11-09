@@ -5,12 +5,10 @@ import Foundation
 /// `SyncTransport` sets: each zone once complete, the engine's state once the fetch ends, whole only when nothing fell
 /// short, and what was sent meanwhile only after a whole fetch ends.
 extension CloudKitSyncTransport {
+    /// A fetch the engine begins while another is open joins that one rather than ending it.
     func beginFetch() {
-        if fetch != nil {
-            // The last fetch never finished, so what it held back from delivery is lost to this engine.
-            abandonFetch()
-        }
-        fetch = CloudKitFetchAssembly(isWhole: startsFresh)
+        ensureFetch()
+        fetch?.join()
     }
 
     /// The fetch under way, begun here should the engine report changes without announcing one first.
@@ -63,16 +61,18 @@ extension CloudKitSyncTransport {
         fetch?.isWhole == true || unconfirmed?.isWhole == true
     }
 
-    /// The end of a fetch. One sync asked for waits for its call to return; one the engine ran on its own can't be known
-    /// to have succeeded, so it's never taken as whole.
+    /// The end of a fetch, once every fetch joined to it has ended. One sync asked for waits for its call to return; one
+    /// the engine ran on its own can't be known to have succeeded, so it's never taken as whole.
     func finishFetch(asked: Bool) {
-        guard let finished = fetch else {
+        guard fetch?.leave(asked: asked) == true, let finished = fetch else {
             return
         }
         fetch = nil
         startsFresh = false
+        // Sync's call waiting on this fetch's end goes on once it's settled below.
+        defer { resumeFetchEndWaiters() }
         let outcome = finished.finish()
-        guard asked else {
+        guard finished.isAsked else {
             report(outcome, asWhole: false)
             return
         }
@@ -115,6 +115,7 @@ extension CloudKitSyncTransport {
     func failFetch(_ error: any Error) {
         var lost = unconfirmed.map { $0.outcome.lostChanges || $0.isWhole } ?? false
         unconfirmed = nil
+        resumeFetchEndWaiters()
         if let fetch {
             self.fetch = nil
             // One that failed before reaching anything, as with no network, starts over as it was.
@@ -152,16 +153,12 @@ extension CloudKitSyncTransport {
         }
     }
 
-    /// Drops a fetch that won't finish. What it held back may be behind the engine's tokens now, so everything is
-    /// fetched again, unless nothing was.
-    func abandonFetch() {
-        let dropsChanges = fetch?.dropsChangesIfAbandoned ?? false
-        fetch = nil
-        startsFresh = false
-        if dropsChanges {
-            delegate?.transportFetchFailed(Self.fellShort, lostChanges: true)
+    func resumeFetchEndWaiters() {
+        let waiters = fetchEndWaiters
+        fetchEndWaiters = []
+        for waiter in waiters {
+            waiter.resume()
         }
-        releaseHeldResults()
     }
 
     static let fellShort = "Some changes from iCloud couldn't be fetched. Reqling fetches everything again."
