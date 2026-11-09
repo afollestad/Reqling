@@ -7,22 +7,38 @@ public struct ProjectPathResolver: Sendable {
     /// Shared paths outside the project's folder and repository that the person chose on this Mac
     /// (`WorkspaceStateStore.chosenOutsidePaths(in:)`), which resolve even though they lead out.
     public let chosenOutsidePaths: Set<String>
+    /// Local paths chosen for a client certificate or key, which only `identityData(for:)` reads
+    /// (`ProjectWorkspaceState.identityPaths`).
+    public let identityPaths: Set<LocalPathID>
     /// The folder no repository at or above may widen a project's shared location to; see `sharesLocation`.
     let homeDirectory: URL
 
-    public init(projectRoot: URL, localPaths: [LocalPathID: String] = [:], chosenOutsidePaths: Set<String> = []) {
+    public init(
+        projectRoot: URL,
+        localPaths: [LocalPathID: String] = [:],
+        chosenOutsidePaths: Set<String> = [],
+        identityPaths: Set<LocalPathID> = []
+    ) {
         self.init(
             projectRoot: projectRoot,
             localPaths: localPaths,
             chosenOutsidePaths: chosenOutsidePaths,
+            identityPaths: identityPaths,
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         )
     }
 
-    init(projectRoot: URL, localPaths: [LocalPathID: String], chosenOutsidePaths: Set<String> = [], homeDirectory: URL) {
+    init(
+        projectRoot: URL,
+        localPaths: [LocalPathID: String],
+        chosenOutsidePaths: Set<String> = [],
+        identityPaths: Set<LocalPathID> = [],
+        homeDirectory: URL
+    ) {
         self.projectRoot = projectRoot
         self.localPaths = localPaths
         self.chosenOutsidePaths = chosenOutsidePaths
+        self.identityPaths = identityPaths
         self.homeDirectory = homeDirectory
     }
 
@@ -32,7 +48,8 @@ public struct ProjectPathResolver: Sendable {
         self.init(
             projectRoot: projectRoot,
             localPaths: workspace.localPaths(in: project),
-            chosenOutsidePaths: workspace.chosenOutsidePaths(in: project)
+            chosenOutsidePaths: workspace.chosenOutsidePaths(in: project),
+            identityPaths: workspace.identityPaths(in: project)
         )
     }
 
@@ -42,8 +59,17 @@ public struct ProjectPathResolver: Sendable {
     /// Whoever shares the project wrote its relative paths, so a `../../.ssh/id_rsa` body, or a symlink in the folder
     /// that leads out, would have a request read and send a file the person never chose. One that leaves is treated as
     /// missing, unless the person chose it on this Mac (`chosenOutsidePaths`). A this-Mac-only path is the person's own
-    /// choice, so it may point anywhere.
+    /// choice, so it may point anywhere, except that one chosen for a client certificate or key is read only as one
+    /// (`identityData(for:)`).
     public func url(for reference: ProjectPathReference) -> URL? {
+        if case .local(let id) = reference, identityPaths.contains(id) {
+            return nil
+        }
+        return identityFileURL(for: reference)
+    }
+
+    /// `url(for:)`, but reaching client certificate and key files too: for TLS identities, and for describing them.
+    public func identityFileURL(for reference: ProjectPathReference) -> URL? {
         switch reference {
         case .relative(let path):
             let url = projectRoot.appendingPathComponent(path).standardizedFileURL
@@ -69,6 +95,14 @@ public struct ProjectPathResolver: Sendable {
     /// Reads the referenced file, failing with a description of what is missing.
     public func data(for reference: ProjectPathReference) throws(TLSError) -> Data {
         guard let url = url(for: reference), let data = try? Data(contentsOf: url) else {
+            throw .missingFile(describe(reference))
+        }
+        return data
+    }
+
+    /// Reads a client certificate's or key's file, which `data(for:)` refuses.
+    public func identityData(for reference: ProjectPathReference) throws(TLSError) -> Data {
+        guard let url = identityFileURL(for: reference), let data = try? Data(contentsOf: url) else {
             throw .missingFile(describe(reference))
         }
         return data

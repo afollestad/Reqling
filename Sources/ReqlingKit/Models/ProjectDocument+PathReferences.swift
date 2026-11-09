@@ -10,6 +10,16 @@ extension ProjectDocument {
         })
     }
 
+    /// The local path IDs the project's client certificates read their identities from.
+    public var identityPathIDs: Set<LocalPathID> {
+        Set(tls.clientCertificates.flatMap(\.source.files).compactMap { reference in
+            if case .local(let id) = reference {
+                return id
+            }
+            return nil
+        })
+    }
+
     /// Every `ProjectPathReference.relative` path the project uses. `WorkspaceStateStore.reconcileChosenOutsidePaths`
     /// forgets every other chosen outside path.
     public var relativePaths: Set<String> {

@@ -70,6 +70,7 @@ public struct ProjectLifecycle {
         if let document = library.document(project) {
             workspace.reconcileLocalPaths(in: project, keeping: document.localPathIDs)
             workspace.reconcileChosenOutsidePaths(in: project, keeping: document.relativePaths)
+            workspace.markIdentityPaths(document.identityPathIDs, in: project)
         }
     }
 

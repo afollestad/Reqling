@@ -53,11 +53,11 @@ public struct ProjectTLSResolver: Sendable {
     public func loadIdentity(_ entry: ClientCertificateEntry) throws(TLSError) -> TLSClientIdentity {
         switch entry.source {
         case .pkcs12(let file):
-            return try PKCS12Importer.importIdentity(try paths.data(for: file), passphrase: passphrase(entry.id) ?? "", probe: pkcs12Probe)
+            return try PKCS12Importer.importIdentity(try paths.identityData(for: file), passphrase: passphrase(entry.id) ?? "", probe: pkcs12Probe)
         case .pem(let certificate, let key):
             return try PEMIdentityImporter.importIdentity(
-                certificate: try paths.data(for: certificate),
-                key: try paths.data(for: key),
+                certificate: try paths.identityData(for: certificate),
+                key: try paths.identityData(for: key),
                 passphrase: passphrase(entry.id) ?? ""
             )
         case .keychainIdentity:
@@ -82,12 +82,12 @@ public struct ProjectTLSResolver: Sendable {
             switch entry.source {
             case .pkcs12(let file):
                 add(Data("pkcs12".utf8))
-                add((try? paths.data(for: file)) ?? Data())
+                add((try? paths.identityData(for: file)) ?? Data())
                 add(Data((passphrase(entry.id) ?? "").utf8))
             case .pem(let certificate, let key):
                 add(Data("pem".utf8))
-                add((try? paths.data(for: certificate)) ?? Data())
-                add((try? paths.data(for: key)) ?? Data())
+                add((try? paths.identityData(for: certificate)) ?? Data())
+                add((try? paths.identityData(for: key)) ?? Data())
                 add(Data((passphrase(entry.id) ?? "").utf8))
             case .keychainIdentity:
                 add(Data("keychain".utf8))

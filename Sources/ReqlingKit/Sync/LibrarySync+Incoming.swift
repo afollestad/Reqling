@@ -131,6 +131,10 @@ extension LibrarySync {
         }
         do {
             let decoded = try ProjectRecordCoder.document(id, from: working.values.filter { $0.type != .currentValues }, local: previous)
+            // Before another Mac's change lands, every file this Mac reads a client identity from is marked, so one that
+            // change moves into a request can't be read there (`ProjectWorkspaceState.identityPaths`).
+            let identities = (previous?.identityPathIDs ?? []).union(decoded.document.identityPathIDs)
+            lifecycle.workspace.markIdentityPaths(identities, in: id)
             if previous == nil {
                 try library.adoptSyncedProject(decoded.document, storingSecrets: decoded.secrets)
             } else {
@@ -272,6 +276,11 @@ extension LibrarySync {
         let changedScripts = previous.map { scriptSignature($0) != scripts } ?? !scripts.isEmpty
         if changedScripts, lifecycle.workspace.projectState(id).scriptTrust == .trusted {
             lifecycle.workspace.updateProject(id) { $0.scriptTrust = .unknown }
+        }
+        // A certificate entry whose host another Mac changed no longer presents the Keychain identity chosen here.
+        let hosts = Dictionary((previous?.tls.clientCertificates ?? []).map { ($0.id, $0.hostPattern) }) { first, _ in first }
+        for entry in document.tls.clientCertificates where hosts[entry.id].map({ $0 != entry.hostPattern }) ?? false {
+            lifecycle.workspace.setKeychainIdentity(nil, for: entry.id)
         }
         let before = Set(previous?.allRequests.map(\.0.id) ?? [])
         let after = Set(document.allRequests.map(\.0.id))

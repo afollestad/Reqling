@@ -179,7 +179,7 @@ private struct FormDataRow: View {
                 TemplateField(text: writer.binding(\.value), placeholder: "Value", tokenContext: tokenContext, accessibilityLabel: "Field value")
             case .file:
                 Button(editor.describe(field.file)) {
-                    if let reference = editor.chooseFile() {
+                    if let reference = editor.chooseFile(replacing: field.file) {
                         writer.edit { $0.file = reference }
                     }
                 }
@@ -215,7 +215,7 @@ private struct BinaryBodyEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             LabeledRow("File") {
                 Button(editor.describe(binary.file)) {
-                    if let reference = editor.chooseFile() {
+                    if let reference = editor.chooseFile(replacing: binary.file) {
                         binary.file = reference
                     }
                 }

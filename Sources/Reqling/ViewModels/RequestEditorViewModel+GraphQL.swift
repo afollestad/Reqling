@@ -63,8 +63,12 @@ extension RequestEditorViewModel {
     /// Picks an SDL schema (`.graphql`, `.graphqls`, `.gql`) or a saved introspection result (`.json`).
     func chooseGraphQLSchemaFile() {
         let types = ["graphql", "graphqls", "gql", "json"].compactMap { UTType(filenameExtension: $0) }
+        var existing: ProjectPathReference?
+        if case .file(let current) = spec.body.graphQL.schema {
+            existing = current
+        }
         guard let url = app.system.chooseFile(prompt: "Use Schema", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID) else {
+              let reference = app.reference(for: url, in: projectID, replacing: existing) else {
             return
         }
         spec.body.graphQL.schema = .file(reference)

@@ -201,12 +201,12 @@ final class RequestEditorViewModel {
         notice = RunHistoryViewModel.restoredNotice(sentAt: date)
     }
 
-    /// Picks a file for a binary body or a form-data part.
-    func chooseFile() -> ProjectPathReference? {
+    /// Picks a file for a binary body or a form-data part, in place of `existing` (`AppModel.reference(for:in:replacing:)`).
+    func chooseFile(replacing existing: ProjectPathReference?) -> ProjectPathReference? {
         guard let url = app.system.chooseFile(prompt: "Choose", allowedTypes: []) else {
             return nil
         }
-        return app.reference(for: url, in: projectID)
+        return app.reference(for: url, in: projectID, replacing: existing)
     }
 
     func describe(_ reference: ProjectPathReference?) -> String {

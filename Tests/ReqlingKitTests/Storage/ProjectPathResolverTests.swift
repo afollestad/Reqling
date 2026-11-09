@@ -91,6 +91,20 @@ final class ProjectPathResolverTests: XCTestCase {
         XCTAssertNil(chosen.url(for: .relative("../Schemas/../Schemas/api.graphql")), "Only the exact path chosen")
     }
 
+    /// A file chosen for a client certificate or key reads only as one, so a request can't send it.
+    func testAClientCertificatesFileIsReadOnlyForTLS() throws {
+        let project = try folder("API.reqling")
+        let key = root.appendingPathComponent("client.p12")
+        try Data("identity".utf8).write(to: key)
+        let id = LocalPathID()
+        let resolver = ProjectPathResolver(projectRoot: project, localPaths: [id: key.path], identityPaths: [id], homeDirectory: root)
+
+        XCTAssertNil(resolver.url(for: .local(id)))
+        XCTAssertThrowsError(try resolver.data(for: .local(id)))
+        XCTAssertEqual(try resolver.identityData(for: .local(id)), Data("identity".utf8))
+        XCTAssertEqual(resolver.identityFileURL(for: .local(id))?.path, key.path)
+    }
+
     func testAThisMacPathMayPointAnywhere() throws {
         let project = try folder("API.reqling")
         let id = LocalPathID()

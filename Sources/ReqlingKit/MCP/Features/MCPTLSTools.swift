@@ -181,11 +181,11 @@ struct MCPTLSTools {
                 switch entry.source {
                 case .pkcs12(let reference):
                     description["source"] = "pkcs12"
-                    description["file"] = context.describePath(reference, in: project)
+                    description["file"] = context.describePath(reference, in: project, identity: true)
                 case .pem(let certificate, let key):
                     description["source"] = "pem"
-                    description["certificate"] = context.describePath(certificate, in: project)
-                    description["key"] = context.describePath(key, in: project)
+                    description["certificate"] = context.describePath(certificate, in: project, identity: true)
+                    description["key"] = context.describePath(key, in: project, identity: true)
                 case .keychainIdentity:
                     description["source"] = "keychainIdentity"
                     description["chosenOnThisMac"] = .bool(context.workspace.keychainIdentity(for: entry.id) != nil)

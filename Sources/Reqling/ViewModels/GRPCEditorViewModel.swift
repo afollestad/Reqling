@@ -226,8 +226,12 @@ final class GRPCEditorViewModel {
 
     func chooseDescriptorSet() {
         let types = ["protoset", "binpb", "pb"].compactMap { UTType(filenameExtension: $0) }
+        var existing: ProjectPathReference?
+        if case .descriptorSet(let current) = spec.schema {
+            existing = current
+        }
         guard let url = app.system.chooseFile(prompt: "Use Descriptor Set", allowedTypes: types),
-              let reference = app.reference(for: url, in: projectID) else {
+              let reference = app.reference(for: url, in: projectID, replacing: existing) else {
             return
         }
         spec.schema = .descriptorSet(reference)

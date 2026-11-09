@@ -155,8 +155,19 @@ public final class MCPToolContext {
         if try entry.bool("local", default: false) {
             let url = try MCPProjectTools.absoluteURL(path, field: "\(entry.path).path")
             let resolver = lifecycle.pathResolver(for: project.id)
-            if let match = existing.first(where: { if case .local = $0 { resolver?.url(for: $0)?.path == url.path } else { false } }) {
+            let match = existing.first { reference in
+                guard case .local = reference else {
+                    return false
+                }
+                return resolver?.identityFileURL(for: reference)?.path == url.path
+            }
+            if let match {
                 return match
+            }
+            // One field's reference chosen on another Mac keeps its ID, as the window's picker keeps it.
+            if existing.count == 1, case .local(let id) = existing[0], workspace.localPath(id, in: project.id) == nil {
+                workspace.setLocalPath(url.path, for: id, in: project.id)
+                return .local(id)
             }
             return workspace.addLocalPath(url.path, in: project.id)
         }
@@ -175,9 +186,10 @@ public final class MCPToolContext {
 
     /// A reference as tools report it: its path on this Mac, whether it is shared through the project, and whether the
     /// file is there.
-    func describePath(_ reference: ProjectPathReference, in project: ProjectID) -> Value {
+    /// `identity` reaches a client certificate's own files, which the general resolution refuses.
+    func describePath(_ reference: ProjectPathReference, in project: ProjectID, identity: Bool = false) -> Value {
         let resolver = lifecycle.pathResolver(for: project)
-        let url = resolver?.url(for: reference)
+        let url = identity ? resolver?.identityFileURL(for: reference) : resolver?.url(for: reference)
         var description: [String: Value] = ["path": .string(url?.path ?? resolver?.describe(reference) ?? "")]
         switch reference {
         case .relative(let relative):

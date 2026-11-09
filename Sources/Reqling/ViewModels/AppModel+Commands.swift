@@ -273,7 +273,9 @@ extension AppModel {
     // MARK: - Files
 
     /// Turns a chosen file into a reference: relative when it lives with the project, otherwise as the user picks.
-    func reference(for url: URL, in project: ProjectID) -> ProjectPathReference? {
+    /// Choosing one again for `replacing`, a this-Mac-only reference with no path here (chosen on another Mac), keeps
+    /// its ID, so the other Mac's file for it stays chosen there; with a path here, a new ID leaves any copy sharing it.
+    func reference(for url: URL, in project: ProjectID, replacing existing: ProjectPathReference? = nil) -> ProjectPathReference? {
         guard let root = library.project(project)?.url else {
             return nil
         }
@@ -296,6 +298,10 @@ extension AppModel {
             }
             return .relative(path)
         case .thisMacOnly:
+            if case .local(let id)? = existing, workspace.localPath(id, in: project) == nil {
+                workspace.setLocalPath(url.path, for: id, in: project)
+                return .local(id)
+            }
             return workspace.addLocalPath(url.path, in: project)
         }
     }
