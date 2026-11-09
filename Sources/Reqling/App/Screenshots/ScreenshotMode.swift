@@ -9,7 +9,7 @@ import SwiftUI
 struct ScreenshotMode {
     /// `scripts/screenshots.sh` names each of these, so add a new one there too.
     enum Scene: String, CaseIterable {
-        /// A GET with variables in its URL and parameters, and its JSON response as a tree.
+        /// A GET with a path variable and variables in its URL and parameters, and its JSON response as a tree.
         case request
         /// A bidirectional gRPC call's messages, and its timeline of what was sent and received.
         case grpc

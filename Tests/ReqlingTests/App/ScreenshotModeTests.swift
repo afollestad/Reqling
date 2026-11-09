@@ -27,6 +27,9 @@ final class ScreenshotModeTests: XCTestCase {
         let editor = try XCTUnwrap(component.appModel.editor?.asHTTP)
         XCTAssertEqual(component.appModel.selectedNode()?.name, "Get user")
         XCTAssertEqual(editor.tab, .params)
+        // Valued, or the capture's Params tab shows `:userId` with nothing to fill it.
+        XCTAssertEqual(editor.spec.pathVariables.map(\.key), ["userId"])
+        XCTAssertEqual(editor.spec.pathVariables.map(\.value), ["{{userId}}"])
         XCTAssertEqual(editor.response.tab, .body)
         XCTAssertEqual(editor.response.exchange?.response?.statusCode, 200)
     }

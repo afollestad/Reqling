@@ -243,11 +243,11 @@ private struct DemoRequests {
             .request(Self.http("List users", url: "{{baseUrl}}/users")),
             .request(getUser),
             .request(createUser),
-            .request(Self.http("Delete user", .delete, url: "{{baseUrl}}/users/{{userId}}"))
+            .request(Self.http("Delete user", .delete, url: "{{baseUrl}}/users/:userId", pathVariables: [Self.userID]))
         ])
         let orders = RequestFolder(name: "Orders", children: [
             .request(Self.http("List orders", url: "{{baseUrl}}/orders")),
-            .request(Self.http("Refund order", .patch, url: "{{baseUrl}}/orders/{{orderId}}"))
+            .request(Self.http("Refund order", .patch, url: "{{baseUrl}}/orders/:orderId", pathVariables: [Self.orderID]))
         ])
         let greeter = RequestFolder(name: "Greeter", children: [.request(Self.grpc("Say hello", method: "SayHello")), .request(chat)])
         self.getUser = getUser.id
@@ -268,8 +268,18 @@ private struct DemoRequests {
         ]
     }
 
-    static func http(_ name: String, _ method: HTTPMethod = .get, url: String) -> RequestItem {
-        RequestItem(name: name, kind: .http(HTTPRequestSpec(method: method, url: url)))
+    static func http(_ name: String, _ method: HTTPMethod = .get, url: String, pathVariables: [KeyValuePair] = []) -> RequestItem {
+        RequestItem(name: name, kind: .http(HTTPRequestSpec(method: method, url: url, pathVariables: pathVariables)))
+    }
+
+    /// `:userId`, from the environment's `userId`, which Create user's script sets (`ScreenshotScripts`).
+    private static var userID: KeyValuePair {
+        KeyValuePair(key: "userId", value: "{{userId}}")
+    }
+
+    /// `:orderId`, the order the live requests' event stream and chat are about (`ScreenshotLiveRequests`).
+    private static var orderID: KeyValuePair {
+        KeyValuePair(key: "orderId", value: "1041")
     }
 
     private static func grpc(_ name: String, method: String) -> RequestItem {
@@ -286,12 +296,13 @@ private struct DemoRequests {
 
     private static var getUserRequest: RequestItem {
         RequestItem(name: "Get user", kind: .http(HTTPRequestSpec(
-            url: "{{baseUrl}}/users/{{userId}}",
+            url: "{{baseUrl}}/users/:userId",
             queryParameters: [
                 KeyValuePair(key: "include", value: "roles,team"),
                 KeyValuePair(key: "trace", value: "{{$uuid}}"),
                 KeyValuePair(key: "verbose", value: "1", isEnabled: false)
             ],
+            pathVariables: [userID],
             headers: [KeyValuePair(key: "Accept", value: "application/json")]
         )))
     }
