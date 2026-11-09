@@ -15,7 +15,7 @@ struct SidebarProjectGroup: View {
             set: { if !isFiltering { model.setExpanded($0, project: project.id) } }
         )) {
             ForEach(section.items) { node in
-                SidebarNodeRow(node: node, projectID: project.id, isFiltering: isFiltering, model: model)
+                SidebarNodeRow(node: node, projectID: project.id, depth: 0, isFiltering: isFiltering, model: model)
             }
         } label: {
             SidebarProjectLabel(project: project, requestCount: section.requestCount, model: model)
@@ -110,35 +110,48 @@ private struct SidebarProjectMenu: View {
     }
 }
 
-/// A folder (with its children) or a request.
+/// A request, or a folder followed by its children while it is open. A folder is a row of its own rather than a
+/// `DisclosureGroup`, whose caret the outline draws ahead of the folder's pill, out of line with its sibling requests'
+/// pills. So a click on the row or its pill opens and closes it, rows indent themselves by `depth`, and
+/// `AppModel.expandFolder(at:)` and `collapseFolderOrSelectParent(at:)` stand in for the outline's ← and →.
 struct SidebarNodeRow: View {
+    /// The outline's own step between levels, which a project's rows still take from it.
+    static let indentPerLevel: CGFloat = 13
+
     let node: RequestNode
     let projectID: ProjectID
+    /// The folders between this row and its project.
+    let depth: Int
+    /// Filtering shows every folder open and remembers no change.
     let isFiltering: Bool
     let model: AppModel
 
     var body: some View {
         switch node {
         case .request(let request):
-            SidebarRequestLabel(request: request, projectID: projectID, model: model)
+            SidebarRequestLabel(request: request, projectID: projectID, indent: indent, model: model)
         case .folder(let folder):
-            DisclosureGroup(isExpanded: Binding(
-                get: { isFiltering || model.isExpanded(folder: folder.id, in: projectID) },
-                set: { if !isFiltering { model.setExpanded($0, folder: folder.id, in: projectID) } }
-            )) {
+            let isExpanded = isFiltering || model.isExpanded(folder: folder.id, in: projectID)
+            SidebarFolderLabel(
+                folder: folder, projectID: projectID, indent: indent, isExpanded: isExpanded, isFiltering: isFiltering, model: model
+            )
+            if isExpanded {
                 ForEach(folder.children) { child in
-                    SidebarNodeRow(node: child, projectID: projectID, isFiltering: isFiltering, model: model)
+                    SidebarNodeRow(node: child, projectID: projectID, depth: depth + 1, isFiltering: isFiltering, model: model)
                 }
-            } label: {
-                SidebarFolderLabel(folder: folder, projectID: projectID, model: model)
             }
         }
+    }
+
+    private var indent: CGFloat {
+        CGFloat(depth) * Self.indentPerLevel
     }
 }
 
 private struct SidebarRequestLabel: View {
     let request: RequestItem
     let projectID: ProjectID
+    let indent: CGFloat
     let model: AppModel
 
     var body: some View {
@@ -153,6 +166,7 @@ private struct SidebarRequestLabel: View {
                 }
             }
         }
+        .padding(.leading, indent)
         .tag(SidebarItem.node(projectID, request.id))
         .contextMenu { SidebarItemMenu(nodeID: request.id, projectID: projectID, request: request.kind.name, model: model) }
         .draggable(SidebarDragItem(projectID: projectID, nodeID: request.id))
@@ -179,35 +193,62 @@ private struct SidebarRequestLabel: View {
 private struct SidebarFolderLabel: View {
     let folder: RequestFolder
     let projectID: ProjectID
+    let indent: CGFloat
+    let isExpanded: Bool
+    let isFiltering: Bool
     let model: AppModel
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "folder.fill")
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            SidebarRowName(item: .node(projectID, folder.id), name: folder.name, model: model)
-            Spacer(minLength: 4)
-            SidebarAccessories {
-                SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
-                if !folder.scripts.isEmpty {
-                    SidebarScriptsBadge()
+            SidebarFolderToggle(isExpanded: isExpanded, toggle: toggle)
+                .disabled(isFiltering)
+            // A click on the rest of the row selects the folder, as the table does, and opens or closes it too. The
+            // pill stays a button of its own, which opens or closes it without selecting it, as the outline's caret did.
+            HStack(spacing: 8) {
+                SidebarRowName(item: item, name: folder.name, model: model)
+                Spacer(minLength: 4)
+                SidebarAccessories {
+                    SidebarBatchRunBadge(itemID: folder.id, isFolder: true, batches: model.batches)
+                    if !folder.scripts.isEmpty {
+                        SidebarScriptsBadge()
+                    }
+                    SidebarCount(count: folder.children.count)
                 }
-                SidebarCount(count: folder.children.count)
             }
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded(toggleOnClick))
         }
-            .tag(SidebarItem.node(projectID, folder.id))
-            .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, request: nil, model: model) }
-            .draggable(SidebarDragItem(projectID: projectID, nodeID: folder.id))
-            .dropDestination(for: SidebarDragItem.self) { items, _ in
-                var moved = false
-                for item in items where item.projectID == projectID && model.canMove(item.nodeID, in: projectID, into: folder.id) {
-                    model.move(item.nodeID, in: projectID, to: folder.id, at: nil)
-                    moved = true
-                }
-                return moved
+        .padding(.leading, indent)
+        .tag(item)
+        .contextMenu { SidebarItemMenu(nodeID: folder.id, projectID: projectID, request: nil, model: model) }
+        .draggable(SidebarDragItem(projectID: projectID, nodeID: folder.id))
+        .dropDestination(for: SidebarDragItem.self) { items, _ in
+            var moved = false
+            for item in items where item.projectID == projectID && model.canMove(item.nodeID, in: projectID, into: folder.id) {
+                model.move(item.nodeID, in: projectID, to: folder.id, at: nil)
+                moved = true
             }
+            return moved
+        }
+    }
+
+    private var item: SidebarItem {
+        .node(projectID, folder.id)
+    }
+
+    /// Reads the model rather than `isExpanded`, which a click can outrun before the row redraws.
+    private func toggle() {
+        model.setExpanded(!model.isExpanded(folder: folder.id, in: projectID), folder: folder.id, in: projectID)
+    }
+
+    /// Filtering shows every folder open; a rename's field takes clicks for itself; Control-click opens the menu. A
+    /// double-click's second click is left alone, or the folder would open and close again at once.
+    private func toggleOnClick() {
+        guard !isFiltering, model.renaming != item, !NSEvent.modifierFlags.contains(.control),
+              (NSApp.currentEvent?.clickCount ?? 1) <= 1 else {
+            return
+        }
+        toggle()
     }
 }
 
@@ -283,13 +324,12 @@ private struct SidebarCount: View {
     }
 }
 
-/// A compact method name, "gRPC", or "WS", on a tinted pill, sized so request names line up.
-/// A request's protocol, or its HTTP method, as the sidebar and the run sheet show it.
+/// A request's compact HTTP method, "gRPC", or "WS" on a tinted pill, as the sidebar and the run sheet show it.
 struct RequestKindPill: View {
     let kind: RequestKind
 
     var body: some View {
-        Group {
+        SidebarPill(tint: tint) {
             switch kind {
             case .http(let spec):
                 MethodBadge(method: spec.method, compact: true)
@@ -299,11 +339,6 @@ struct RequestKindPill: View {
                 WebSocketBadge(compact: true)
             }
         }
-        .frame(width: 38, height: 16)
-        .background(
-            RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius, style: .continuous)
-                .fill(tint.opacity(0.16))
-        )
     }
 
     private var tint: Color {
@@ -312,5 +347,22 @@ struct RequestKindPill: View {
         case .grpc: GRPCBadge.color
         case .webSocket: WebSocketBadge.color
         }
+    }
+}
+
+/// The pill under a request's kind or a folder's glyph. Every one is the same width, so the names beside them line up:
+/// in the sidebar, a level's folders and requests share one column.
+struct SidebarPill<Content: View>: View {
+    let tint: Color
+    var fillOpacity = 0.16
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(width: 38, height: 16)
+            .background(
+                RoundedRectangle(cornerRadius: AppMetrics.badgeCornerRadius, style: .continuous)
+                    .fill(BadgeTint(color: tint).opacity(fillOpacity))
+            )
     }
 }

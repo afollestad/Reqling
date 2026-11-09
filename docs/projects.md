@@ -19,6 +19,7 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 
 - **Create** a project in Reqling's own folder, or choose a location such as a repository, then add folders and requests in the sidebar.
 - **Open a shared one** with **Add Project Folder…**.
+- **Folders** open and close with a click, or with → and ← when selected. ← inside a folder selects it, and a click on its icon opens or closes it without selecting it.
 - **Renaming.** A new folder or request starts with its name ready to type, and Return renames the selected item in place. Renames move files rather than rewriting them.
 - **Deleting** asks first, then moves the files to the Trash, on every Mac that [syncs](#syncing-with-icloud) the project.
 - **Outside edits** (a `git pull`, an editor) appear in the window as soon as they land.

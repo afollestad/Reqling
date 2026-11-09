@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// A sidebar row's name, renamed in place: while `AppModel.renaming` names the row, a field stands in for the label.
-/// Return or clicking away saves, and Escape cancels. On the selected row, Return starts it.
+/// Return or clicking away saves, and Escape cancels. On the selected row, Return starts it, and the same key monitor
+/// gives folders ← and →.
 struct SidebarRowName: View {
     let item: SidebarItem
     let name: String
@@ -19,11 +20,25 @@ struct SidebarRowName: View {
                 .fontWeight(isEmphasized ? .semibold : nil)
                 .lineLimit(1)
                 .background {
-                    // Selection first, so only the selected row reads the library.
-                    if model.selection == item, model.canRename(item) {
-                        SidebarRenameKeyMonitor { model.beginRename(item) }
+                    if model.selection == item {
+                        SidebarRowKeyMonitor(onKey: handle)
                     }
                 }
+        }
+    }
+
+    private func handle(_ key: SidebarRowKey) -> Bool {
+        switch key {
+        case .rename:
+            guard model.canRename(item) else {
+                return false
+            }
+            model.beginRename(item)
+            return true
+        case .expand:
+            return model.expandFolder(at: item)
+        case .collapse:
+            return model.collapseFolderOrSelectParent(at: item)
         }
     }
 }

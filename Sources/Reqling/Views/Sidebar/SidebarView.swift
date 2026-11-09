@@ -31,6 +31,11 @@ struct SidebarView: View {
                     reveal(item, with: proxy)
                 }
             }
+            .onChange(of: model.selection) { _, item in
+                if let item, presence.isOnScreen {
+                    scroll(to: item, with: proxy)
+                }
+            }
         }
         .overlay {
             if model.library.projects.isEmpty {
@@ -63,6 +68,13 @@ struct SidebarView: View {
             model.endRename(item, to: nil)
             return
         }
+        scroll(to: item, with: proxy)
+    }
+
+    /// Scrolls only as far as it takes to show the whole row, so a click on a row wholly in view never moves the list. Every
+    /// selection comes here as well as renames: the table scrolls to the rows its own keys select, but not to the folder
+    /// ← selects (`AppModel.collapseFolderOrSelectParent(at:)`) or to an item an MCP client reveals.
+    private func scroll(to item: SidebarItem, with proxy: ScrollViewProxy) {
         switch item {
         case .project(let project):
             proxy.scrollTo(project)

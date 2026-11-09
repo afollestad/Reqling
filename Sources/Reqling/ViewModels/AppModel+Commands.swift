@@ -257,6 +257,35 @@ extension AppModel {
         }
     }
 
+    /// → on the selected sidebar row: opens it if it is a closed folder. The sidebar draws folders as rows of their own
+    /// rather than outline items (`SidebarNodeRow`), so the table can't. Returns whether it acted, leaving the key to
+    /// the table otherwise.
+    func expandFolder(at item: SidebarItem) -> Bool {
+        guard case .node(let project, let node) = item, !sidebar.isFiltering,
+              case .folder = library.document(project)?.node(node), !isExpanded(folder: node, in: project) else {
+            return false
+        }
+        setExpanded(true, folder: node, in: project)
+        return true
+    }
+
+    /// ← on the selected sidebar row: closes an open folder, or else selects the folder holding the row, which the
+    /// table would skip on the way to the project. Returns false for a top-level row, leaving the key to the table.
+    func collapseFolderOrSelectParent(at item: SidebarItem) -> Bool {
+        guard case .node(let project, let node) = item, let document = library.document(project) else {
+            return false
+        }
+        if case .folder = document.node(node), !sidebar.isFiltering, isExpanded(folder: node, in: project) {
+            setExpanded(false, folder: node, in: project)
+            return true
+        }
+        guard let parent = document.parentID(of: node) else {
+            return false
+        }
+        selection = .node(project, parent)
+        return true
+    }
+
     func expandAncestors(of node: RequestNodeID, in project: ProjectID) {
         let ancestors = library.document(project)?.ancestors(of: node).map(\.id) ?? []
         workspace.updateProject(project) { state in

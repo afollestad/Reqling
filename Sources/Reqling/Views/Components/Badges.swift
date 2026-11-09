@@ -1,6 +1,17 @@
 import ReqlingKit
 import SwiftUI
 
+/// A badge's color, or the selected-text color on an emphasized selection's highlight (increased
+/// `backgroundProminence`), the color the row's own text takes there. A method or protocol tinted like the accent
+/// highlight, such as PATCH's purple, would otherwise vanish into it.
+struct BadgeTint: ShapeStyle {
+    let color: Color
+
+    func resolve(in environment: EnvironmentValues) -> Color {
+        environment.backgroundProminence == .increased ? Color(nsColor: .alternateSelectedControlTextColor) : color
+    }
+}
+
 /// A method name in its method's color. System colors carry light and dark variants.
 struct MethodBadge: View {
     let method: HTTPMethod
@@ -9,7 +20,7 @@ struct MethodBadge: View {
     var body: some View {
         Text(compact ? abbreviation : method.rawValue)
             .font(.system(compact ? .caption2 : .caption, design: .monospaced).weight(.bold))
-            .foregroundStyle(Self.color(for: method))
+            .foregroundStyle(BadgeTint(color: Self.color(for: method)))
             .lineLimit(1)
             .accessibilityLabel(method.rawValue)
     }
@@ -71,7 +82,7 @@ struct GRPCBadge: View {
     var body: some View {
         Text("gRPC")
             .font(.system(compact ? .caption2 : .caption, design: .monospaced).weight(.bold))
-            .foregroundStyle(Self.color)
+            .foregroundStyle(BadgeTint(color: Self.color))
             .lineLimit(1)
             .accessibilityLabel("gRPC")
     }
@@ -87,7 +98,7 @@ struct WebSocketBadge: View {
     var body: some View {
         Text(compact ? "WS" : "WebSocket")
             .font(.system(compact ? .caption2 : .caption, design: .monospaced).weight(.bold))
-            .foregroundStyle(Self.color)
+            .foregroundStyle(BadgeTint(color: Self.color))
             .lineLimit(1)
             .accessibilityLabel("WebSocket")
     }

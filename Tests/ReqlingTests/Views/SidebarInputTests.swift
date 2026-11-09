@@ -5,13 +5,13 @@ import XCTest
 
 @testable import Reqling
 
-/// Return and Escape as AppKit delivers them, against the real `List` beside another field: the key monitor only sees
+/// Keys and clicks as AppKit delivers them, against the real `List` beside another field: the key monitor only sees
 /// events sent through `NSApp`, and only a neighbour proves Return elsewhere keeps working.
 @MainActor
-final class SidebarRenameKeyboardTests: XCTestCase {
+final class SidebarInputTests: XCTestCase {
     private var fixture: AppFixture!
     private var project: SnapshotProject!
-    private var window: SidebarRenameTestWindow!
+    private var window: SidebarInputTestWindow!
     private var controller: NSHostingController<AnyView>!
 
     override func setUp() async throws {
@@ -27,7 +27,7 @@ final class SidebarRenameKeyboardTests: XCTestCase {
             .transaction { $0.animation = nil }
         ))
         let frame = NSRect(x: -3_000, y: -3_000, width: 480, height: 420)
-        window = SidebarRenameTestWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window = SidebarInputTestWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
         window.setFrame(frame, display: false)
@@ -115,7 +115,7 @@ final class SidebarRenameKeyboardTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: json).write(to: projectFile)
         fixture.library.reload(project.id)
         fixture.model.libraryDidChange()
-        let table = try await focusSidebar(selecting: .node(project.id, project.listUsers), expectsMonitor: false)
+        let table = try await focusSidebar(selecting: .node(project.id, project.listUsers))
 
         try sendKey()
         settle()
@@ -229,6 +229,78 @@ final class SidebarRenameKeyboardTests: XCTestCase {
         XCTAssertNil(fixture.model.renaming)
     }
 
+    /// Folders are rows of their own, so → and ← open and close them, and ← from inside one selects it rather than
+    /// passing it for the project. A top-level row's ← is left to the table.
+    func testArrowKeysOpenAndCloseFoldersAndLeaveThem() async throws {
+        let folder = SidebarItem.node(project.id, project.folder)
+        let purgeCache = try XCTUnwrap(fixture.library.document(project.id)?.children(of: project.folder)?.first?.id)
+        _ = try await focusSidebar(selecting: folder)
+
+        try sendKey(123, characters: "\u{f702}", flags: [.numericPad, .function])
+        await waitUntil("the folder to close") { !self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id) }
+        XCTAssertFalse(fixture.model.collapseFolderOrSelectParent(at: folder), "A closed top-level folder's ← is the table's")
+        try sendKey(124, characters: "\u{f703}", flags: [.numericPad, .function])
+        await waitUntil("the folder to open") { self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id) }
+
+        _ = try await focusSidebar(selecting: .node(project.id, purgeCache))
+        try sendKey(123, characters: "\u{f702}", flags: [.numericPad, .function])
+        await waitUntil("the selection to move to the folder") { self.fixture.model.selection == folder }
+        XCTAssertTrue(fixture.model.isExpanded(folder: project.folder, in: project.id))
+    }
+
+    /// ← from deep in a long folder selects the folder above the fold and brings it into view, as the table does for
+    /// the rows its own keys select.
+    func testLeftArrowScrollsTheFolderItSelectsIntoView() async throws {
+        let folder = project.folder
+        try fixture.library.mutate(project.id) { document in
+            for index in 0..<40 {
+                try document.insert(.request(RequestItem(name: "Extra \(index)", kind: .http(HTTPRequestSpec()))), into: folder)
+            }
+        }
+        let last = try XCTUnwrap(fixture.library.document(project.id)?.children(of: folder)?.last?.id)
+        let table = try await focusSidebar(selecting: .node(project.id, last))
+        let top = table.visibleRect.minY
+
+        try sendKey(123, characters: "\u{f702}", flags: [.numericPad, .function])
+
+        await waitUntil("the folder to scroll into view") {
+            self.settle()
+            guard self.fixture.model.selection == .node(self.project.id, folder), table.selectedRow >= 0 else {
+                return false
+            }
+            let row = table.rect(ofRow: table.selectedRow)
+            return row.minY < top && table.visibleRect.contains(row)
+        }
+    }
+
+    /// A click on a folder's row selects it, as the table does for any row, and opens or closes it too. A double-click
+    /// toggles it once.
+    func testClickingAFolderRowSelectsAndTogglesIt() async throws {
+        let folder = SidebarItem.node(project.id, project.folder)
+        let table = try await focusSidebar(selecting: folder)
+        let row = table.selectedRow
+        _ = try await focusSidebar(selecting: .node(project.id, project.listUsers))
+        let rect = table.rect(ofRow: row)
+        let point = table.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+
+        try click(at: point)
+        await waitUntil("the folder to be selected and closed") {
+            self.settle()
+            return self.fixture.model.selection == folder && !self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id)
+        }
+        try click(at: point)
+        await waitUntil("the folder to open again") {
+            self.settle()
+            return self.fixture.model.isExpanded(folder: self.project.folder, in: self.project.id)
+        }
+        XCTAssertEqual(fixture.model.selection, folder)
+
+        try click(at: point)
+        try click(at: point, count: 2)
+        settle()
+        XCTAssertFalse(fixture.model.isExpanded(folder: project.folder, in: project.id))
+    }
+
     func testCommittedNamesAreTrimmedAndBlankOrUnchangedOnesKeepTheOldName() {
         XCTAssertEqual(InlineRenameField.committedName("  Users ", replacing: "List users"), "Users")
         XCTAssertNil(InlineRenameField.committedName("   ", replacing: "List users"))
@@ -238,16 +310,14 @@ final class SidebarRenameKeyboardTests: XCTestCase {
     // MARK: - Helpers
 
     /// Selects `item` and gives the sidebar's table the keyboard, as a click on the row would.
-    private func focusSidebar(selecting item: SidebarItem, expectsMonitor: Bool = true) async throws -> NSTableView {
+    private func focusSidebar(selecting item: SidebarItem) async throws -> NSTableView {
         fixture.model.selection = item
         settle()
         let table = try XCTUnwrap(descendants(of: NSTableView.self).first)
         XCTAssertTrue(window.makeFirstResponder(table))
-        if expectsMonitor {
-            await waitUntil("the selected row's key monitor") {
-                self.settle()
-                return self.descendants(of: SidebarRenameKeyMonitorView.self).contains { $0.window === self.window }
-            }
+        await waitUntil("the selected row's key monitor") {
+            self.settle()
+            return self.descendants(of: SidebarRowKeyMonitorView.self).contains { $0.window === self.window }
         }
         return table
     }
@@ -291,6 +361,30 @@ final class SidebarRenameKeyboardTests: XCTestCase {
         }
     }
 
+    /// Clicks the window at `point`, in its coordinates. The table may track a click in a loop of its own until the
+    /// button comes up, so the mouse-up waits in the queue first; whatever doesn't take it from there gets it after.
+    private func click(at point: NSPoint, count: Int = 1) throws {
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(
+                with: type,
+                location: point,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: count,
+                pressure: type == .leftMouseDown ? 1 : 0
+            ))
+        }
+        let mouseDown = try event(.leftMouseDown)
+        NSApp.postEvent(try event(.leftMouseUp), atStart: false)
+        window.sendEvent(mouseDown)
+        if let mouseUp = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) {
+            window.sendEvent(mouseUp)
+        }
+    }
+
     /// Runs one pass of the run loop without waiting, so SwiftUI applies pending updates and lays the window out.
     private func settle() {
         RunLoop.current.run(mode: .default, before: .distantPast)
@@ -314,7 +408,7 @@ final class SidebarRenameKeyboardTests: XCTestCase {
 }
 
 /// XCTest never makes an offscreen host the application's key window, which the key monitor requires.
-private final class SidebarRenameTestWindow: NSWindow {
+private final class SidebarInputTestWindow: NSWindow {
     override var canBecomeKey: Bool {
         true
     }
