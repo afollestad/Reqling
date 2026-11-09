@@ -23,7 +23,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/uber/needle.git", revision: "69f7a889d2736f2621c6083ac29e0a75d158f249"),
-        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", exact: "1.19.2"),
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", exact: "1.19.7"),
         // gRPC: the core client, its HTTP/2 transport, protobuf serializers, and the descriptor types the codec reads.
         .package(url: "https://github.com/grpc/grpc-swift-2.git", exact: "2.4.4"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", exact: "2.12.0"),
