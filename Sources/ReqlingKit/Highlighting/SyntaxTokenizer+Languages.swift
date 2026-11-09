@@ -7,7 +7,8 @@ struct CompiledSpec: @unchecked Sendable {
     struct Rule {
         let regex: NSRegularExpression
         let role: SyntaxRole
-        /// Colors only this capture group (YAML keys exclude their indentation).
+        /// Colors only this capture group, so a rule can require what comes before its match without coloring it (YAML keys
+        /// exclude their indentation, and its quotes and comments need a scalar's start or a blank before them).
         let captureGroup: Int?
     }
 
@@ -40,7 +41,13 @@ struct CompiledSpec: @unchecked Sendable {
             .xml: markup,
             .html: markup,
             .yaml: CompiledSpec(
-                protected: [rule("#.*$", .comment), rule(doubleQuoted, .string), rule(#"'[^']*'"#, .string)],
+                // A quote opens a string only where a value starts (a line's indentation, `: `, `- `, `[`, `{`, `,`), and
+                // a `#` a comment only after a blank, so `don't`, a block scalar's apostrophes, and `/#anchor` stay plain.
+                protected: [
+                    rule(#"(^|[ \t])(#.*$)"#, .comment, group: 2),
+                    rule(#"(^[ \t]*|[:?-][ \t]+|[\[{,][ \t]*)("(?:[^"\\\n]|\\.)*")"#, .string, group: 2),
+                    rule(#"(^[ \t]*|[:?-][ \t]+|[\[{,][ \t]*)('(?:[^'\n]|'')*')"#, .string, group: 2)
+                ],
                 unprotected: [
                     rule(#"^[\s-]*([A-Za-z_][A-Za-z0-9_.-]*)\s*:"#, .property, group: 1),
                     keywords(["true", "false", "null", "yes", "no", "~"]),

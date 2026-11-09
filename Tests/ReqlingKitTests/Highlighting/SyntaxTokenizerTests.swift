@@ -36,6 +36,15 @@ final class SyntaxTokenizerTests: XCTestCase {
         ])
     }
 
+    /// A quote opens a YAML string only where a value starts, and a `#` a comment only after a blank, so prose in a
+    /// plain or block scalar stays plain.
+    func testYAMLQuotesAndCommentsNeedTheirContext() {
+        assertRoles("note: we've done it's\nurl: https://x/#top\nlist: ['a', \"b\"]", .yaml, [
+            ("note", .property), ("url", .property), ("list", .property), ("'a'", .string), ("\"b\"", .string)
+        ])
+        assertRoles("text: |-\n  it's a block\n  'quoted' line", .yaml, [("text", .property), ("'quoted'", .string)])
+    }
+
     func testMarkup() {
         assertRoles(#"<a href="x">&amp;</a>"#, .xml, [
             ("<a", .keyword), ("href", .property), ("=", .symbol), (#""x""#, .string), (">", .symbol),

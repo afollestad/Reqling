@@ -81,10 +81,12 @@ public enum SyntaxTokenizer {
     /// a string (`"http://x"`) swallow the rest of the line and hide a real comment after the string.
     private static func protectedTokens(in source: String, length: Int, rules: [CompiledSpec.Rule]) -> [SyntaxToken] {
         func firstMatch(_ rule: CompiledSpec.Rule, from location: Int) -> NSRange? {
-            guard location < length else {
+            // Not anchoring `^` at the search's start, which is mid-line after a token: it means a line's start.
+            let searched = NSRange(location: location, length: length - location)
+            guard location < length, let match = rule.regex.firstMatch(in: source, options: .withoutAnchoringBounds, range: searched) else {
                 return nil
             }
-            let range = rule.regex.rangeOfFirstMatch(in: source, range: NSRange(location: location, length: length - location))
+            let range = rule.captureGroup.map { match.range(at: $0) } ?? match.range
             return range.location == NSNotFound ? nil : range
         }
         var next = rules.map { firstMatch($0, from: 0) }
