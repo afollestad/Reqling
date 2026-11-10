@@ -43,6 +43,7 @@
         media="(prefers-color-scheme: no-preference), (prefers-color-scheme: light)">
 
     <script src="scripts/dark-mode.js"></script>
+    <script src="scripts/platform-gate.js"></script>
 </head>
 
 <body>
@@ -110,7 +111,10 @@
             </p>
 
             <div class="cta-row">
-                <a class="btn-primary"
+                <!-- Both labels ship; scripts/platform-gate.js picks between them so
+                     non-Mac visitors never see an enabled button flash first. Keep the
+                     id non-generic, like the scroll-to-top button's. -->
+                <a class="btn-primary" id="release-link"
                     href="https://github.com/afollestad/Reqling/releases/latest/download/Reqling.app.zip">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -118,7 +122,8 @@
                     </svg>
                     <span class="btn-stack">
                         <span>Download</span>
-                        <span class="btn-subtext">Apple silicon, macOS 26+</span>
+                        <span class="btn-subtext download-label">Apple silicon, macOS 26+</span>
+                        <span class="btn-subtext download-label-unavailable">Only for Apple silicon Macs</span>
                     </span>
                 </a>
                 <a class="btn-ghost" href="https://github.com/afollestad/Reqling">

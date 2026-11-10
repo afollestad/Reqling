@@ -340,6 +340,27 @@ button:focus-visible,
     color: var(--secondary);
 }
 
+/* scripts/platform-gate.js flags non-Mac visitors on <html>; the download is
+   macOS-only, so the button becomes a faded, inert label there. */
+.download-label-unavailable {
+    display: none;
+}
+
+.not-macos .download-label {
+    display: none;
+}
+
+.not-macos .download-label-unavailable {
+    display: block;
+}
+
+.not-macos .btn-primary {
+    opacity: .45;
+    box-shadow: none;
+    cursor: default;
+    pointer-events: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
     .btn-primary:hover,
     .btn-ghost:hover {
