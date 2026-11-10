@@ -224,12 +224,8 @@ extension TLSFixtures {
         let namedKey = directory.appendingPathComponent("client-explicit-named-key.pem")
         let key = directory.appendingPathComponent("client-explicit-key.pem")
         let certificate = directory.appendingPathComponent("client-explicit.pem")
-        // LibreSSL writes the private scalar without leading zero bytes, a key Security cannot read: it drops that key
-        // instead of crashing. A scalar that starts nonzero keeps every run's file crashing the importer.
-        var privateKey = P256.Signing.PrivateKey()
-        while privateKey.rawRepresentation.first == 0 {
-            privateKey = P256.Signing.PrivateKey()
-        }
+        // A key Security drops would let the importer return instead of crashing.
+        let privateKey = securityReadableP256Key()
         try Data(privateKey.pemRepresentation.utf8).write(to: namedKey)
         defer { try? FileManager.default.removeItem(at: namedKey) }
         try openssl(["ec", "-in", namedKey.path, "-param_enc", "explicit", "-out", key.path], passphrase: passphrase)
@@ -268,7 +264,7 @@ extension TLSFixtures {
         let privateKeyPEM: String
         switch keyType {
         case .p256:
-            let key = P256.Signing.PrivateKey()
+            let key = securityReadableP256Key()
             publicKey = .init(key.publicKey)
             privateKeyPEM = key.pemRepresentation
         case .rsa:
@@ -302,6 +298,17 @@ extension TLSFixtures {
             privateKeyPEM: privateKeyPEM,
             derBytes: serializer.serializedBytes
         )
+    }
+
+    /// A key whose private scalar starts with a nonzero byte, as one in 256 random keys doesn't. `openssl` (LibreSSL)
+    /// writes the scalar without its leading zero bytes, a key Security cannot read, so `SecPKCS12Import` drops it and
+    /// returns no identity: every test in the process that opens the file would fail at once.
+    private static func securityReadableP256Key() -> P256.Signing.PrivateKey {
+        var key = P256.Signing.PrivateKey()
+        while key.rawRepresentation.first == 0 {
+            key = P256.Signing.PrivateKey()
+        }
+        return key
     }
 
     /// Writes `<name>.pem`, its key `<name>-key.pem`, and `<name>.p12` with the CA in its chain. An EC key is PKCS#8
