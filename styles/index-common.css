@@ -260,9 +260,10 @@ button:focus-visible,
     }
 }
 
-/* Widened from 36rem just enough to set the tagline in two lines on desktop. */
+/* Widened from 36rem so the tagline sets in two lines on desktop rather than
+   three, with room to spare for other systems' fonts. */
 .tagline {
-    max-width: 38rem;
+    max-width: 44rem;
     margin: 1rem auto 0;
     font-size: clamp(1.05rem, 1.6vw, 1.2rem);
     line-height: 1.55;
