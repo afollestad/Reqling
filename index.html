@@ -105,7 +105,7 @@
 
             <h1>Reqling</h1>
             <p class="tagline">
-                A small, native Mac client for HTTP, GraphQL, gRPC, and WebSocket APIs. Keep your requests in your
+                A native Mac client for HTTP, GraphQL, gRPC, and WebSocket APIs. Keep your requests in your
                 repository, and send them yourself or through your AI agent.
             </p>
 
@@ -118,7 +118,7 @@
                     </svg>
                     <span class="btn-stack">
                         <span>Download</span>
-                        <span class="btn-subtext">macOS 26 or later</span>
+                        <span class="btn-subtext">Apple silicon, macOS 26+</span>
                     </span>
                 </a>
                 <a class="btn-ghost" href="https://github.com/afollestad/Reqling">
@@ -155,7 +155,7 @@
                 <p class="chip">Projects</p>
                 <h2>Requests that live with your code</h2>
                 <p class="feature-copy">
-                    A project is a folder of small JSON files, so it diffs cleanly and sits in your API's own
+                    A project is a folder of small JSON files, so it diffs cleanly and can live in your API's own
                     repository. Edits from a <code>git pull</code> or your editor show up in the window as they land.
                 </p>
             </div>
@@ -213,7 +213,7 @@
             <figure class="protocol-panel" id="graphql">
                 <h3 class="protocol-name">GraphQL</h3>
                 <figcaption>
-                    Write queries with completion and checking from the API's schema, read by introspection or from a
+                    Write queries with completion and validation against the API's schema, from introspection or a
                     file, and browse every type beside the request.
                 </figcaption>
                 <picture>
@@ -242,7 +242,7 @@
                 <h3 class="protocol-name">Event streams</h3>
                 <figcaption>
                     A <code>text/event-stream</code> response stays open, listing each event with its type, ID, and
-                    time, and a GET stream reconnects with <code>Last-Event-ID</code>.
+                    time; a GET stream reconnects with <code>Last-Event-ID</code>.
                 </figcaption>
                 <picture>
                     <source srcset="images/events-dark.webp" type="image/webp" data-theme="dark"
@@ -274,10 +274,9 @@
             <p class="chip">Scripts</p>
             <h2>Requests that sign, chain, and check themselves</h2>
             <p class="feature-copy">
-                Run JavaScript before a request, on each event or message a stream delivers, and after its response,
-                on the request, its folders, or the whole project: sign it, save a login's token for the next request,
-                test what came back, and answer a server's messages. Scripts from Postman run as they are, and import
-                with their collection.
+                Run JavaScript before a request, after its response, and on each message a stream delivers, even to
+                send a reply. Set it on one request, a folder, or the whole project. Scripts from Postman run as they
+                are, and import with their collection.
             </p>
             <picture>
                 <source srcset="images/scripts-dark.webp" type="image/webp" data-theme="dark"
@@ -295,8 +294,8 @@
             <h2>Run the whole flow, row by row</h2>
             <p class="feature-copy">
                 Run every request in a folder or project in order, a number of times or once per row of a CSV or JSON
-                file, with scripts carrying tokens and IDs from one request to the next. Each request shows how it went
-                right in the sidebar.
+                file, with scripts carrying tokens and IDs from one request to the next. Each request's result shows
+                beside it in the sidebar.
             </p>
             <picture>
                 <source srcset="images/batch-dark.webp" type="image/webp" data-theme="dark"
@@ -337,6 +336,10 @@
                 <p>Mark a variable secret, and its value lives in your Keychain, never in the project.</p>
             </div>
             <div class="detail">
+                <h2>Trusted scripts</h2>
+                <p>Scripts from a cloned or imported project run only once you trust them.</p>
+            </div>
+            <div class="detail">
                 <h2>Mutual TLS</h2>
                 <p>Client certificates matched by host, extra trusted CAs, and passphrases in your Keychain.</p>
             </div>
@@ -346,15 +349,23 @@
             </div>
             <div class="detail">
                 <h2>Find anything</h2>
-                <p>Filter by name, method, URL, or service, and search any response in place.</p>
+                <p>Filter the sidebar by name, method, URL, service, or last run's result, and search any response in place.</p>
+            </div>
+            <div class="detail">
+                <h2>Run history</h2>
+                <p>Each run stays on your Mac: see its response again, re-run it, restore its request, or compare two line by line.</p>
+            </div>
+            <div class="detail">
+                <h2>Git stays clean</h2>
+                <p>Values scripts set stay out of the project's files, so running requests leaves no diff.</p>
+            </div>
+            <div class="detail">
+                <h2>iCloud sync</h2>
+                <p>Projects in Reqling's folder sync to all your Macs, end-to-end encrypted, with no sign-up.</p>
             </div>
             <div class="detail">
                 <h2>Updates itself</h2>
-                <p>Reqling checks for new versions, and verifies each download before it installs.</p>
-            </div>
-            <div class="detail">
-                <h2>Native</h2>
-                <p>A SwiftUI app for macOS 26, in light and dark, with no account to make.</p>
+                <p>Reqling checks for new versions and verifies each download before it installs.</p>
             </div>
         </div>
     </section>
