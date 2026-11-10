@@ -10,7 +10,7 @@ Built per the global `static-site-rules` skill, as a sibling of the Alveary, Chr
 - The motif is the courier's dotted flight paths rising up the hero's sides to a packet each: an inline SVG in `index.html` and `og-image/og-image.html` (keep both copies equal), filled and stroked in `--trail`.
 - Window screenshots are centered under their text, like Alveary's, since a window needs the full width. `#projects` and `#mcp` split their text beside a code frame instead, alternating sides; `#projects`' file tree mirrors the project layout in `main`'s `docs/projects.md`, and `#mcp`'s command mirrors Settings ▸ MCP's Claude Code setup.
 - `#protocols` tabs its GraphQL, gRPC, event stream, and WebSocket captures through `scripts/protocol-tabs.js`. Its markup ships every panel shown and the tablist hidden, so without JavaScript the captures stack under their names; keep a new protocol's panel id, tab, and caption together.
-- `#details` is plain columns between hairlines, three to a row; keep the count a multiple of three so rows stay full.
+- `#details` is plain columns between hairlines, three to a row; keep the count a multiple of three so rows stay full. Alveary's `gh-pages` carries the same rules, so change the two together.
 
 ## Theming
 
