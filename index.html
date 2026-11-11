@@ -279,9 +279,8 @@
             <p class="chip">Scripts</p>
             <h2>Requests that sign, chain, and check themselves</h2>
             <p class="feature-copy">
-                Run JavaScript before a request, after its response, and on each message a stream delivers, even to
-                send a reply. Set it on one request, a folder, or the whole project. Scripts from Postman run as they
-                are, and import with their collection.
+                Run JavaScript before a request, after its response, or on each streamed message, even to reply. Set
+                it on a request, a folder, or the whole project; Postman's scripts import and run as they are.
             </p>
             <picture>
                 <source srcset="images/scripts-dark.webp" type="image/webp" data-theme="dark"
@@ -298,9 +297,8 @@
             <p class="chip">Folder runs</p>
             <h2>Run the whole flow, row by row</h2>
             <p class="feature-copy">
-                Run every request in a folder or project in order, a number of times or once per row of a CSV or JSON
-                file, with scripts carrying tokens and IDs from one request to the next. Each request's result shows
-                beside it in the sidebar.
+                Run a folder or project's requests in order, repeatedly or once per row of a CSV or JSON file, with
+                scripts carrying tokens and IDs along. Each result shows beside its request in the sidebar.
             </p>
             <picture>
                 <source srcset="images/batch-dark.webp" type="image/webp" data-theme="dark"
@@ -338,7 +336,15 @@
         <div class="container details">
             <div class="detail">
                 <h2>Secrets stay put</h2>
-                <p>Mark a variable secret, and its value lives in your Keychain, never in the project.</p>
+                <p>Secrets live in your Keychain, and values scripts set stay out of the project, so running requests leaves no diff.</p>
+            </div>
+            <div class="detail">
+                <h2>Bring your requests</h2>
+                <p>Import Postman collections and environments or OpenAPI documents, and paste or copy any request as cURL.</p>
+            </div>
+            <div class="detail">
+                <h2>Run history</h2>
+                <p>Each run stays on your Mac: see its response again, re-run it, restore its request, or compare two line by line.</p>
             </div>
             <div class="detail">
                 <h2>Trusted scripts</h2>
@@ -349,28 +355,8 @@
                 <p>Client certificates matched by host, extra trusted CAs, and passphrases in your Keychain.</p>
             </div>
             <div class="detail">
-                <h2>Bring your requests</h2>
-                <p>Import Postman collections and environments or OpenAPI documents, and paste or copy any request as cURL.</p>
-            </div>
-            <div class="detail">
-                <h2>Find anything</h2>
-                <p>Filter the sidebar by name, method, URL, service, or last run's result, and search any response in place.</p>
-            </div>
-            <div class="detail">
-                <h2>Run history</h2>
-                <p>Each run stays on your Mac: see its response again, re-run it, restore its request, or compare two line by line.</p>
-            </div>
-            <div class="detail">
-                <h2>Git stays clean</h2>
-                <p>Values scripts set stay out of the project's files, so running requests leaves no diff.</p>
-            </div>
-            <div class="detail">
                 <h2>iCloud sync</h2>
                 <p>Projects in Reqling's folder sync to all your Macs, end-to-end encrypted, with no sign-up.</p>
-            </div>
-            <div class="detail">
-                <h2>Updates itself</h2>
-                <p>Reqling checks for new versions and verifies each download before it installs.</p>
             </div>
         </div>
     </section>
