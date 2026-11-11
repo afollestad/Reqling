@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source srcset="docs/images/app-icon-dark.png" media="(prefers-color-scheme: dark)">
-    <img src="docs/images/app-icon-light.png" alt="" width="128" height="128">
+    <img src="docs/images/app-icon-light.png" alt="" width="96" height="96">
   </picture>
 </p>
 
@@ -47,48 +47,34 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | `./scripts/snapshots.sh <verify\|record>` | Verifies or re-records snapshot baselines |
 | `./scripts/lint.sh [--fix]` | Runs SwiftLint; `--fix` autocorrects |
 | `./scripts/screenshots.sh [-b]` | Captures the website's screenshots of a demo project, in light and dark |
-| `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against; `--token` requires a bearer token, `--no-introspection` refuses introspection |
-| `./scripts/set-certificate-secrets.sh [--dry-run]` | Exports your Developer ID certificate into the release workflow's signing secrets ([RELEASING.md](RELEASING.md)) |
-| `./scripts/set-provisioning-profile-secret.sh [--dry-run] <profile>` | Checks the Developer ID provisioning profile and stores it as the release workflow's secret ([RELEASING.md](RELEASING.md)) |
-| `./scripts/generate-protos.sh` | Regenerates protobuf code and descriptor sets after a `.proto` change |
+| `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against |
 
-- **Launch through `run.sh`**, not `swift run` or Xcode. Reqling is a SwiftPM package, and only the `.app` bundle `build.sh` assembles has the Info.plist, the assets compiled with `actool`, the `ReqlingPKCS12Probe` and `ReqlingScriptRunner` helpers with the script runtime, and the signature.
-- **Dependency injection** uses [Needle](https://github.com/uber/needle). The build and test scripts regenerate its providers before compiling, which is why `setup.sh` installs the matching `needle` CLI.
-- **Updates.** Builds run from `.build/` can check for updates but not install them.
+Launch through `run.sh`, not `swift run` or Xcode, since only the bundle `build.sh` assembles has the Info.plist, assets, helpers, and signature. Builds run from `.build/` can check for updates but not install them.
 
 ## Architecture
 
 | Path | Holds |
 | --- | --- |
-| `Sources/ReqlingKit` | Everything that isn't UI: the project format, Postman and OpenAPI import, templating, HTTP, gRPC, WebSockets, GraphQL schemas, TLS, the request runner, the MCP server, and iCloud sync. Tested without the app. |
-| `Sources/Reqling` | The app: lifecycle, dependency injection, view models, and views |
-| `Sources/ReqlingTemplating` | `{{variable}}` parsing, expansion, and the order variable layers resolve in, Foundation only so helpers can share it |
-| `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), the only module that imports it, since its declarations change how unrelated code type-checks |
-| `Sources/ReqlingYAML` | YAML read and written through [Yams](https://github.com/jpsim/Yams) (libyaml), the only module that imports it, for the same reason |
-| `Sources/ReqlingScriptProtocol` | What the app and the script runner exchange: the input, the events, and their framing |
-| `Sources/ReqlingScriptRunner` | A helper that runs pre-request, stream, and post-response scripts in JavaScriptCore, killed at its time limit, with its JavaScript runtime and the vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
+| `Sources/ReqlingKit` | Everything that isn't UI, from the project format and networking to the MCP server and iCloud sync, tested without the app |
+| `Sources/Reqling` | The app: lifecycle, dependency injection through [Needle](https://github.com/uber/needle), view models, and views |
+| `Sources/ReqlingTemplating` | `{{variable}}` parsing and expansion, Foundation only so helpers can share it |
+| `Sources/ReqlingGraphQLEngine` | GraphQL SDL and validation from [GraphQLSwift](https://github.com/GraphQLSwift/GraphQL), kept in its own module |
+| `Sources/ReqlingYAML` | YAML through [Yams](https://github.com/jpsim/Yams), kept in its own module |
+| `Sources/ReqlingScriptProtocol` | What the app and the script runner exchange |
+| `Sources/ReqlingScriptRunner` | A helper that runs request scripts in JavaScriptCore, with vendored crypto-js and lodash (MIT; licenses in `Runtime/vendor`) |
 | `Sources/ReqlingPKCS12Probe` | A helper that opens each PKCS#12 file first, so a file that crashes Apple's importer can't take the app down |
 | `Tools/GraphQLFixtureServer` | A separate package that executes a real schema, for the tests and `graphql-server.sh` |
 | `Tests` | `ReqlingKitTests` and `ReqlingTests`, including snapshots |
 
-- **Networking.** HTTP goes through URLSession. gRPC and WebSockets go through [SwiftNIO](https://github.com/apple/swift-nio) and NIOSSL, which sees every WebSocket frame, server pings included, and shares one TLS setup with gRPC.
-- **Tests run unattended.** Servers bind loopback on ephemeral ports, nothing touches your Keychain, Trash, or real Application Support, and TLS certificates and keys are minted per run, never committed.
+HTTP goes through URLSession, and gRPC and WebSockets through [SwiftNIO](https://github.com/apple/swift-nio) and NIOSSL, which see every frame and share one TLS setup. Tests bind loopback ports and never touch your Keychain, Trash, or Application Support.
 
 ## Debug builds
 
-- **Separate identity.** Debug builds use `com.afollestad.reqling.debug` and appear as **Reqling Dev**, with their own preferences and Application Support folder, so they never touch a release build's data.
-- **Signing.** They're signed with your Apple Development certificate when one is installed, so Keychain access survives rebuilds; otherwise they're signed ad hoc, and macOS asks again after each build. Set `DEBUG_CODESIGN_IDENTITY` to pick an identity, or `-` to force ad hoc.
-- **iCloud sync.** Reqling Dev syncs, against CloudKit's Development environment, only when a macOS App Development profile for `com.afollestad.reqling.debug` lists this Mac and that certificate: `DEBUG_PROVISIONING_PROFILE`, or one in `~/Library/Developer/Xcode/UserData/Provisioning Profiles`. Without one it builds as before, and its iCloud settings say sync is unavailable. The App ID needs iCloud with the container `iCloud.com.afollestad.reqling`, and Push Notifications.
+Debug builds use `com.afollestad.reqling.debug` and appear as **Reqling Dev**, with their own preferences and data. They're signed with your Apple Development certificate when one is installed, so Keychain access survives rebuilds, and otherwise ad hoc. Reqling Dev syncs through CloudKit's Development environment only with a development provisioning profile that lists this Mac and your certificate, for an App ID with iCloud (container `iCloud.com.afollestad.reqling`) and Push Notifications; `scripts/build.sh` covers the overrides.
 
 ## Releases
 
-```sh
-./scripts/build.sh --release
-```
-
-This builds `.build/app/release/Reqling.app` for Apple silicon, with a `dSYMs` folder beside it holding one dSYM per executable. Set `CODESIGN_IDENTITY` (for example `"Developer ID Application"`) to sign with the hardened runtime for distribution, and `PROVISIONING_PROFILE` to the Developer ID profile it embeds for iCloud sync ([RELEASING.md](RELEASING.md)); otherwise it's signed ad hoc, without iCloud.
-
-CI builds, signs, notarizes, and publishes releases from `main`; [RELEASING.md](RELEASING.md) covers versioning, the publish gate, and the signing secrets.
+CI builds, signs, notarizes, and publishes releases from `main`; [RELEASING.md](RELEASING.md) covers versioning, signing, and the publish gate.
 
 ## License
 
