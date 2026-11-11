@@ -145,18 +145,13 @@ private final class ScreenshotKeyWindowView: NSView {
 }
 
 extension AppStorageProfile {
-    /// One fixed temporary root and defaults suite, wiped at every screenshot launch rather than at quit, since
+    /// Preferences in memory, and one fixed temporary root, wiped at every screenshot launch rather than at quit, since
     /// `scripts/screenshots.sh` ends each launch with a signal that skips `applicationWillTerminate`. Ephemeral, so the
     /// graph keeps secrets and the MCP token in memory, trashes into its own folder, and stays offline.
     static func screenshots(fileManager: FileManager = .default) -> AppStorageProfile {
-        let suiteName = "com.afollestad.reqling.screenshots"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            fatalError("Failed to create the screenshot UserDefaults suite: \(suiteName)")
-        }
         let profile = AppStorageProfile(
             applicationSupportDirectory: fileManager.temporaryDirectory.appendingPathComponent("ReqlingScreenshots", isDirectory: true),
-            settingsDefaults: defaults,
-            settingsDefaultsSuiteName: suiteName,
+            preferences: MemoryPreferences(),
             isEphemeral: true
         )
         profile.cleanUp(fileManager: fileManager)

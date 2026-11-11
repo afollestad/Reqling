@@ -3,7 +3,7 @@ import MCP
 @testable import ReqlingKit
 import XCTest
 
-/// The MCP tools over a temporary library, a wiped defaults suite, in-memory secrets, a directory trash, no protoc, and a
+/// The MCP tools over a temporary library, preferences and secrets in memory, a directory trash, no protoc, and a
 /// stub window, dispatched the way the server dispatches them.
 @MainActor
 final class MCPFixture {
@@ -16,7 +16,6 @@ final class MCPFixture {
     let context: MCPToolContext
     let dispatcher: MCPToolDispatcher
     let host = StubMCPHost()
-    private let suiteName = "com.afollestad.reqling.tests.mcp.\(UUID().uuidString)"
 
     /// `sleep` times out tool calls; `runnerSleep` waits out an event stream's reconnects and time limit.
     init(
@@ -25,7 +24,7 @@ final class MCPFixture {
     ) throws {
         storage = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: storage.directory.file("Support/workspace.json"))
-        settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        settings = SettingsStore(preferences: MemoryPreferences())
         protoWorkspaces = ProtoWorkspaceStore(environment: ProtoWorkspaceEnvironment(
             importer: ProtocImporter(cacheDirectory: storage.directory.file("Support/ProtocCache")),
             locateProtoc: { nil },
@@ -67,7 +66,6 @@ final class MCPFixture {
 
     func cleanUp() {
         protoWorkspaces.retain(only: [])
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         storage.directory.remove()
     }
 

@@ -115,19 +115,19 @@ public struct AppSettings: Hashable, Sendable, Codable {
     }
 }
 
-/// Persists `AppSettings` as one JSON value in a defaults domain and publishes changes. Read settings only through
-/// it; reading the defaults directly skips the decoding defaults and clamping.
+/// Persists `AppSettings` as one JSON value in `preferences` and publishes changes. Read settings only through it;
+/// reading the preferences directly skips the decoding defaults and clamping.
 @MainActor
 @Observable
 public final class SettingsStore {
     public static let defaultsKey = "settings"
 
     public private(set) var settings: AppSettings
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let preferences: any Preferences
 
-    public init(defaults: UserDefaults) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: Self.defaultsKey), let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+    public init(preferences: any Preferences) {
+        self.preferences = preferences
+        if let data = preferences.data(forKey: Self.defaultsKey), let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
             self.settings = settings
         } else {
             settings = AppSettings()
@@ -142,7 +142,7 @@ public final class SettingsStore {
         }
         settings = copy
         if let data = try? JSONEncoder().encode(copy) {
-            defaults.set(data, forKey: Self.defaultsKey)
+            preferences.set(data, forKey: Self.defaultsKey)
         }
     }
 }

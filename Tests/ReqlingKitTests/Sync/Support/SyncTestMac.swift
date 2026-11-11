@@ -13,7 +13,6 @@ final class SyncTestMac {
     private(set) var transport: SyncTestTransport
     private(set) var sync: LibrarySync
     private let cloud: SyncTestCloud
-    private let suiteName = "com.afollestad.reqling.tests.sync.\(UUID().uuidString)"
     /// How far this Mac's clock runs ahead of the true time, the server's.
     var clockOffset: TimeInterval = 0
 
@@ -28,7 +27,7 @@ final class SyncTestMac {
     init(cloud: SyncTestCloud) throws {
         storage = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: storage.directory.file("Support/workspace.json"))
-        let settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        let settings = SettingsStore(preferences: MemoryPreferences())
         runner = RequestRunner(
             library: storage.library,
             workspace: workspace,
@@ -76,7 +75,6 @@ final class SyncTestMac {
 
     func cleanUp() {
         sync.stop()
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         storage.directory.remove()
     }
 

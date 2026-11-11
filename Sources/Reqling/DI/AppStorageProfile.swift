@@ -1,14 +1,15 @@
 import Foundation
+import ReqlingKit
 
 /// Where the app keeps everything it writes. Every writable path derives from this profile, so the
 /// test suites and the dev build never touch the release build's data.
 ///
-/// `@unchecked Sendable` because `UserDefaults` is documented thread-safe and the profile is
-/// immutable after bootstrap.
+/// `@unchecked Sendable` because `UserDefaults` is documented thread-safe, `MemoryPreferences` locks,
+/// and the profile is immutable after bootstrap.
 struct AppStorageProfile: @unchecked Sendable {
     let applicationSupportDirectory: URL
-    let settingsDefaults: UserDefaults
-    let settingsDefaultsSuiteName: String?
+    /// Where `SettingsStore` persists.
+    let preferences: any Preferences
     /// Only ephemeral profiles may be wiped; `cleanUp()` refuses everything else.
     let isEphemeral: Bool
 
@@ -19,38 +20,26 @@ struct AppStorageProfile: @unchecked Sendable {
         return AppStorageProfile(
             applicationSupportDirectory: userApplicationSupportDirectory
                 .appendingPathComponent(bundleIdentifier, isDirectory: true),
-            settingsDefaults: .standard,
-            settingsDefaultsSuiteName: nil,
+            preferences: UserDefaults.standard,
             isEphemeral: false
         )
     }
 
-    /// A unique temporary root and defaults suite per call, so tests can run in parallel without
-    /// sharing state. Pair every call with `cleanUp()`.
+    /// A unique temporary root and preferences in memory per call, so tests can run in parallel
+    /// without sharing state. Pair every call with `cleanUp()`.
     static func test(identifier: UUID = UUID(), fileManager: FileManager = .default) -> AppStorageProfile {
         let profileID = "\(ProcessInfo.processInfo.processIdentifier)-\(identifier.uuidString.lowercased())"
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("ReqlingTests", isDirectory: true)
             .appendingPathComponent(profileID, isDirectory: true)
-        let suiteName = "com.afollestad.reqling.tests.\(profileID)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            fatalError("Failed to create the test UserDefaults suite: \(suiteName)")
-        }
-        defaults.removePersistentDomain(forName: suiteName)
-        return AppStorageProfile(
-            applicationSupportDirectory: directory,
-            settingsDefaults: defaults,
-            settingsDefaultsSuiteName: suiteName,
-            isEphemeral: true
-        )
+        return AppStorageProfile(applicationSupportDirectory: directory, preferences: MemoryPreferences(), isEphemeral: true)
     }
 
-    /// Removes an ephemeral profile's directory and defaults suite. A no-op for production storage.
+    /// Removes an ephemeral profile's directory; its preferences live only in memory. A no-op for production storage.
     func cleanUp(fileManager: FileManager = .default) {
-        guard isEphemeral, let settingsDefaultsSuiteName else {
+        guard isEphemeral else {
             return
         }
-        settingsDefaults.removePersistentDomain(forName: settingsDefaultsSuiteName)
         try? fileManager.removeItem(at: applicationSupportDirectory)
     }
 

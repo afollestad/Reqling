@@ -72,9 +72,8 @@ fi
 work_dir="$repo_root/.build/screenshot-work"
 shots_app="$work_dir/$app_name.app"
 shots_bundle_id="com.afollestad.reqling.shots"
-# `ScreenshotMode`'s storage: `AppStorageProfile.screenshots` names this defaults suite and this folder under the
-# app's temporary directory, which is the per-user one even when the shell's TMPDIR points elsewhere.
-screenshot_suite="com.afollestad.reqling.screenshots"
+# `ScreenshotMode`'s storage: `AppStorageProfile.screenshots` names this folder under the app's temporary directory,
+# which is the per-user one even when the shell's TMPDIR points elsewhere. Its preferences live only in memory.
 screenshot_storage="$(getconf DARWIN_USER_TEMP_DIR)ReqlingScreenshots"
 executable_pattern="^$(printf '%s' "$shots_app/Contents/MacOS/$app_name" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
 
@@ -91,7 +90,6 @@ stop_app() {
 cleanup() {
   stop_app
   defaults delete "$shots_bundle_id" >/dev/null 2>&1 || true
-  defaults delete "$screenshot_suite" >/dev/null 2>&1 || true
   rm -rf "$screenshot_storage" "$work_dir/frames"
 }
 trap cleanup EXIT

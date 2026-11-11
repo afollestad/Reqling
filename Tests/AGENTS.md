@@ -17,7 +17,7 @@ These instructions apply to everything under `Tests/`. `Tests/ReqlingTests/Snaps
 - **No external network.** HTTP goes through `URLProtocol` stubs; local servers (HTTP, gRPC, MCP, fixtures) bind loopback port 0, never a fixed port. Checks against public servers belong in manual verification, never in a suite.
     - Serve GraphQL from `GraphQLFixtureServer`, which executes a real schema through GraphQLSwift; hand-written introspection JSON drifts from what servers send.
     - App graphs never introspect (`Sources/Reqling/DI/AppComponent+GraphQL.swift`), so a GraphQL request in an app test or snapshot gets its schema from a file or a seeded `GraphQLSchemaStore`.
-- **No developer or machine state.** Use `AppStorageProfile.test()`, always paired with its `cleanUp()`, instead of Application Support, a unique wiped `UserDefaults` suite instead of `.standard`, and in-memory secret stores instead of the Keychain.
+- **No developer or machine state.** Use `AppStorageProfile.test()`, always paired with its `cleanUp()`, instead of Application Support, `MemoryPreferences` instead of `.standard` or a `UserDefaults` suite (which leaves a plist in `~/Library/Preferences` even once removed), and in-memory secret stores instead of the Keychain.
     - Inject a trasher instead of calling `FileManager.trashItem`, which would fill the developer's real Trash.
     - Put `NSOpenPanel`, `NSWorkspace`, `NSApplication.terminate`, and process launches behind protocols.
 - **External tools only where `scripts/setup.sh` guarantees them.** A test that needs `protoc` fails with "run ./scripts/setup.sh" when it is missing rather than skipping, so a misconfigured runner cannot pass silently. `codesign`, `spctl`, and `ditto` go through an injected command runner.

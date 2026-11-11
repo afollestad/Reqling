@@ -7,7 +7,6 @@ final class RequestRunnerTests: XCTestCase {
     var fixture: LibraryFixture!
     var workspace: WorkspaceStateStore!
     var settings: SettingsStore!
-    private var suiteName: String!
     var servers: [TestHTTPServer] = []
     var socketServers: [TestWebSocketServer] = []
     let scriptDeadline = TestSleeper(returnsAtOnce: false)
@@ -15,8 +14,7 @@ final class RequestRunnerTests: XCTestCase {
     override func setUp() async throws {
         fixture = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: fixture.directory.file("Support/workspace.json"))
-        suiteName = "com.afollestad.reqling.tests.runner.\(UUID().uuidString)"
-        settings = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
+        settings = SettingsStore(preferences: MemoryPreferences())
     }
 
     override func tearDown() async throws {
@@ -26,7 +24,6 @@ final class RequestRunnerTests: XCTestCase {
         for server in socketServers {
             try await server.shutdown()
         }
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         fixture.directory.remove()
     }
 

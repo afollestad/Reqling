@@ -7,14 +7,12 @@ import XCTest
 final class ProjectLifecycleProjectImportTests: XCTestCase {
     private var fixture: LibraryFixture!
     private var workspace: WorkspaceStateStore!
-    private var suiteName: String!
     private var lifecycle: ProjectLifecycle!
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: fixture.directory.file("Support/workspace.json"))
-        suiteName = "com.afollestad.reqling.tests.project-import.\(UUID().uuidString)"
-        let settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        let settings = SettingsStore(preferences: MemoryPreferences())
         let runner = RequestRunner(
             library: fixture.library,
             workspace: workspace,
@@ -34,7 +32,6 @@ final class ProjectLifecycleProjectImportTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         fixture.directory.remove()
     }
 

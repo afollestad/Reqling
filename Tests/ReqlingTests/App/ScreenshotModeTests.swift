@@ -165,13 +165,13 @@ final class ScreenshotModeTests: XCTestCase {
     func testTheStorageIsWipedOnEveryLaunch() throws {
         let first = AppStorageProfile.screenshots()
         try FileManager.default.createDirectory(at: first.projectsDirectory, withIntermediateDirectories: true)
-        first.settingsDefaults.set(true, forKey: "leftover")
+        first.preferences.set(Data("leftover".utf8), forKey: "leftover")
 
         let second = AppStorageProfile.screenshots()
         defer { second.cleanUp() }
 
         XCTAssertTrue(second.isEphemeral)
         XCTAssertFalse(FileManager.default.fileExists(atPath: second.projectsDirectory.path))
-        XCTAssertNil(second.settingsDefaults.object(forKey: "leftover"))
+        XCTAssertNil(second.preferences.data(forKey: "leftover"))
     }
 }

@@ -12,22 +12,19 @@ final class GRPCRunnerTests: XCTestCase {
     var fixture: LibraryFixture!
     var workspace: WorkspaceStateStore!
     var settings: SettingsStore!
-    var suiteName: String!
     var servers: [GRPCTestServer] = []
     let log = MetadataLog()
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: fixture.directory.file("Support/workspace.json"))
-        suiteName = "com.afollestad.reqling.tests.grpc-runner.\(UUID().uuidString)"
-        settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        settings = SettingsStore(preferences: MemoryPreferences())
     }
 
     override func tearDown() async throws {
         for server in servers {
             await server.stop()
         }
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         fixture.directory.remove()
     }
 

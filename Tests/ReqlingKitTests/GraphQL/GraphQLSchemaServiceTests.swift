@@ -13,20 +13,17 @@ final class GraphQLSchemaServiceTests: XCTestCase {
     var workspace: WorkspaceStateStore!
     var settings: SettingsStore!
     var servers: [GraphQLFixtureServer] = []
-    private var suiteName: String!
 
     override func setUp() async throws {
         fixture = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: fixture.directory.file("Support/workspace.json"))
-        suiteName = "com.afollestad.reqling.tests.graphql.\(UUID().uuidString)"
-        settings = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
+        settings = SettingsStore(preferences: MemoryPreferences())
     }
 
     override func tearDown() async throws {
         for server in servers {
             try await server.shutdown()
         }
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         fixture.directory.remove()
     }
 

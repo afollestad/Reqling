@@ -12,19 +12,18 @@ final class AppStorageProfileTests: XCTestCase {
         }
 
         XCTAssertNotEqual(first.applicationSupportDirectory, second.applicationSupportDirectory)
-        XCTAssertNotEqual(first.settingsDefaultsSuiteName, second.settingsDefaultsSuiteName)
         XCTAssertTrue(first.applicationSupportDirectory.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        first.preferences.set(Data("value".utf8), forKey: "key")
+        XCTAssertNil(second.preferences.data(forKey: "key"))
     }
 
-    func testCleanUpRemovesTheDirectoryAndDefaultsSuite() throws {
+    func testCleanUpRemovesTheDirectory() throws {
         let profile = AppStorageProfile.test()
         try FileManager.default.createDirectory(at: profile.applicationSupportDirectory, withIntermediateDirectories: true)
-        profile.settingsDefaults.set("value", forKey: "key")
 
         profile.cleanUp()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: profile.applicationSupportDirectory.path))
-        XCTAssertNil(profile.settingsDefaults.string(forKey: "key"))
     }
 
     func testProductionStorageIsScopedByBundleIdentifierAndNeverEphemeral() {

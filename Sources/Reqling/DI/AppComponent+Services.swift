@@ -76,7 +76,7 @@ extension AppComponent {
     }
 
     var settingsStore: SettingsStore {
-        shared { SettingsStore(defaults: storageProfile.settingsDefaults) }
+        shared { SettingsStore(preferences: storageProfile.preferences) }
     }
 
     var runHistory: RunHistory {

@@ -81,13 +81,11 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testTheStorePersistsToItsDefaultsDomain() throws {
-        let suite = "com.afollestad.reqling.tests.settings.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+    func testTheStorePersistsToItsPreferences() {
+        let preferences = MemoryPreferences()
 
-        SettingsStore(defaults: defaults).update { $0.theme = .dark }
+        SettingsStore(preferences: preferences).update { $0.theme = .dark }
 
-        XCTAssertEqual(SettingsStore(defaults: defaults).settings.theme, .dark)
+        XCTAssertEqual(SettingsStore(preferences: preferences).settings.theme, .dark)
     }
 }

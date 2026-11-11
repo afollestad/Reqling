@@ -6,17 +6,14 @@ import XCTest
 final class RunHistoryTests: XCTestCase {
     private var directory: TemporaryDirectory!
     private var settings: SettingsStore!
-    private var suiteName: String!
     private let day: TimeInterval = 24 * 60 * 60
 
     override func setUp() async throws {
         directory = try TemporaryDirectory()
-        suiteName = "com.afollestad.reqling.tests.history.\(UUID().uuidString)"
-        settings = SettingsStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        settings = SettingsStore(preferences: MemoryPreferences())
     }
 
     override func tearDown() async throws {
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         directory.remove()
     }
 
