@@ -15,6 +15,7 @@
     - Create the sibling symlink with `ln -s AGENTS.md CLAUDE.md`; that symlink is what loads the file into context.
     - Inside a SwiftPM target, add the folder to that target's `guidanceFiles(in:)` list in `Package.swift`; SwiftPM warns about both files otherwise.
 - **Keep `README.md` for developers.** Update the README plus scoped guidance when dependencies, project structure, or lint rules change, and the matching `docs/` page when user-facing behavior changes.
+    - Leave release steps to `RELEASING.md`, rationale to doc comments, and agent rules to `AGENTS.md`; keep dependency pins, CI details, and change history out of it.
 
 ## Scoped Guidance
 
