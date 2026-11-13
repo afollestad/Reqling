@@ -15,11 +15,21 @@ final class MainToolbarSpacerPlacementTests: XCTestCase {
         XCTAssertEqual(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: identifiers), 3)
     }
 
-    func testLeavesASpacerAlreadyInPlace() {
-        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title, .flexibleSpace, trailing]))
+    /// With no project there is no environment picker, so the gear is the first trailing item and still goes trailing.
+    func testInsertsTheSpacerBeforeWhicheverTrailingItemComesFirst() {
+        let inspector = NSToolbarItem.Identifier(MainToolbarItemID.inspector)
+        let settings = NSToolbarItem.Identifier(MainToolbarItemID.settings)
+
+        XCTAssertEqual(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title, settings]), 3)
+        XCTAssertEqual(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title, inspector, settings]), 3)
     }
 
-    func testNeedsBothAppItems() {
+    func testLeavesASpacerAlreadyInPlace() {
+        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title, .flexibleSpace, trailing]))
+        XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [title, .flexibleSpace, .init(MainToolbarItemID.settings)]))
+    }
+
+    func testNeedsTheTitleAndATrailingItem() {
         XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, title]))
         XCTAssertNil(MainToolbarSpacerPlacement.flexibleSpaceIndex(in: [.flexibleSpace, sidebarToggle, trailing]))
     }

@@ -5,12 +5,16 @@ import SwiftUI
 /// finds them by.
 enum MainToolbarItemID {
     static let title = "detail-title"
-    /// The first trailing item, the environment picker; the flexible space goes just before it and the fixed one after.
+    /// The environment picker, the first trailing item when present; the fixed space goes after it.
     static let trailing = "environment"
     /// Still "history", the inspector's only panel when it was added, so a toolbar layout saved then keeps the item.
     static let inspector = "history"
     static let settings = "settings"
     static let addProject = "add-project"
+
+    /// The detail's trailing items. The picker shows only with a project and the inspector button only beside a request,
+    /// and SwiftUI drops an item while it has no content, so the flexible space goes before whichever is present first.
+    static let trailingItems = [trailing, inspector, settings]
 }
 
 /// Where the window toolbar needs spaces SwiftUI can't place: `NavigationSplitView` drops a `ToolbarSpacer` and ignores
@@ -18,12 +22,12 @@ enum MainToolbarItemID {
 /// to fill, and a fixed one after the environment picker. The flexible space the toolbar already has, before the sidebar
 /// toggle, holds the toggle at the sidebar's trailing edge and must stay.
 enum MainToolbarSpacerPlacement {
-    /// The index to insert a flexible space at, or `nil` when one already sits between the title and the trailing items
-    /// or either is missing.
+    /// The index to insert a flexible space at, or `nil` when one already sits between the title and the first trailing
+    /// item or either is missing.
     static func flexibleSpaceIndex(in identifiers: [NSToolbarItem.Identifier]) -> Int? {
+        let trailingItems = Set(MainToolbarItemID.trailingItems.map { NSToolbarItem.Identifier($0) })
         guard let titleIndex = identifiers.firstIndex(of: .init(MainToolbarItemID.title)),
-              let trailingIndex = identifiers.firstIndex(of: .init(MainToolbarItemID.trailing)),
-              titleIndex < trailingIndex,
+              let trailingIndex = identifiers[titleIndex...].firstIndex(where: trailingItems.contains),
               !identifiers[titleIndex..<trailingIndex].contains(.flexibleSpace) else {
             return nil
         }
