@@ -203,6 +203,8 @@ private struct SidebarNoMatches: View {
     }
 }
 
+/// Adds requests and folders to the active project. Project-level actions stay in the toolbar's add menu
+/// (`SidebarAddProjectMenu`) and the File menu; never repeat them here.
 private struct SidebarFooter: View {
     let model: AppModel
 
@@ -217,25 +219,18 @@ private struct SidebarFooter: View {
             .disabled(model.activeProjectID == nil)
             .help("Add a request beside the selection")
             Spacer()
-            Menu {
-                Button("New Folder") { model.newFolder() }
-                    .disabled(model.activeProjectID == nil)
-                Divider()
-                Button("New Project…") { model.sheet = .newProject }
-                Button("Add Project Folder…") { model.openProjectFolder() }
-                Button("Import…") { model.sheet = .importProject }
+            Button {
+                model.newFolder()
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .accessibilityLabel("More ways to add")
+                Image(systemName: "folder.badge.plus")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .help("More ways to add")
-            .accessibilityLabel("More ways to add")
-            .iconButtonChrome()
+            .buttonStyle(IconButtonStyle())
+            .disabled(model.activeProjectID == nil)
+            .help("Add a folder beside the selection (⇧⌘N)")
+            .accessibilityLabel("New Folder")
         }
         .padding(.horizontal, 12)
-        // The menu's icon tile carries its own padding, so the bar's vertical inset is that much smaller.
+        // The folder button's icon tile carries its own padding, so the bar's vertical inset is that much smaller.
         .padding(.top, 9)
         .padding(.bottom, 8)
         .background(.bar)
