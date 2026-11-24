@@ -12,6 +12,8 @@ struct ReqlingCommands: Commands {
             Button("About \(model.appInfo.name)") { AboutPanel.show() }
         }
         CommandGroup(replacing: .appSettings) {
+            Button("Check for Updates…") { model.showUpdatesAndCheck() }
+                .disabled(model.updates.isChecking)
             Button("Settings…") { model.showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
         }

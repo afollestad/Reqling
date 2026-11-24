@@ -26,6 +26,12 @@ extension AppModel {
         Task { await updates.forceCheck() }
     }
 
+    /// The app menu's entry: it opens App Updates so the check's result is visible, not just the gear's badge.
+    func showUpdatesAndCheck() {
+        showSettings(.updates)
+        checkForUpdates()
+    }
+
     func downloadUpdate() {
         Task { await updates.downloadLatestUpdate() }
     }

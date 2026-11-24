@@ -426,6 +426,16 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(badged.model.settingsPage, .updates)
     }
 
+    /// The menu's check shows its result, so it switches to App Updates whatever page Settings last showed.
+    func testCheckingFromTheMenuOpensAppUpdates() {
+        model.settingsPage = .interface
+
+        model.showUpdatesAndCheck()
+
+        XCTAssertTrue(model.isShowingSettings)
+        XCTAssertEqual(model.settingsPage, .updates)
+    }
+
     /// Once the helper starts it installs on the next quit, so a refused quit must stop the install before it starts,
     /// and an agreed one must not ask again when the update quits Reqling.
     func testInstallingAsksAboutUnsavedEditsBeforeTheHelperStarts() async throws {
