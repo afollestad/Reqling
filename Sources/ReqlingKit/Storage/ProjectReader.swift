@@ -15,7 +15,7 @@ struct ProjectReader {
         var index: ProjectDiskIndex
         var issues: [ProjectLoadIssue]
         /// The project was written by a newer format; saving it would drop what this version does not understand.
-        var isReadOnly: Bool
+        var isNewerFormat: Bool
     }
 
     let root: URL
@@ -72,7 +72,7 @@ struct ProjectReader {
             document: document,
             index: state.index,
             issues: state.issues,
-            isReadOnly: projectFile.formatVersion > ProjectDocument.currentFormatVersion
+            isNewerFormat: projectFile.formatVersion > ProjectDocument.currentFormatVersion
         )
     }
 

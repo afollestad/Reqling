@@ -38,6 +38,8 @@ enum SyncSendResult: Sendable {
     /// The server no longer has the record this save expected.
     case missingOnServer(SyncRecordID)
     case tooLarge(SyncRecordID)
+    /// Refused because this account may no longer change the zone, as when its owner made a share read-only.
+    case permissionDenied(SyncRecordID)
     /// Worth trying again later: the network, a quota, a busy server.
     case failed(SyncRecordID?, String)
 
@@ -45,10 +47,28 @@ enum SyncSendResult: Sendable {
     var recordID: SyncRecordID? {
         switch self {
         case .saved(let record): record.id
-        case .deleted(let id), .conflict(let id, _), .zoneMissing(let id), .missingOnServer(let id), .tooLarge(let id): id
+        case .deleted(let id), .conflict(let id, _), .zoneMissing(let id), .missingOnServer(let id), .tooLarge(let id), .permissionDenied(let id): id
         case .failed(let id, _): id
         case .zoneSaved, .zoneDeleted, .zoneSaveFailed: nil
         }
+    }
+}
+
+/// What a zone's share says, as a fetch delivers it: who owns the zone and how this account takes part.
+struct SyncShareInfo: Equatable, Sendable {
+    let zone: SyncZone
+    /// The zone owner's user record name, as the shared database names their zones.
+    let owner: String
+    /// Whether this account owns the zone, so shares it rather than taking part in another person's share.
+    let isOwner: Bool
+    let permission: ProjectSharing.Permission
+    let canInvite: Bool
+    /// How many people besides the owner take part.
+    let participantCount: Int
+
+    /// How this account holds the zone, when it doesn't own it.
+    var sharing: ProjectSharing? {
+        isOwner ? nil : ProjectSharing(owner: owner, permission: permission, canInvite: canInvite)
     }
 }
 
@@ -73,9 +93,10 @@ protocol SyncTransport: AnyObject {
     var delegate: (any SyncTransportDelegate)? { get set }
     /// The signed-in account's stable identifier, or `nil` when no account is signed in; throws when it can't be read.
     func accountID() async throws -> String?
-    /// Begins syncing the signed-in account from `state`, what `transport(didUpdateState:)` last reported, replacing
-    /// whatever ran for a previous account, whose results are never reported after.
-    func start(with state: Data?)
+    /// Begins syncing `account`, the one `accountID()` read for sync to connect as, from `state`, what
+    /// `transport(didUpdateState:)` last reported, replacing whatever ran for a previous account, whose results are never
+    /// reported after. Every transport takes it, the shared database's too, which never reads one itself.
+    func start(with state: Data?, account: String?)
     /// Ends whatever runs, its queue included, so nothing syncs for an account until `start(with:)` is called again.
     func stop()
     /// Queues `changes`, sending each zone's in the order queued, across batches too. Saving a record cancels a queued
@@ -109,5 +130,7 @@ protocol SyncTransportDelegate: AnyObject {
     /// The transport's state changed; persist it once what it covers is applied. Reported only between fetches, never
     /// while a zone it covers is still being delivered.
     func transport(didUpdateState state: Data)
+    /// `zone`'s share changed, or, with `nil`, went: sharing stopped.
+    func transport(didUpdateShareOf zone: SyncZone, to share: SyncShareInfo?)
     func transportAccountDidChange()
 }

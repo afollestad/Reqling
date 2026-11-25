@@ -39,7 +39,8 @@ extension LibrarySync {
             return []
         }
         let previous = lastAccountFolder().map { SyncBaseStore.syncedProjects(in: directory.appendingPathComponent($0, isDirectory: true)) }
-        return library.projects.filter(isInScope).map { project in
+        // Someone else's project is never this person's to merge into an account: it goes with its share.
+        return library.projects.filter { isInScope($0) && $0.sharing == nil }.map { project in
             AccountChangeCandidate(id: project.id, name: project.name, syncedWithPreviousAccount: previous?.contains(project.id) == true)
         }
     }
@@ -86,6 +87,10 @@ extension LibrarySync {
     /// Detaches every project in scope but `merging`, and Global when that's empty: detached rather than excluded, which
     /// an edit would undo, so they stay on this Mac until removed and added again (or `attachGlobal`).
     func keepOutOfNewAccount(allBut merging: Set<ProjectID>) {
+        // Projects shared with the account signed in before stay here as this person's own, no longer syncing.
+        for project in library.projects where project.sharing != nil {
+            library.setSharing(nil, for: project.id)
+        }
         let kept = library.projects.filter { isInScope($0) && !merging.contains($0.id) }.map(\.id)
         store?.update { state in
             state.detached.formUnion(kept)
@@ -120,8 +125,11 @@ extension LibrarySync {
         guard let store else {
             return
         }
-        let wasSetAside = library.registryWasSetAside
-        library.registryWasSetAside = false
+        let wasSetAside = takeRegistrySetAside()
+        // One added back while sync wasn't looking, so no change said so, comes back as it would have then.
+        for project in library.projects where store.state.excluded.contains(project.id) {
+            readd(project.id)
+        }
         for case .project(let id) in store.syncedZones where library.project(id) == nil && !store.state.excluded.contains(id) {
             if wasSetAside, let folder = library.unlistedFolder(with: id, in: projectsDirectory), (try? lifecycle.addProjectFolder(folder)) != nil {
                 continue
@@ -134,6 +142,21 @@ extension LibrarySync {
                 store.update { $0.excluded.insert(id) }
             }
         }
+    }
+
+    /// Whether the library's list was set aside since this coordinator last squared its projects with it. The own
+    /// coordinator takes the library's word, and passes it on to the shared one, which squares its projects after.
+    private func takeRegistrySetAside() -> Bool {
+        if role == .shared {
+            defer { registryWasSetAside = false }
+            return registryWasSetAside
+        }
+        let wasSetAside = library.registryWasSetAside
+        library.registryWasSetAside = false
+        if wasSetAside {
+            sharedSync?.registryWasSetAside = true
+        }
+        return wasSetAside
     }
 }
 

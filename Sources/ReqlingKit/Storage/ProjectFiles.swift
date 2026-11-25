@@ -225,7 +225,7 @@ public struct ProjectLoadIssue: Hashable, Sendable {
 
 public enum ProjectStorageError: Error, Equatable, LocalizedError {
     case notAProject(URL)
-    case readOnly
+    case readOnly(ReadOnlyReason)
     case projectNotFound
     case alreadyInLibrary
     case destinationExists(URL)
@@ -238,8 +238,10 @@ public enum ProjectStorageError: Error, Equatable, LocalizedError {
         switch self {
         case .notAProject(let url):
             "“\(url.lastPathComponent)” is not a Reqling project; it has no \(ProjectLayout.projectFile)."
-        case .readOnly:
+        case .readOnly(.newerFormat):
             "This project was saved by a newer version of Reqling and is read-only."
+        case .readOnly(.sharedReadOnly):
+            "This project was shared with you to view only."
         case .projectNotFound:
             "The project is no longer in the library."
         case .alreadyInLibrary:

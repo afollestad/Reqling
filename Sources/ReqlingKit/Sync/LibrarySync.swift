@@ -2,30 +2,6 @@ import CryptoKit
 import Foundation
 import Observation
 
-/// Where iCloud sync stands, for Settings.
-public enum SyncStatus: Equatable, Sendable {
-    /// This build has no iCloud entitlement (ad hoc builds, tests).
-    case unavailable
-    case off
-    case signedOut
-    case syncing
-    case upToDate(Date)
-    /// Paused: a different iCloud account is signed in than this Mac's projects last synced with.
-    case accountChanged
-    /// Paused: another Mac deleted several projects at once, and these wait for a confirmation.
-    case confirmingDeletions([ProjectID])
-    /// Turned off because Reqling's iCloud data was deleted or reset; turning sync on again uploads this Mac's copy.
-    case stopped(SyncStopReason)
-    case failed(String)
-}
-
-public enum SyncStopReason: Equatable, Sendable {
-    /// Deleted in System Settings.
-    case dataDeleted
-    /// The account's end-to-end encrypted data was reset.
-    case encryptionReset
-}
-
 /// Syncs the projects in Reqling's own folder, Global, and this person's secret and current values through the
 /// transport (`CloudKitSyncTransport` in the app), keeping each project folder the source of truth on each Mac.
 ///
@@ -40,6 +16,12 @@ public final class LibrarySync {
     /// What went wrong with particular items, in words for Settings.
     public internal(set) var issues: [String] = []
 
+    @ObservationIgnored let role: SyncRole
+    /// The coordinator for projects other people share with this account, over the shared database; `nil` without a
+    /// shared transport, as in most tests, and in that coordinator itself.
+    @ObservationIgnored private(set) var sharedSync: LibrarySync?
+    /// The coordinator this one serves as `sharedSync`, which shows its issues and drives its syncs.
+    @ObservationIgnored weak var owningSync: LibrarySync?
     @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored let lifecycle: ProjectLifecycle
     @ObservationIgnored let secretStore: any SecretStore
@@ -106,22 +88,43 @@ public final class LibrarySync {
     /// Whether a sync runs, and whether another was asked for meanwhile, which it runs next rather than alongside: two
     /// at once would each fetch over from the start, cancelling the other's.
     @ObservationIgnored var isSyncing = false
+    /// Whether the library's list was set aside, for the shared coordinator, which squares its projects with the list
+    /// after its owner took the library's word for it (`reconcileListedProjects`).
+    @ObservationIgnored var registryWasSetAside = false
     @ObservationIgnored var syncAsked: (retryingFailures: Bool, asked: Bool) = (false, false)
 
+    /// With `sharedTransport`, also syncs the projects other people share with this account through it, in a coordinator
+    /// of its own kept under `directory/Shared`.
     init(
         library: ProjectLibrary,
         lifecycle: ProjectLifecycle,
         secretStore: any SecretStore,
         directory: URL,
         transport: any SyncTransport,
+        sharedTransport: (any SyncTransport)? = nil,
+        role: SyncRole = .own,
         now: @escaping () -> Date = Date.init
     ) {
+        self.role = role
         self.library = library
         self.lifecycle = lifecycle
         self.secretStore = secretStore
         self.directory = directory
         self.transport = transport
         self.now = now
+        if let sharedTransport {
+            let shared = LibrarySync(
+                library: library,
+                lifecycle: lifecycle,
+                secretStore: secretStore,
+                directory: directory.appendingPathComponent("Shared", isDirectory: true),
+                transport: sharedTransport,
+                role: .shared,
+                now: now
+            )
+            shared.owningSync = self
+            sharedSync = shared
+        }
     }
 
     var projectsDirectory: URL {
@@ -151,10 +154,12 @@ public final class LibrarySync {
     /// Signs in to the transport's account and syncs everything in scope.
     public func start() async {
         isRunning = true
+        sharedSync?.isRunning = true
         library.changeObserver = { [weak self] change in
             self?.libraryChanged(change)
         }
         transport.delegate = self
+        sharedSync.map { $0.transport.delegate = $0 }
         await connect()
     }
 
@@ -168,12 +173,19 @@ public final class LibrarySync {
     private func halt() {
         isRunning = false
         connection += 1
-        library.changeObserver = nil
+        if role == .own {
+            library.changeObserver = nil
+        }
         transport.delegate = nil
         store?.save()
         store = nil
         personalAwaitingFetchEnd = []
         legacyAwaitingFetchEnd = []
+        if let sharedSync {
+            sharedSync.dropConnection()
+            sharedSync.halt()
+            sharedSync.status = .off
+        }
     }
 
     /// Opens the signed-in account's state, or pauses when the account isn't the one this Mac last synced with. Accepting
@@ -196,36 +208,18 @@ public final class LibrarySync {
             }
             return
         }
-        guard attempt == connection else {
+        guard attempt == connection, let store = openStore(for: account, merging: merging) else {
             return
         }
-        guard let account else {
-            status = .signedOut
-            return
-        }
-        guard let key = loadKey() else {
-            needsReconnect = true
-            status = .failed("Reqling couldn't use its iCloud key in the Keychain. It tries again when it comes to the front.")
-            return
-        }
-        let folder = SyncBaseStore.folderName(for: account)
-        if let last = lastAccountFolder(), last != folder, merging == nil {
-            status = .accountChanged
-            return
-        }
-        rememberAccountFolder(folder)
-        let store = SyncBaseStore(directory: directory, account: account, key: key)
-        self.store = store
-        status = .syncing
-        if store.isFirstSync {
-            // An account the person just chose what to merge into needs no word on what syncs.
-            beginFirstSync(in: store, announcing: merging == nil)
-        }
-        if let merging {
-            keepOutOfNewAccount(allBut: merging)
-        }
-        transport.start(with: store.state.transportState)
+        transport.start(with: store.state.transportState, account: account)
+        // Opened first, so this one's resume can tell which listed projects are someone else's (`listedProject`).
+        sharedSync?.open(account: account)
         resume(store)
+        sharedSync?.resumeOpened()
+        // This coordinator syncs it from here (`syncNow`), once its own changes are fetched.
+        guard role == .own else {
+            return
+        }
         if !store.state.awaitingConfirmation.isEmpty {
             status = .confirmingDeletions(store.state.awaitingConfirmation)
             return
@@ -233,9 +227,46 @@ public final class LibrarySync {
         await syncNow()
     }
 
+    /// `account`'s state, opened, or `nil` when there's none to sync: signed out, a key the Keychain won't give, or, for
+    /// the own coordinator, an account other than the one this Mac last synced with, until the person chooses what
+    /// merges into it (`merging`).
+    func openStore(for account: String?, merging: Set<ProjectID>?) -> SyncBaseStore? {
+        guard let account else {
+            status = .signedOut
+            sharedSync?.dropConnection()
+            return nil
+        }
+        guard let key = loadKey() else {
+            needsReconnect = true
+            status = .failed("Reqling couldn't use its iCloud key in the Keychain. It tries again when it comes to the front.")
+            return nil
+        }
+        let folder = SyncBaseStore.folderName(for: account)
+        // The coordinator that owns this one decided already whether this is the account to sync.
+        if role == .own, let last = lastAccountFolder(), last != folder, merging == nil {
+            status = .accountChanged
+            sharedSync?.dropConnection()
+            return nil
+        }
+        if role == .own {
+            rememberAccountFolder(folder)
+        }
+        let store = SyncBaseStore(directory: directory, account: account, key: key)
+        self.store = store
+        status = .syncing
+        if role == .own, store.isFirstSync {
+            // An account the person just chose what to merge into needs no word on what syncs.
+            beginFirstSync(in: store, announcing: merging == nil)
+        }
+        if let merging {
+            keepOutOfNewAccount(allBut: merging)
+        }
+        return store
+    }
+
     /// Forgets the connection in use, so nothing of a previous account's applies to the next, even should it fail, and
     /// nothing syncs until one is made.
-    private func dropConnection() {
+    func dropConnection() {
         store?.save()
         store = nil
         transport.stop()
@@ -258,7 +289,7 @@ public final class LibrarySync {
 
     /// Picks up where `store` left off: what a newer version wrote is judged again once this one is newer than when it
     /// was held back, deletions made here outlive the queue they were in, and everything changed meanwhile is queued.
-    private func resume(_ store: SyncBaseStore) {
+    func resume(_ store: SyncBaseStore) {
         let isDeferring = !store.state.deferred.isEmpty || store.state.libraryDeferred
         if isDeferring, store.state.deferredAt != SyncBaseStore.versions {
             store.update { state in
@@ -270,6 +301,8 @@ public final class LibrarySync {
         transport.enqueue(store.state.outgoingTombstones.map { .save(LibraryRecordCoder.tombstoneRecordID($0)) })
         // Each personal zone first; its project's follows once that's gone (`handleSent`).
         transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.personal($0)) })
+        // Leaving a share outlives a quit, as a deletion does.
+        transport.enqueue(store.state.leaving.sorted().map { .delete(SyncRecordID.share(in: .project($0))) })
         // A tombstone withdrawn as its project came back (`readd`) has no record here to reconcile, so its deletion,
         // kept pending, is queued again; left on the server, it would stop other Macs sending the project's edits.
         let tombstones = SyncZone.library.name + "/" + SyncRecordID.tombstonePrefix
@@ -303,6 +336,10 @@ public final class LibrarySync {
         repeat {
             syncAsked = (false, false)
             await syncOnce(retryingFailures: retrying)
+            // Projects shared with this account sync after its own, once the account is known to be the one to sync.
+            if let sharedSync, store != nil, canSync {
+                await sharedSync.syncNow(retryingFailures: retrying)
+            }
             retrying = syncAsked.retryingFailures
         } while syncAsked.asked
     }
@@ -337,9 +374,11 @@ public final class LibrarySync {
         }
         store.save()
         if case .syncing = status {
-            status = isActive && store.state.needsRefetch
-                ? .failed("Some changes from another Mac couldn't be applied yet. Sync Now tries again.")
-                : .upToDate(now())
+            if isActive, store.state.needsRefetch {
+                reportFailure("Some changes from iCloud couldn't be applied yet. Sync Now tries again.")
+            } else {
+                status = .upToDate(now())
+            }
         }
     }
 
@@ -370,9 +409,11 @@ public final class LibrarySync {
         return true
     }
 
-    /// Adds `issue` for Settings once, however often it recurs.
+    /// Adds `issue` for Settings once, however often it recurs; the shared coordinator's show with its owner's.
     func report(_ issue: String) {
-        if !issues.contains(issue) {
+        if let owningSync {
+            owningSync.report(issue)
+        } else if !issues.contains(issue) {
             issues.append(issue)
         }
     }
@@ -380,6 +421,7 @@ public final class LibrarySync {
     /// Writes what sync keeps on this Mac; Reqling calls it as it quits.
     public func flush() {
         store?.save()
+        sharedSync?.flush()
     }
 
     var canSync: Bool {
@@ -395,44 +437,17 @@ public final class LibrarySync {
     /// delivers CloudKit's changes lazily to an app in the background.
     public func setActive(_ active: Bool) async {
         isActive = active
+        sharedSync?.isActive = active
         guard active, isRunning else {
             return
         }
         if store != nil {
             applyHeldChanges()
         }
+        if let sharedSync, sharedSync.store != nil {
+            sharedSync.applyHeldChanges()
+        }
         await syncNow()
-    }
-
-    // MARK: - Keys and accounts
-
-    /// The digest key, created on first use, kept in its own Keychain item (`SecretAccount.sync`).
-    private func loadKey() -> SymmetricKey? {
-        guard let stored = try? secretStore.secrets(for: .sync) else {
-            return nil
-        }
-        if let text = stored["key"], let data = Data(base64Encoded: text) {
-            return SymmetricKey(data: data)
-        }
-        let key = SyncDigester.makeKey()
-        let data = key.withUnsafeBytes { Data($0) }
-        guard (try? secretStore.update(.sync, storing: ["key": data.base64EncodedString()], deleting: [])) != nil else {
-            return nil
-        }
-        return key
-    }
-
-    private var accountMarker: URL {
-        directory.appendingPathComponent("account")
-    }
-
-    func lastAccountFolder() -> String? {
-        (try? String(contentsOf: accountMarker, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-    }
-
-    private func rememberAccountFolder(_ folder: String) {
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try? Data(folder.utf8).write(to: accountMarker, options: .atomic)
     }
 
     /// Turns sync off after the account's data for Reqling was deleted or reset: the SDK requires dropping what was

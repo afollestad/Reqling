@@ -67,11 +67,12 @@ extension LibrarySync {
     /// Whether the environment record `id` may go up with its secrets cleared: the server's holds none, or the project is
     /// fenced and `personal` holds a value for each of its variables still secret here, with nothing of this Mac's still
     /// to send there, so clearing loses none. A value this Mac lacks waits for whichever Mac has it to bring it over.
+    /// Values left in someone else's project are its owner's, which only their Macs bring over and clear.
     func mayClearSecrets(_ id: SyncRecordID) -> Bool {
         guard let store, case .project(let project) = id.zone, let base = store.base(id), !base.secrets.isEmpty else {
             return true
         }
-        guard isFenced(project), let environment = EnvironmentID(string: id.name) else {
+        guard role == .own, isFenced(project), let environment = EnvironmentID(string: id.name) else {
             return false
         }
         let personal = LibraryRecordCoder.secretsRecordID(project, environment)
@@ -363,7 +364,7 @@ extension LibrarySync {
         guard isInScope(local) else {
             return false
         }
-        if local.isReadOnly {
+        if local.isNewerFormat {
             deferProject(project, untilUpdate: true)
             return false
         }

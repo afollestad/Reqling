@@ -33,20 +33,15 @@ extension LibrarySync {
         applyPersonalAwaitingFetchEnd()
         fillLegacyAwaitingFetchEnd()
         lastFetchFinished = fetchedAt
-        var deletions = heldZoneDeletions
-        heldZoneDeletions = []
-        if refetchRaised, wholeDelivery == nil {
-            // The tombstone saying a zone went on purpose may be among what this fetch dropped, so a deletion waits for
-            // the refetch, which knows them all; a reset of the account's data can't wait.
-            heldZoneDeletions = deletions.filter { $0.1 == .deleted }
-            deletions = deletions.filter { $0.1 != .deleted }
-        }
-        if let wholeDelivery {
-            // A zone this fetch delivered exists, whatever an earlier fetch said of it.
-            deletions = deletions.filter { !wholeDelivery.contains($0.0) || $0.1 != .deleted }
-            deletions += finishWholeFetch(delivering: wholeDelivery, judging: Set(deletions.map(\.0)))
-        }
+        var deletions = deletionsToJudge(wholeDelivery: wholeDelivery)
         var candidates: [ProjectID] = []
+        if role == .shared {
+            // However a shared zone went, this account can't reach it: its share ended, or the project did.
+            for case (.project(let id), _) in deletions {
+                lostAccess(id)
+            }
+            deletions = []
+        }
         for (zone, reason) in deletions {
             switch reason {
             case .purged:
@@ -77,6 +72,23 @@ extension LibrarySync {
         store.save()
     }
 
+    /// The zone deletions this fetch judges now: those it reported, but a deletion while a refetch is asked for, which
+    /// waits for it, since the tombstone saying a zone went on purpose may be among what this fetch dropped (a reset of
+    /// the account's data can't wait); and, for a whole fetch, the zones it no longer delivers, though none it did.
+    private func deletionsToJudge(wholeDelivery: Set<SyncZone>?) -> [(SyncZone, SyncZoneDeletionReason)] {
+        var deletions = heldZoneDeletions
+        heldZoneDeletions = []
+        if refetchRaised, wholeDelivery == nil {
+            heldZoneDeletions = deletions.filter { $0.1 == .deleted }
+            deletions = deletions.filter { $0.1 != .deleted }
+        }
+        if let wholeDelivery {
+            deletions = deletions.filter { !wholeDelivery.contains($0.0) || $0.1 != .deleted }
+            deletions += finishWholeFetch(delivering: wholeDelivery, judging: Set(deletions.map(\.0)))
+        }
+        return deletions
+    }
+
     /// The project zones synced here that a whole fetch didn't deliver, and weren't already reported deleted, as deleted;
     /// with nothing delivered at all, the account's data as deleted, as only a reset leaves no Global or tombstone; and
     /// the refetch done, unless this fetch asked for another. Global's zone is never judged gone this way.
@@ -88,7 +100,8 @@ extension LibrarySync {
             return []
         }
         let synced = store.syncedZones
-        if delivered.isEmpty, !synced.isEmpty {
+        // In the shared database, nothing delivered means nothing is shared with this account anymore, not a reset.
+        if role == .own, delivered.isEmpty, !synced.isEmpty {
             return [(.library, .purged)]
         }
         if refetchRaised {
@@ -96,7 +109,15 @@ extension LibrarySync {
         } else {
             store.update { $0.needsRefetch = false }
         }
-        return synced.subtracting(delivered).subtracting(judged).filter { $0 != .library }.map { ($0, .deleted) }
+        let missing = synced.subtracting(delivered).subtracting(judged).filter { $0 != .library }
+        guard role == .own else {
+            // No word on why, so nothing goes to the Trash on it (`lostTrackOf`).
+            for case .project(let id) in missing {
+                lostTrackOf(id)
+            }
+            return []
+        }
+        return missing.map { ($0, .deleted) }
     }
 
     /// The project whose zone another Mac deleted on purpose, to move to the Trash here; `nil` when there's none, after
@@ -175,6 +196,15 @@ extension LibrarySync: SyncTransportDelegate {
     func shouldSend(_ change: SyncPendingChange) -> Bool {
         guard let store, isActive, canSync, !isHoldingFetchedChanges else {
             return false
+        }
+        switch change {
+        case .saveZone, .deleteZone:
+            // Another person's zone: only its owner makes or deletes it.
+            guard role == .own else {
+                return false
+            }
+        case .save, .delete:
+            break
         }
         switch change {
         case .saveZone(let zone):
@@ -261,6 +291,11 @@ extension LibrarySync: SyncTransportDelegate {
     }
 
     func transportAccountDidChange() {
+        // The account is one for both databases, and the coordinator that owns this one reconnects both.
+        if let owningSync {
+            owningSync.transportAccountDidChange()
+            return
+        }
         Task { await connect() }
     }
 }

@@ -15,7 +15,7 @@ final class StubSyncTransport: SyncTransport {
         account
     }
 
-    func start(with state: Data?) {}
+    func start(with state: Data?, account: String?) {}
 
     func stop() {}
 

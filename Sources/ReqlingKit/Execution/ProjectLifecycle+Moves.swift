@@ -28,8 +28,8 @@ extension ProjectLifecycle {
         }
         // Refused before anything is written: a read-only source could never let go, leaving the item in both, and a
         // read-only destination would refuse it after its local paths were recorded.
-        guard !origin.isReadOnly, !target.isReadOnly else {
-            throw ProjectStorageError.readOnly
+        if let reason = origin.readOnlyReason ?? target.readOnlyReason {
+            throw ProjectStorageError.readOnly(reason)
         }
         var originals: [RequestNodeID: RequestNodeID] = [:]
         let fresh = node.subtreeIDs.contains { document.node($0) != nil } ? node.copy(originals: &originals) : node

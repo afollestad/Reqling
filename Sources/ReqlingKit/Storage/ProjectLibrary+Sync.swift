@@ -13,9 +13,26 @@ public enum LibraryChange: Hashable, Sendable {
     case currentValues
 }
 
-/// The library's side of sync: the entry points that apply another Mac's changes live beside `mutate` in
-/// `ProjectLibrary.swift`, since only that file may write `projects`; these need only what it publishes.
+/// The library's side of sync, and the folders it names and finds in its projects folder: the entry points that apply
+/// another Mac's changes live beside `mutate` in `ProjectLibrary.swift`, since only that file may write `projects`;
+/// these need only what it publishes.
 extension ProjectLibrary {
+    /// `<name>.reqling`, or `<name> 2.reqling` and so on when taken.
+    static func availableFolderURL(for name: String, in parent: URL) -> URL {
+        let sanitized = name
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = sanitized.isEmpty || sanitized.hasPrefix(".") ? "Untitled" : sanitized
+        var candidate = parent.appendingPathComponent("\(base).reqling", isDirectory: true)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = parent.appendingPathComponent("\(base) \(suffix).reqling", isDirectory: true)
+            suffix += 1
+        }
+        return candidate
+    }
+
     /// A folder directly in `parent` that no listed project uses and whose `project.json` states `id`.
     func unlistedFolder(with id: ProjectID, in parent: URL) -> URL? {
         let listed = Set(projects.map { $0.url.standardizedFileURL.path })

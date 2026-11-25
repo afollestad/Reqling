@@ -20,11 +20,13 @@ extension CloudKitSyncTransport {
 
     func fetchedDatabaseChanges(_ changes: CKSyncEngine.Event.FetchedDatabaseChanges) {
         ensureFetch()
-        for zone in changes.modifications.compactMap({ SyncZone(name: $0.zoneID.zoneName) }) {
+        for zone in changes.modifications.compactMap({ acceptedZone($0.zoneID) }) {
             fetch?.name(zone)
         }
         for deletion in changes.deletions {
-            if let zone = SyncZone(name: deletion.zoneID.zoneName) {
+            if let zone = acceptedZone(deletion.zoneID) {
+                // Gone, so another person's zone for the project may stand for it next.
+                owners[zone] = nil
                 delegate?.transport(didDeleteZone: zone, reason: CloudKitSendResults.reason(deletion.reason))
             }
         }
@@ -32,18 +34,30 @@ extension CloudKitSyncTransport {
 
     func beginZone(_ zoneID: CKRecordZone.ID) {
         ensureFetch()
-        if let zone = SyncZone(name: zoneID.zoneName) {
+        if let zone = acceptedZone(zoneID) {
             fetch?.begin(zone)
         }
     }
 
     func fetchedRecordZoneChanges(_ changes: CKSyncEngine.Event.FetchedRecordZoneChanges) {
         ensureFetch()
-        for record in changes.modifications.compactMap({ CloudKitRecords.syncRecord($0.record) }) {
+        let modifications = changes.modifications.filter { acceptedZone($0.record.recordID.zoneID) != nil }
+        for record in modifications.compactMap({ CloudKitRecords.syncRecord($0.record) }) {
             fetch?.changed(record)
         }
-        // A share going, as when sharing stops, is no record of the project's going (`CloudKitRecords.isShare`).
-        let deletions = changes.deletions.filter { !CloudKitRecords.isShare($0.recordType) }
+        // A share is no record of the project's: what it says goes to sync on its own, and its going, as when sharing
+        // stops, is no record of the project's going (`CloudKitRecords.isShare`).
+        for modification in modifications {
+            if let share = modification.record as? CKShare, let zone = acceptedZone(share.recordID.zoneID) {
+                delegate?.transport(didUpdateShareOf: zone, to: CloudKitRecords.shareInfo(share, zone: zone))
+            }
+        }
+        for deletion in changes.deletions where CloudKitRecords.isShare(deletion.recordType) {
+            if let zone = acceptedZone(deletion.recordID.zoneID) {
+                delegate?.transport(didUpdateShareOf: zone, to: nil)
+            }
+        }
+        let deletions = changes.deletions.filter { !CloudKitRecords.isShare($0.recordType) && acceptedZone($0.recordID.zoneID) != nil }
         for id in deletions.compactMap({ CloudKitRecords.syncID($0.recordID) }) {
             fetch?.deleted(id)
         }
@@ -51,7 +65,7 @@ extension CloudKitSyncTransport {
 
     /// Delivers a zone whose fetch completed; one that failed is dropped, and the fetch falls short.
     func finishZone(_ zoneID: CKRecordZone.ID, failed: Bool) {
-        guard let zone = SyncZone(name: zoneID.zoneName), let fetched = fetch?.finish(zone, failed: failed) else {
+        guard let zone = acceptedZone(zoneID), let fetched = fetch?.finish(zone, failed: failed) else {
             return
         }
         delegate?.transport(didFetch: fetched)

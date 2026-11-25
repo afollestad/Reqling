@@ -118,6 +118,30 @@ extension LibrarySyncTests {
         XCTAssertEqual(macB.library.currentValues.values(in: scope)["session"], .value(TemplateVariable(value: "two")))
     }
 
+    /// A project added back while sync was off syncs again, as one added back while it runs does.
+    func testAProjectAddedBackWhileSyncWasOffSyncsAgain() async throws {
+        let id = try await shareProject()
+        let folder = try XCTUnwrap(macB.library.project(id)).url
+        let requestID = try XCTUnwrap(request(in: macB, id)).id
+
+        macB.lifecycle.removeProject(id)
+        await macB.sync.syncNow()
+        macB.sync.stop()
+        _ = try macB.lifecycle.addProjectFolder(folder)
+        await macB.sync.start()
+        macA.tick()
+        try macA.library.mutate(id) { $0.name = "Renamed on A" }
+        await macA.sync.syncNow()
+        await macB.sync.syncNow()
+        macB.tick()
+        try macB.library.mutate(id) { try $0.updateRequest(requestID) { $0.name = "Renamed on B" } }
+        await macB.sync.syncNow()
+        await macA.sync.syncNow()
+
+        XCTAssertEqual(macB.library.document(id)?.name, "Renamed on A")
+        XCTAssertEqual(request(in: macA, id)?.name, "Renamed on B")
+    }
+
     /// A synced project that fell off a set-aside list with its folder gone too is fetched whole again, never rebuilt
     /// from what changed, which would delete the rest everywhere.
     func testAProjectLostWithTheListComesBackWholeAndDeletesNothing() async throws {

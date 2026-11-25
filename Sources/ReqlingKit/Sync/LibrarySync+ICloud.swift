@@ -13,13 +13,20 @@ extension LibrarySync {
         guard SyncAvailability.isEntitled else {
             return nil
         }
-        return LibrarySync(
+        let shared = CloudKitSyncTransport(scope: .shared)
+        let sync = LibrarySync(
             library: library,
             lifecycle: lifecycle,
             secretStore: secretStore,
             directory: directory,
-            transport: CloudKitSyncTransport()
+            transport: CloudKitSyncTransport(),
+            sharedTransport: shared
         )
+        // Owners outlive a launch in the shares sync keeps, for zones no fetch has named since.
+        shared.knownOwner = { [weak sync] zone in
+            zone.project.flatMap { sync?.sharing(of: $0)?.owner }
+        }
+        return sync
     }
 
     /// The copy the last account to sync here took before its first sync, for Show Backup in Finder; `nil` when there's

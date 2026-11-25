@@ -85,6 +85,13 @@ struct SyncRecordID: Hashable, Sendable, CustomStringConvertible {
     }
 
     static let projectName = "project"
+    /// The zone-wide share CloudKit keeps in a shared zone (`CKRecordNameZoneWideShare`), which a participant deletes to
+    /// leave it.
+    static let shareName = "cloudkit.zoneshare"
+
+    static func share(in zone: SyncZone) -> SyncRecordID {
+        SyncRecordID(zone: zone, name: shareName)
+    }
     static let globalName = "global"
     static let currentValuesPrefix = "current-"
     static let secretsPrefix = "secrets-"

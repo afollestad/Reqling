@@ -11,8 +11,11 @@ final class SyncTestMac {
     let runner: RequestRunner
     let lifecycle: ProjectLifecycle
     private(set) var transport: SyncTestTransport
+    /// This account's shared database over the owner's cloud it was made sharing with, if one.
+    private(set) var sharedTransport: SyncTestSharedTransport?
     private(set) var sync: LibrarySync
     private let cloud: SyncTestCloud
+    private let sharingOwner: SyncTestCloud?
     /// How far this Mac's clock runs ahead of the true time, the server's.
     var clockOffset: TimeInterval = 0
 
@@ -24,7 +27,8 @@ final class SyncTestMac {
         storage.library
     }
 
-    init(cloud: SyncTestCloud) throws {
+    /// `sharingFrom`, another account's cloud, gives this Mac a shared database over the zones it shares with this one.
+    init(cloud: SyncTestCloud, sharingFrom owner: SyncTestCloud? = nil) throws {
         storage = try LibraryFixture()
         workspace = WorkspaceStateStore(fileURL: storage.directory.file("Support/workspace.json"))
         let settings = SettingsStore(preferences: MemoryPreferences())
@@ -45,7 +49,9 @@ final class SyncTestMac {
         ))
         lifecycle = ProjectLifecycle(library: storage.library, runner: runner, workspace: workspace, protoWorkspaces: protoWorkspaces)
         self.cloud = cloud
+        sharingOwner = owner
         transport = SyncTestTransport(cloud: cloud)
+        sharedTransport = owner.map { SyncTestSharedTransport(owner: $0, home: cloud) }
         var now: () -> Date = { Date() }
         sync = LibrarySync(
             library: storage.library,
@@ -53,6 +59,7 @@ final class SyncTestMac {
             secretStore: storage.secrets,
             directory: storage.directory.file("Support/Sync"),
             transport: transport,
+            sharedTransport: sharedTransport,
             now: { now() }
         )
         now = { [unowned self] in clock }
@@ -62,12 +69,14 @@ final class SyncTestMac {
     func restart() async {
         sync.stop()
         transport = SyncTestTransport(cloud: cloud)
+        sharedTransport = sharingOwner.map { SyncTestSharedTransport(owner: $0, home: cloud) }
         sync = LibrarySync(
             library: storage.library,
             lifecycle: lifecycle,
             secretStore: storage.secrets,
             directory: storage.directory.file("Support/Sync"),
             transport: transport,
+            sharedTransport: sharedTransport,
             now: { [unowned self] in clock }
         )
         await sync.start()

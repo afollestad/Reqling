@@ -1,8 +1,9 @@
 import CloudKit
 import Foundation
 
-/// Sync's iCloud side: the private database through `CKSyncEngine`, which keeps change tokens and the send queue in
-/// its state, retries what the network drops, and fetches when another Mac's change is pushed.
+/// Sync's iCloud side: the private database, or the shared one for projects other people share with this account,
+/// through `CKSyncEngine`, which keeps change tokens and the send queue in its state, retries what the network drops,
+/// and fetches when another Mac's change is pushed.
 ///
 /// The engine runs on its own schedule, so this holds it to `SyncTransport`'s terms:
 /// - Each record change goes out only as `shouldSend` allows when the engine asks for a batch; zone saves and
@@ -23,6 +24,12 @@ final class CloudKitSyncTransport: SyncTransport {
     }
 
     private let container: CKContainer
+    /// `.private` for this account's own zones, `.shared` for the project zones other people share with it.
+    let scope: CKDatabase.Scope
+    /// Who owns each shared zone, as fetches name them, so a change to one goes to that owner's zone.
+    var owners: [SyncZone: String] = [:]
+    /// Owners sync remembers from before this launch, for a zone no fetch has named yet (`LibrarySync`).
+    var knownOwner: (SyncZone) -> String? = { _ in nil }
     private var engine: CKSyncEngine?
     /// The engine holds its delegate weakly, so this keeps it alive for as long as the engine runs.
     private var engineDelegate: CloudKitEngineDelegate?
@@ -37,7 +44,9 @@ final class CloudKitSyncTransport: SyncTransport {
     private(set) var generation = 0
     /// Whether the engine started from no state and hasn't fetched since: its next fetch is whole.
     var startsFresh = false
-    /// The account `accountID()` last read, so the engine announcing it as it starts fresh isn't taken for a change.
+    /// The account sync started this engine for, so the engine announcing it as it starts fresh isn't taken for a change.
+    /// Without it, the shared database's engine starting fresh reconnected sync, which stopped both new engines, and
+    /// stopping one that new trips an assertion in CloudKit on macOS 26.
     private var account: String?
     /// Zone saves and deletions not yet handed to the engine, in the order queued.
     private var heldZoneChanges: [SyncPendingChange] = []
@@ -58,8 +67,13 @@ final class CloudKitSyncTransport: SyncTransport {
     private var heldResults: [[SyncSendResult]] = []
     private var accountObserver: (any NSObjectProtocol)?
 
-    init(containerIdentifier: String = SyncAvailability.containerIdentifier) {
+    init(containerIdentifier: String = SyncAvailability.containerIdentifier, scope: CKDatabase.Scope = .private) {
         container = CKContainer(identifier: containerIdentifier)
+        self.scope = scope
+        guard scope == .private else {
+            // The private database's transport tells sync about account changes for both.
+            return
+        }
         // A running engine reports account changes itself; this covers signing in while none runs, as when signed out.
         accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: nil) { [weak self] _ in
             Task { @MainActor in
@@ -77,18 +91,16 @@ final class CloudKitSyncTransport: SyncTransport {
     func accountID() async throws -> String? {
         switch try await container.accountStatus() {
         case .available:
-            let id = try await container.userRecordID().recordName
-            account = id
-            return id
+            return try await container.userRecordID().recordName
         case .noAccount, .restricted:
-            account = nil
             return nil
         default:
             throw CKError(.accountTemporarilyUnavailable)
         }
     }
 
-    func start(with state: Data?) {
+    func start(with state: Data?, account: String?) {
+        self.account = account
         let serialization = state.flatMap { try? JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
         heldZoneChanges = []
         replaceEngine(from: serialization, carrying: nil)
@@ -107,13 +119,13 @@ final class CloudKitSyncTransport: SyncTransport {
         for change in changes {
             switch change {
             case .save(let id):
-                records.append(.saveRecord(CloudKitRecords.recordID(id)))
+                records.append(.saveRecord(recordID(id)))
             case .delete(let id):
-                records.append(.deleteRecord(CloudKitRecords.recordID(id)))
+                records.append(.deleteRecord(recordID(id)))
             case .saveZone(let zone), .deleteZone(let zone):
                 // The last word on a zone wins, so a save and a deletion queued together never both go out.
                 heldZoneChanges.removeAll { $0.zone == zone }
-                let zoneID = CloudKitRecords.zoneID(zone)
+                let zoneID = zoneID(zone)
                 engine?.state.remove(pendingDatabaseChanges: engine?.state.pendingDatabaseChanges.filter { $0.zoneID == zoneID } ?? [])
                 handedOverZones.removeAll { $0.zoneID == zoneID }
                 heldZoneChanges.append(change)
@@ -138,7 +150,7 @@ final class CloudKitSyncTransport: SyncTransport {
         guard let engine else {
             return
         }
-        let zoneID = CloudKitRecords.zoneID(zone)
+        let zoneID = zoneID(zone)
         engine.state.remove(pendingRecordZoneChanges: engine.state.pendingRecordZoneChanges.filter { $0.recordID.zoneID == zoneID })
         engine.state.remove(pendingDatabaseChanges: engine.state.pendingDatabaseChanges.filter { $0.zoneID == zoneID })
         handedOver.removeAll { $0.recordID.zoneID == zoneID }
@@ -206,7 +218,7 @@ final class CloudKitSyncTransport: SyncTransport {
         startsFresh = serialization == nil
         let delegate = CloudKitEngineDelegate(transport: self, generation: generation)
         var configuration = CKSyncEngine.Configuration(
-            database: container.privateCloudDatabase,
+            database: scope == .shared ? container.sharedCloudDatabase : container.privateCloudDatabase,
             stateSerialization: serialization,
             delegate: delegate
         )
@@ -260,9 +272,9 @@ final class CloudKitSyncTransport: SyncTransport {
             }
             switch change {
             case .saveZone(let zone):
-                released.append(.saveZone(CKRecordZone(zoneID: CloudKitRecords.zoneID(zone))))
+                released.append(.saveZone(CKRecordZone(zoneID: zoneID(zone))))
             case .deleteZone(let zone):
-                released.append(.deleteZone(CloudKitRecords.zoneID(zone)))
+                released.append(.deleteZone(zoneID(zone)))
             case .save, .delete:
                 break
             }
@@ -336,7 +348,7 @@ final class CloudKitSyncTransport: SyncTransport {
             handedOver.removeAll { $0 == .saveRecord(recordID) }
             return nil
         }
-        return CloudKitRecords.ckRecord(record)
+        return CloudKitRecords.ckRecord(record, owner: owner(of: id.zone))
     }
 
     // MARK: - Events

@@ -276,7 +276,7 @@ final class ProjectLibraryTests: XCTestCase {
 
         XCTAssertTrue(fixture.library.project(id)!.isReadOnly)
         XCTAssertThrowsError(try fixture.library.mutate(id) { $0.name = "Nope" }) { error in
-            XCTAssertEqual(error as? ProjectStorageError, .readOnly)
+            XCTAssertEqual(error as? ProjectStorageError, .readOnly(.newerFormat))
         }
     }
 

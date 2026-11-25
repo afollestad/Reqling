@@ -65,6 +65,16 @@ final class SyncBaseStore {
         var awaitingConfirmation: [ProjectID] = []
         /// Records iCloud refused as too large, by the fingerprint refused, so the same content isn't sent again.
         var tooLarge: [String: String] = [:]
+        /// The projects other people share with this account, as their shares say (shared coordinator only): kept here as
+        /// well as in the library's list, since a share is accepted before its project arrives.
+        var shares: [ProjectID: ProjectSharing] = [:]
+        /// Shared projects this account is leaving, whose share deletion must outlive a quit.
+        var leaving: Set<ProjectID> = []
+        /// Shared projects whose copy here gives way whole to the server's at their next whole fetch, after a change
+        /// went out that their share no longer allowed.
+        var replacing: Set<ProjectID> = []
+        /// How many people besides this account take part in each project it shares (own coordinator only).
+        var ownedShares: [ProjectID: Int] = [:]
         /// The last base of what a project's zone held of this person's before it went to `personal`: an environment's
         /// before its secrets were cleared, current values' before they were deleted. A Mac before `personal` that
         /// writes them again saw this version last, so its write merges over it (`LibrarySync.mergeLegacy`).
@@ -105,6 +115,10 @@ final class SyncBaseStore {
             outgoingZoneDeletions = field(.outgoingZoneDeletions, [])
             awaitingConfirmation = field(.awaitingConfirmation, [])
             tooLarge = field(.tooLarge, [:])
+            shares = field(.shares, [:])
+            leaving = field(.leaving, [])
+            replacing = field(.replacing, [])
+            ownedShares = field(.ownedShares, [:])
             legacyBases = field(.legacyBases, [:])
             transportState = field(.transportState, nil)
             needsRefetch = field(.needsRefetch, false)
@@ -122,6 +136,8 @@ final class SyncBaseStore {
             outgoingTombstones = choices.outgoingTombstones
             outgoingZoneDeletions = choices.outgoingZoneDeletions
             awaitingConfirmation = choices.awaitingConfirmation
+            shares = choices.shares
+            leaving = choices.leaving
         }
 
         /// The person's choices and promises still to keep, without anything a lost key or a damaged file invalidates.
@@ -134,6 +150,8 @@ final class SyncBaseStore {
             kept.outgoingTombstones = outgoingTombstones
             kept.outgoingZoneDeletions = outgoingZoneDeletions
             kept.awaitingConfirmation = awaitingConfirmation
+            kept.shares = shares
+            kept.leaving = leaving
             return kept
         }
     }
@@ -323,6 +341,8 @@ final class SyncBaseStore {
         kept.excluded = state.excluded
         kept.detached = state.detached
         kept.libraryDetached = state.libraryDetached
+        kept.shares = state.shares
+        kept.leaving = state.leaving
         // The backup is the person's safety net, not a cache of the server's, so it stays.
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in names where name != Self.backupFolderName {

@@ -6,19 +6,42 @@ public struct LibraryProject: Identifiable, Hashable, Sendable {
     public var url: URL
     public var status: Status
     public var issues: [ProjectLoadIssue]
-    public var isReadOnly: Bool
+    /// Saved by a newer Reqling, whose fields this version would drop by rewriting it.
+    public var isNewerFormat: Bool
+    /// How this person holds a project someone else shared with them; `nil` for one of their own.
+    public var sharing: ProjectSharing?
 
     public enum Status: Hashable, Sendable {
         case loaded(ProjectDocument)
         case unavailable(String)
     }
 
-    public init(id: ProjectID, url: URL, status: Status, issues: [ProjectLoadIssue] = [], isReadOnly: Bool = false) {
+    public init(
+        id: ProjectID,
+        url: URL,
+        status: Status,
+        issues: [ProjectLoadIssue] = [],
+        isNewerFormat: Bool = false,
+        sharing: ProjectSharing? = nil
+    ) {
         self.id = id
         self.url = url
         self.status = status
         self.issues = issues
-        self.isReadOnly = isReadOnly
+        self.isNewerFormat = isNewerFormat
+        self.sharing = sharing
+    }
+
+    public var isReadOnly: Bool {
+        readOnlyReason != nil
+    }
+
+    /// Why the project can't be edited, if it can't.
+    public var readOnlyReason: ReadOnlyReason? {
+        if isNewerFormat {
+            return .newerFormat
+        }
+        return sharing?.permission == .readOnly ? .sharedReadOnly : nil
     }
 
     public var document: ProjectDocument? {
@@ -30,6 +53,35 @@ public struct LibraryProject: Identifiable, Hashable, Sendable {
 
     public var name: String {
         document?.name ?? url.deletingPathExtension().lastPathComponent
+    }
+}
+
+/// Why a project can't be edited.
+public enum ReadOnlyReason: Hashable, Sendable {
+    /// Saved by a newer Reqling (`LibraryProject.isNewerFormat`).
+    case newerFormat
+    /// Shared with this person to view only.
+    case sharedReadOnly
+}
+
+/// How this person holds a project someone else owns and shared with them. It lives in the library's list, so the
+/// project stays shared, and read-only when it is, while sync is off.
+public struct ProjectSharing: Codable, Hashable, Sendable {
+    /// The owner's CloudKit user record name, which names their zone in this person's shared database.
+    public var owner: String
+    public var permission: Permission
+    /// Whether this person may invite others, as an administrator.
+    public var canInvite: Bool
+
+    public enum Permission: String, Codable, Hashable, Sendable {
+        case readOnly
+        case readWrite
+    }
+
+    public init(owner: String, permission: Permission, canInvite: Bool) {
+        self.owner = owner
+        self.permission = permission
+        self.canInvite = canInvite
     }
 }
 

@@ -22,10 +22,15 @@ extension LibrarySync {
         }
         switch fetched.zone {
         case .library:
-            applyLibrary(fetched)
+            if role == .own {
+                applyLibrary(fetched)
+            }
         case .project(let id):
             applyProject(id, fetched)
         case .personal(let id):
+            guard role == .own else {
+                break
+            }
             if deferringPersonal {
                 if fetched.isWhole {
                     // A whole delivery holds all the zone has, and an older one still waiting would bring back what's gone.
@@ -90,6 +95,13 @@ extension LibrarySync {
         guard let store, !isHeldBack(id) else {
             return false
         }
+        if role == .shared, !canApplyShared(to: id, local: local) {
+            return false
+        }
+        // Someone else's project here comes from the shared database, never this account's own.
+        if role == .own, local?.sharing != nil {
+            return false
+        }
         guard let local else {
             if store.hasBases(in: .project(id)) {
                 // Synced here before but gone from the list: what changed alone would rebuild it partly, and the next
@@ -119,28 +131,25 @@ extension LibrarySync {
         }
         let zone = SyncZone.project(id)
         // Judged before acceptance: a record of a kind a newer version added holds its project back, not dropped.
-        if fetched.changed.contains(where: isTooNew) || local?.isReadOnly == true {
+        if fetched.changed.contains(where: isTooNew) || local?.isNewerFormat == true {
             deferProject(id, untilUpdate: true)
             return
         }
-        var changed = fetched.changed.filter { isAcceptable($0, in: zone) }
+        // Current values left in someone else's project are theirs: not taken, and so never deleted from here either.
+        var changed = fetched.changed.filter { isAcceptable($0, in: zone) && (role == .own || $0.type != .currentValues) }
         if local != nil {
             changed = droppingEchoes(changed)
         }
         guard !changed.isEmpty || !fetched.deleted.isEmpty else {
             return
         }
-        var working: [SyncRecordID: SyncRecord] = [:]
-        if local != nil {
-            // Applying only the server's records over a project this Mac couldn't encode would drop its own items.
-            guard let held = localRecords(in: zone) else {
-                return
-            }
-            working = held
+        guard var working = workingRecords(of: id, local: local, fetched: fetched) else {
+            return
         }
         // What an older Mac left here of this person's merges into `personal` instead (`mergeLegacy`), and the bases
-        // keep it until it's cleared from here; the project takes the rest.
-        let legacy = changed.filter(isLegacyPersonalData)
+        // keep it until it's cleared from here; the project takes the rest. In a project someone else shares, it was
+        // theirs, so nothing of it is taken.
+        let legacy = role == .own ? changed.filter(isLegacyPersonalData) : []
         let own = changed.filter { $0.type != .currentValues }.map(withoutPersonalData)
         let outcome = merge(own, deleted: fetched.deleted, into: &working, hasLocal: local != nil)
         let fenced = isFenced(id) || changed.contains { $0.type == .project && $0.schemaVersion >= Self.personalSchemaVersion }
@@ -148,10 +157,34 @@ extension LibrarySync {
             return
         }
         encoded[zone] = nil
-        // What waits to fill in (`fillLegacyAwaitingFetchEnd`) is taken as agreed only once written there: an
-        // environment's own fields now, its secret values then, and current values whole then.
+        if role == .shared {
+            store?.update { $0.replacing.remove(id) }
+        }
+        settle(settling(changed), deleted: fetched.deleted, outcome: outcome)
+        queue(outcome.resend, from: working)
+        if !legacy.isEmpty {
+            advanceBringingOver(id)
+        }
+    }
+
+    /// What a project's fetch merges into: its records as this Mac holds them, or none for one new here, or one that gives
+    /// way whole to the server's (`permissionDenied`) once a whole fetch says what that is; `nil` to wait, as for one
+    /// this Mac couldn't encode, which applying only the server's records over would drop its own items from.
+    private func workingRecords(of id: ProjectID, local: LibraryProject?, fetched: SyncFetchedZone) -> [SyncRecordID: SyncRecord]? {
+        if role == .shared, store?.state.replacing.contains(id) == true {
+            return fetched.isWhole ? [:] : nil
+        }
+        guard local != nil else {
+            return [:]
+        }
+        return localRecords(in: .project(id))
+    }
+
+    /// `changed` as it's taken as agreed now. What waits to fill in (`fillLegacyAwaitingFetchEnd`) is taken only once
+    /// written there: an environment's own fields now, its secret values then, and current values whole then.
+    private func settling(_ changed: [SyncRecord]) -> [SyncRecord] {
         let waiting = Set(legacyAwaitingFetchEnd.map(\.original.id))
-        let settling = changed.compactMap { record -> SyncRecord? in
+        return changed.compactMap { record in
             guard waiting.contains(record.id) else {
                 return record
             }
@@ -161,11 +194,6 @@ extension LibrarySync {
             var fieldsOnly = record
             fieldsOnly.secrets = nil
             return fieldsOnly
-        }
-        settle(settling, deleted: fetched.deleted, outcome: outcome)
-        queue(outcome.resend, from: working)
-        if !legacy.isEmpty {
-            advanceBringingOver(id)
         }
     }
 
@@ -266,6 +294,9 @@ extension LibrarySync {
             lifecycle.prepareForOutsideChange(to: id, from: previous)
             if previous == nil {
                 try library.adoptSyncedProject(decoded.document, storingSecrets: decoded.secrets)
+                if role == .shared {
+                    library.setSharing(store?.state.shares[id], for: id)
+                }
             } else {
                 try library.applySynced(decoded.document, storingSecrets: decoded.secrets)
             }

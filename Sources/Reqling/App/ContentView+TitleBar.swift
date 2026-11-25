@@ -21,12 +21,13 @@ struct DetailTitleBar: View {
             if let editor = model.editor?.editing, title.subject == .node(editor.projectID, editor.requestID) {
                 RequestProtocolPicker(editor: editor, model: model)
                 if editor.isReadOnly {
+                    let reason = model.library.project(editor.projectID)?.readOnlyReason
                     Label("Read-only", systemImage: "lock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .help(editor.unavailableNote == nil
-                            ? "This project was saved by a newer version of Reqling."
-                            : "This project isn't available right now.")
+                        .help(editor.unavailableNote != nil ? "This project isn't available right now."
+                            : reason == .sharedReadOnly ? "This project was shared with you to view only."
+                            : "This project was saved by a newer version of Reqling.")
                 }
             }
         }

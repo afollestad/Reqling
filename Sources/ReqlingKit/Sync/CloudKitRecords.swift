@@ -29,12 +29,13 @@ enum CloudKitRecords {
         return text + 1_024
     }
 
-    static func zoneID(_ zone: SyncZone) -> CKRecordZone.ID {
-        CKRecordZone.ID(zoneName: zone.name, ownerName: CKCurrentUserDefaultName)
+    /// `zone` as this account's own, or, with `owner`, as the shared database names another person's.
+    static func zoneID(_ zone: SyncZone, owner: String = CKCurrentUserDefaultName) -> CKRecordZone.ID {
+        CKRecordZone.ID(zoneName: zone.name, ownerName: owner)
     }
 
-    static func recordID(_ id: SyncRecordID) -> CKRecord.ID {
-        CKRecord.ID(recordName: id.name, zoneID: zoneID(id.zone))
+    static func recordID(_ id: SyncRecordID, owner: String = CKCurrentUserDefaultName) -> CKRecord.ID {
+        CKRecord.ID(recordName: id.name, zoneID: zoneID(id.zone, owner: owner))
     }
 
     /// `nil` for a zone Reqling never writes, which is ignored rather than acted on.
@@ -45,9 +46,9 @@ enum CloudKitRecords {
     /// The record to save: the server's last version when this Mac knows it (`systemFields`), so the save is checked
     /// against it, with this Mac's fields set over it. `secrets` is set only when present, so a save without it leaves the
     /// server's in place.
-    static func ckRecord(_ record: SyncRecord) -> CKRecord {
+    static func ckRecord(_ record: SyncRecord, owner: String = CKCurrentUserDefaultName) -> CKRecord {
         let ckRecord = record.systemFields.flatMap(unarchive)
-            ?? CKRecord(recordType: record.type.rawValue, recordID: recordID(record.id))
+            ?? CKRecord(recordType: record.type.rawValue, recordID: recordID(record.id, owner: owner))
         let values = ckRecord.encryptedValues
         values[payloadField] = record.payload.compactText()
         if let secrets = record.secrets {
@@ -59,6 +60,20 @@ enum CloudKitRecords {
         values[schemaVersionField] = record.schemaVersion
         values[editedAtField] = record.editedAt
         return ckRecord
+    }
+
+    /// `share` as sync reads it, for `zone`.
+    static func shareInfo(_ share: CKShare, zone: SyncZone) -> SyncShareInfo {
+        let current = share.currentUserParticipant
+        let isOwner = current?.role == .owner
+        return SyncShareInfo(
+            zone: zone,
+            owner: share.recordID.zoneID.ownerName,
+            isOwner: isOwner,
+            permission: isOwner || current?.permission == .readWrite ? .readWrite : .readOnly,
+            canInvite: isOwner || current?.role == .administrator,
+            participantCount: share.participants.filter { $0.role != .owner }.count
+        )
     }
 
     /// Whether `recordType` is CloudKit's share record, which a shared zone holds beside Reqling's own. It says who the
@@ -165,7 +180,11 @@ enum CloudKitSendResults {
             }
             // Already gone, with its zone or alone, is as good as deleted.
             let isGone = [.unknownItem, .zoneNotFound, .userDeletedZone].contains(error.code)
-            results.append(isGone ? .deleted(id) : .failed(id, CloudKitRecords.describe(error)))
+            if isGone {
+                results.append(.deleted(id))
+            } else {
+                results.append(error.code == .permissionFailure ? .permissionDenied(id) : .failed(id, CloudKitRecords.describe(error)))
+            }
         }
         return results
     }
@@ -204,6 +223,8 @@ enum CloudKitSendResults {
             return .missingOnServer(id)
         case .limitExceeded where alone || CloudKitRecords.estimatedSize(record) > CloudKitRecords.recordByteLimit:
             return .tooLarge(id)
+        case .permissionFailure:
+            return .permissionDenied(id)
         default:
             return .failed(id, CloudKitRecords.describe(error))
         }

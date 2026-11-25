@@ -51,8 +51,7 @@ extension LibrarySync {
             case .saved(let record):
                 saved(record)
             case .deleted(let id):
-                store.removeBase(id)
-                store.clearPending(id)
+                deleted(id, in: store)
             case .zoneSaved(let zone):
                 failingZones.remove(zone)
             case .zoneSaveFailed(let zone, let message):
@@ -75,6 +74,8 @@ extension LibrarySync {
                 transport.enqueue([.save(id)])
             case .tooLarge(let id):
                 refusedAsTooLarge(id)
+            case .permissionDenied(let id):
+                permissionDenied(id)
             case .failed(let id, let message):
                 reportFailure(message)
                 if id == nil {
@@ -90,7 +91,9 @@ extension LibrarySync {
             let settled = records.filter { store.base($0.id)?.systemFields == $0.systemFields }
             transport.enqueue(settled.filter { store.pending($0.id).map { !$0.isDeletion } == true }.map { .save($0.id) })
         }
-        advanceBringingOver(after: results)
+        if role == .own {
+            advanceBringingOver(after: results)
+        }
     }
 
     /// A zone this Mac deleted is gone. A deleted project's personal zone goes first, so none of its values outlive it
@@ -104,6 +107,19 @@ extension LibrarySync {
             store.update { $0.outgoingZoneDeletions.remove(project) }
         case .personal, .library:
             break
+        }
+    }
+
+    /// A record this Mac deleted is gone. Its project's share going means this account left it, so the zone's deletion
+    /// that follows finds nothing left to do (`lostAccess`).
+    private func deleted(_ id: SyncRecordID, in store: SyncBaseStore) {
+        store.removeBase(id)
+        store.clearPending(id)
+        if id.name == SyncRecordID.shareName, case .project(let project) = id.zone {
+            store.update { state in
+                state.shares[project] = nil
+                state.leaving.remove(project)
+            }
         }
     }
 
@@ -205,7 +221,10 @@ extension LibrarySync {
     /// which only the next fetch can explain: deleted with a tombstone, or vanished, and either way judged there
     /// (`judgeDeletion(of:)`), never recreated here.
     private func zoneMissing(for id: SyncRecordID, in store: SyncBaseStore) {
-        if let project = id.zone.project, store.state.tombstones.contains(project) {
+        if role == .shared {
+            // Another person's zone, which only its owner makes: gone, as the next fetch says (`lostAccess`).
+            requestRefetch()
+        } else if let project = id.zone.project, store.state.tombstones.contains(project) {
             // Deleted on another Mac; the fetch that brought the tombstone deletes it here.
             store.clearPending(id)
         } else if failingZones.contains(id.zone) {
@@ -225,6 +244,8 @@ extension LibrarySync {
 
     /// Shows a failure in Settings, unless sync is paused for a choice that saying so would hide.
     func reportFailure(_ message: String) {
+        // The shared coordinator's show in Settings as its owner's.
+        owningSync?.reportFailure(message)
         switch status {
         case .accountChanged, .confirmingDeletions, .stopped, .off, .unavailable, .signedOut:
             break

@@ -26,6 +26,10 @@ extension LibrarySync {
             }
         case .removed(let id):
             encoded[.project(id)] = nil
+            // The shared coordinator keeps out only what it syncs, so adding back one of this person's own fetches none.
+            guard role == .own || holdsCopy(of: id) else {
+                break
+            }
             let zones = [SyncZone.project(id), .personal(id)]
             store.update { state in
                 state.excluded.insert(id)
@@ -36,14 +40,28 @@ extension LibrarySync {
             store.save()
         case .deleted(let id):
             encoded[.project(id)] = nil
-            sendTombstone(for: id)
+            switch (role, sharing(of: id) != nil) {
+            case (.own, false): sendTombstone(for: id)
+            // Someone else's: the shared coordinator leaves its share, and this person's values for it go.
+            case (.own, true): deletePersonalZone(of: id)
+            case (.shared, true): leave(id)
+            case (.shared, false): break
+            }
         case .global:
+            guard role == .own else {
+                break
+            }
             encoded[.library] = nil
             reconcileLibrary()
         case .currentValues:
-            reconcileCurrentValues()
+            if role == .own {
+                reconcileCurrentValues()
+            }
         }
-        onLocalChange?()
+        sharedSync?.libraryChanged(change)
+        if role == .own {
+            onLocalChange?()
+        }
     }
 
     /// Whether `id`, listed again, comes back after this Mac removed or deleted it, or after another Mac deleted it: an
@@ -70,7 +88,7 @@ extension LibrarySync {
     /// as an edit. A record another Mac deleted before the project left, which an older copy still holds, comes back:
     /// restoring a copy keeps what it holds rather than trashing it. A deletion of the project, here or by another Mac,
     /// is withdrawn, so it isn't trashed anywhere again.
-    private func readd(_ id: ProjectID) {
+    func readd(_ id: ProjectID) {
         guard let store else {
             return
         }
@@ -113,6 +131,9 @@ extension LibrarySync {
             let edited = stampingFromFiles ? lastModified(project.url) : nil
             reconcileProject(project.id, editedAt: edited, valuesEditedAt: valuesChanged)
         }
+        guard role == .own else {
+            return
+        }
         let globalChanged = stampingFromFiles ? lastModified(configuration.globalEnvironmentURL) : nil
         reconcileLibrary(editedAt: globalChanged, valuesEditedAt: valuesChanged)
     }
@@ -130,9 +151,15 @@ extension LibrarySync {
 
     // MARK: - Projects
 
-    /// Whether `project` syncs now: in scope, loaded, writable, and not held back.
+    /// Whether `project` syncs now through this coordinator: its kind (`syncsProjectZone`), in scope, loaded, not from
+    /// a newer version, and not held back.
     func isSyncable(_ project: LibraryProject) -> Bool {
-        guard let store, project.document != nil, !project.isReadOnly, isInScope(project) else {
+        syncsProjectZone(project) && syncsValues(of: project)
+    }
+
+    /// Whether `project`'s values sync now, whoever owns it: in scope, loaded, not from a newer version, and not held back.
+    func syncsValues(of project: LibraryProject) -> Bool {
+        guard let store, project.document != nil, !project.isNewerFormat, isInScope(project) else {
             return false
         }
         let id = project.id
@@ -150,7 +177,17 @@ extension LibrarySync {
     }
 
     func reconcileProject(_ id: ProjectID, editedAt: Date? = nil, valuesEditedAt: Date? = nil) {
-        guard let store, let project = library.project(id), isSyncable(project) else {
+        guard let store, let project = listedProject(id) else {
+            return
+        }
+        if role == .own, project.sharing != nil {
+            // Someone else's project: only this person's values for it go up from here, to their own `personal` zone.
+            if syncsValues(of: project), isReadFully(project) {
+                reconcilePersonal(id, at: editedAt ?? now(), valuesAt: valuesEditedAt)
+            }
+            return
+        }
+        guard isSyncable(project) else {
             return
         }
         let zone = SyncZone.project(id)
@@ -162,6 +199,10 @@ extension LibrarySync {
             // Changes that waited for its files to read again arrive with a refetch.
             store.update { $0.unreadProjects.remove(id) }
             requestRefetch()
+        }
+        if role == .shared {
+            reconcileSharedProject(project, editedAt: editedAt)
+            return
         }
         if !store.hasBases(in: zone) {
             if store.state.tombstones.contains(id) {
@@ -287,49 +328,6 @@ extension LibrarySync {
         var sendable = record
         sendable.secrets = nil
         return sendable
-    }
-
-    // MARK: - Global and current values
-
-    func reconcileLibrary(editedAt: Date? = nil, valuesEditedAt: Date? = nil) {
-        guard let store, !store.state.libraryDetached, !store.state.libraryDeferred, let records = localRecords(in: .library) else {
-            return
-        }
-        queueDifferences(records, in: .library, deletingMissing: false, at: editedAt ?? now())
-        reconcileCurrentValues(editedAt: valuesEditedAt)
-    }
-
-    /// Only current-values records, since scripts change them on every run.
-    func reconcileCurrentValues(editedAt: Date? = nil) {
-        guard let store else {
-            return
-        }
-        var zones: [SyncZone] = store.state.libraryDetached || store.state.libraryDeferred ? [] : [.library]
-        zones += library.projects.filter { isSyncable($0) && isReadFully($0) }.map { .personal($0.id) }
-        for zone in zones {
-            let records = currentValuesRecords(in: zone)
-            if case .personal = zone, !records.isEmpty, !store.hasBases(in: zone) {
-                transport.enqueue([.saveZone(zone)])
-            }
-            queueDifferences(records, in: zone, deletingMissing: false, at: editedAt ?? now())
-            var deletions: [SyncPendingChange] = []
-            for id in store.baseIDs(in: zone) where id.name.hasPrefix(SyncRecordID.currentValuesPrefix) && records[id] == nil {
-                guard let scope = LibraryRecordCoder.scope(of: id), isLiveScope(scope) else {
-                    continue
-                }
-                store.notePending(id, fingerprint: nil, at: editedAt ?? now())
-                deletions.append(.delete(id))
-            }
-            transport.enqueue(deletions)
-        }
-    }
-
-    /// Whether `scope`'s environment still exists here, so its values going is a reset rather than a deletion.
-    private func isLiveScope(_ scope: CurrentValueScope) -> Bool {
-        switch scope {
-        case .global: true
-        case .environment(let project, let environment): library.document(project)?.environment(environment) != nil
-        }
     }
 
     // MARK: - Queueing

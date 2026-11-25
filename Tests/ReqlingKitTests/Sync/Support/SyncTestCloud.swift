@@ -77,6 +77,8 @@ final class SyncTestCloud {
 
     func deleteZone(_ zone: SyncZone, reason: SyncZoneDeletionReason = .deleted) -> SyncSendResult {
         zones.remove(zone)
+        // Sharing ends with the zone.
+        shares[zone] = nil
         records = records.filter { $0.key.zone != zone }
         sequence += 1
         zoneLog.append(ZoneDeletion(sequence: sequence, zone: zone, reason: reason))
@@ -88,6 +90,84 @@ final class SyncTestCloud {
         for zone in zones {
             _ = deleteZone(zone, reason: reason)
         }
+    }
+
+    // MARK: - Sharing
+
+    /// The name this account's zones go by in the shared databases of the people it shares them with.
+    var ownerName = "owner-a"
+
+    /// Someone a zone is shared with, as its owner set them up.
+    struct Participant {
+        var permission: ProjectSharing.Permission
+        var canInvite: Bool
+        var accepted: Bool
+    }
+
+    /// Each shared zone's participants, by account, as CloudKit keeps a zone-wide share. Real CloudKit does as this does
+    /// (`scripts/sharing-e2e.sh probe`): a read-only participant's write fails as `permissionFailure`, and so does a
+    /// read-only administrator raising its own or the link's permission; removing a participant, stopping sharing,
+    /// deleting the zone, and leaving each reach the participant only as the zone's deletion; leaving changes the owner's
+    /// share, and stopping deletes it.
+    private(set) var shares: [SyncZone: [String: Participant]] = [:]
+    /// Each change to a share, by sequence, so participants' fetches bring what it now says.
+    private(set) var shareLog: [(sequence: Int, zone: SyncZone)] = []
+
+    /// Shares `zone` with `account`, accepted unless said otherwise.
+    func share(
+        _ zone: SyncZone,
+        with account: String,
+        permission: ProjectSharing.Permission = .readWrite,
+        canInvite: Bool = false,
+        accepted: Bool = true
+    ) {
+        shares[zone, default: [:]][account] = Participant(permission: permission, canInvite: canInvite, accepted: accepted)
+        logShareChange(zone)
+    }
+
+    func setPermission(_ permission: ProjectSharing.Permission, for account: String, in zone: SyncZone) {
+        shares[zone]?[account]?.permission = permission
+        logShareChange(zone)
+    }
+
+    func removeParticipant(_ account: String, from zone: SyncZone) {
+        shares[zone]?[account] = nil
+        logShareChange(zone)
+    }
+
+    /// Deletes `zone`'s share: no one but its owner reaches it anymore.
+    func stopSharing(_ zone: SyncZone) {
+        shares[zone] = nil
+        logShareChange(zone)
+    }
+
+    /// What `account` deleting its place in `zone`'s share does: it leaves.
+    func leave(_ zone: SyncZone, account: String) {
+        removeParticipant(account, from: zone)
+    }
+
+    /// The zones `account` reaches in its shared database: those shared with it, accepted, that still exist.
+    func reachable(by account: String) -> Set<SyncZone> {
+        Set(shares.filter { zones.contains($0.key) && $0.value[account]?.accepted == true }.keys)
+    }
+
+    func shareInfo(of zone: SyncZone, for account: String) -> SyncShareInfo? {
+        guard let participants = shares[zone], let participant = participants[account] else {
+            return nil
+        }
+        return SyncShareInfo(
+            zone: zone,
+            owner: ownerName,
+            isOwner: false,
+            permission: participant.permission,
+            canInvite: participant.canInvite,
+            participantCount: participants.count
+        )
+    }
+
+    private func logShareChange(_ zone: SyncZone) {
+        sequence += 1
+        shareLog.append((sequence, zone))
     }
 }
 
@@ -121,7 +201,7 @@ final class SyncTestTransport: SyncTransport {
     }
 
     /// As `CKSyncEngine` does, starts from the persisted state alone: a queue that wasn't persisted is gone.
-    func start(with state: Data?) {
+    func start(with state: Data?, account: String?) {
         seen = state.flatMap { String(bytes: $0, encoding: .utf8) }.flatMap(Int.init) ?? 0
         pending = []
     }
@@ -205,6 +285,13 @@ final class SyncTestTransport: SyncTransport {
         for entry in cloud.zoneLog where !isWhole && entry.sequence > seen && !cloud.zones.contains(entry.zone) {
             delegate?.transport(didDeleteZone: entry.zone, reason: entry.reason)
         }
+        // The owner's own fetch says how its shares stand.
+        for zone in Set(cloud.shareLog.filter { isWhole || $0.sequence > seen }.map(\.zone)).sorted(by: { $0.name < $1.name }) {
+            let participants = cloud.shares[zone]
+            delegate?.transport(didUpdateShareOf: zone, to: participants.map {
+                SyncShareInfo(zone: zone, owner: cloud.ownerName, isOwner: true, permission: .readWrite, canInvite: true, participantCount: $0.count)
+            })
+        }
         var changed: [SyncZone: Set<SyncRecordID>] = [:]
         for entry in cloud.recordLog where entry.sequence > seen && cloud.zones.contains(entry.id.zone) {
             if !isWhole || cloud.record(entry.id) != nil {
@@ -239,7 +326,7 @@ final class SyncTestTransport: SyncTransport {
     }
 }
 
-private extension SyncPendingChange {
+extension SyncPendingChange {
     /// Zones exist before their records are saved, and go only after.
     var sendOrder: Int {
         switch self {

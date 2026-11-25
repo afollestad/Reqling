@@ -217,7 +217,7 @@ public final class ProjectLibrary {
                 document.updateEnvironment(environment.id) { Self.fillBlankSecrets(in: &$0, from: held) }
             }
         }
-        let (position, old) = try editableProject(document.id)
+        let (position, old) = try editableProject(document.id, forSync: true)
         guard document != old else {
             return
         }
@@ -299,17 +299,29 @@ public final class ProjectLibrary {
         }
     }
 
-    /// A loaded, writable project's position and document.
-    private func editableProject(_ id: ProjectID) throws -> (position: Int, document: ProjectDocument) {
+    /// A loaded, writable project's position and document. `forSync`, as for another person's change to a project
+    /// shared with this one to view only, writes what only this person mayn't: a newer format stays refused, since
+    /// rewriting it would drop what this version doesn't understand.
+    private func editableProject(_ id: ProjectID, forSync: Bool = false) throws -> (position: Int, document: ProjectDocument) {
         guard let position = projects.firstIndex(where: { $0.id == id }),
               let document = projects[position].document,
               indexes[id] != nil else {
             throw ProjectStorageError.projectNotFound
         }
-        guard !projects[position].isReadOnly else {
-            throw ProjectStorageError.readOnly
+        if let reason = projects[position].readOnlyReason, !forSync || reason == .newerFormat {
+            throw ProjectStorageError.readOnly(reason)
         }
         return (position, document)
+    }
+
+    /// Records how this person holds `id`, someone else's project shared with them, or `nil` once it's their own or gone.
+    /// Sync sets it as the share says; it tells the observer nothing.
+    func setSharing(_ sharing: ProjectSharing?, for id: ProjectID) {
+        guard let position = projects.firstIndex(where: { $0.id == id }), projects[position].sharing != sharing else {
+            return
+        }
+        projects[position].sharing = sharing
+        saveRegistry()
     }
 
     /// Stores new secrets, saves the folder, publishes, then deletes the secrets the folder no longer references, so
@@ -345,7 +357,8 @@ public final class ProjectLibrary {
                 projects[position].status = .unavailable("The project's ID changed on disk. Remove it from Reqling and add the folder again.")
                 return
             }
-            let reloaded = makeLoadedProject(result, url: url)
+            var reloaded = makeLoadedProject(result, url: url)
+            reloaded.sharing = projects[position].sharing
             indexes[id] = result.index
             if reloaded != projects[position] {
                 // Issues coming or going matter too: sync holds a project back while one loses content.
@@ -384,11 +397,14 @@ public final class ProjectLibrary {
                     continue
                 }
                 adoptedNewIDs = adoptedNewIDs || id != entry.id
-                projects.append(makeLoadedProject(result, url: url))
+                var project = makeLoadedProject(result, url: url)
+                // A folder whose ID changed isn't the project that was shared.
+                project.sharing = id == entry.id ? entry.sharing : nil
+                projects.append(project)
                 indexes[id] = result.index
                 startMonitoring(id, at: url)
             } catch {
-                projects.append(LibraryProject(id: entry.id, url: url, status: .unavailable(error.localizedDescription)))
+                projects.append(LibraryProject(id: entry.id, url: url, status: .unavailable(error.localizedDescription), sharing: entry.sharing))
             }
         }
         if adoptedNewIDs {
@@ -439,7 +455,7 @@ public final class ProjectLibrary {
                 issues.append(ProjectLoadIssue(path: "", message: Self.unreadableSecretsMessage, losesContent: false))
             }
         }
-        return LibraryProject(id: document.id, url: url, status: .loaded(document), issues: issues, isReadOnly: result.isReadOnly)
+        return LibraryProject(id: document.id, url: url, status: .loaded(document), issues: issues, isNewerFormat: result.isNewerFormat)
     }
 
     func updateSecrets(of account: SecretAccount, storing values: [String: String], deleting keys: Set<String>) throws {
@@ -457,7 +473,7 @@ public final class ProjectLibrary {
     }
 
     private func saveRegistry() {
-        let registry = Registry(projects: projects.map { RegistryEntry(id: $0.id, path: $0.url.path) })
+        let registry = Registry(projects: projects.map { RegistryEntry(id: $0.id, path: $0.url.path, sharing: $0.sharing) })
         do {
             try FileManager.default.createDirectory(at: configuration.registryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try ProjectJSON.encode(registry).write(to: configuration.registryURL, options: .atomic)
@@ -466,21 +482,6 @@ public final class ProjectLibrary {
         }
     }
 
-    /// `<name>.reqling`, or `<name> 2.reqling` and so on when taken.
-    private static func availableFolderURL(for name: String, in parent: URL) -> URL {
-        let sanitized = name
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = sanitized.isEmpty || sanitized.hasPrefix(".") ? "Untitled" : sanitized
-        var candidate = parent.appendingPathComponent("\(base).reqling", isDirectory: true)
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = parent.appendingPathComponent("\(base) \(suffix).reqling", isDirectory: true)
-            suffix += 1
-        }
-        return candidate
-    }
 }
 
 private struct Registry: Codable {
@@ -490,4 +491,5 @@ private struct Registry: Codable {
 private struct RegistryEntry: Codable {
     var id: ProjectID
     var path: String
+    var sharing: ProjectSharing?
 }
