@@ -164,7 +164,7 @@ final class CloudKitSyncTransport: SyncTransport {
         }
         let generation = generation
         do {
-            try await engine.fetchChanges()
+            try await Self.outsideCallbacks { try await engine.fetchChanges() }
             guard generation == self.generation else {
                 return
             }
@@ -190,7 +190,7 @@ final class CloudKitSyncTransport: SyncTransport {
         let generation = generation
         releaseZoneChanges()
         do {
-            try await engine.sendChanges()
+            try await Self.outsideCallbacks { try await engine.sendChanges() }
         } catch {
             if generation == self.generation {
                 delegate?.transport(didSend: [.failed(nil, CloudKitRecords.describe(error))])
@@ -240,13 +240,22 @@ final class CloudKitSyncTransport: SyncTransport {
         self.engine = engine
     }
 
+    /// Calls into an engine from a detached task, as every call here does. CloudKit marks the task each delegate callback
+    /// runs in, every task started from it inherits the mark, and a call from a marked task that would call the delegate
+    /// back traps ("Cannot await a call into CKSyncEngine from within a delegate callback"). Sync starts work from
+    /// callbacks unseen, as a fetch's end sending what it held back, or an account change reconnecting.
+    private nonisolated static func outsideCallbacks<T: Sendable>(_ call: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await Task.detached(operation: call).value
+    }
+
     /// Ends the engine in use; anything it still reports is dropped.
     private func stopEngine() {
         generation += 1
         fetch = nil
         refusedChanges = false
         if let engine {
-            Task {
+            // Detached, as for `outsideCallbacks`: a stop can come from a callback, as an account change does.
+            Task.detached {
                 await engine.cancelOperations()
             }
         }
