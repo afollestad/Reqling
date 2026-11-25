@@ -42,7 +42,7 @@ extension LibrarySyncTests {
         await participant.sync.syncNow()
 
         let arrived = try XCTUnwrap(participant.library.project(id))
-        XCTAssertEqual(arrived.sharing, ProjectSharing(owner: cloud.ownerName, permission: .readWrite, canInvite: false))
+        XCTAssertEqual(arrived.sharing, ProjectSharing(owner: cloud.ownerName, permission: .readWrite, canInvite: false, ownerName: "Owner A"))
         XCTAssertEqual(arrived.document?.allRequests.map(\.0.name), ["List users"])
         let token = try XCTUnwrap(arrived.document?.defaultEnvironment.variables.last)
         XCTAssertTrue(token.isSecret)
@@ -87,6 +87,30 @@ extension LibrarySyncTests {
 
         XCTAssertEqual(participant.library.document(id)?.name, "Renamed by its owner")
         XCTAssertEqual(participant.sharedTransport?.zoneWrites, 0)
+    }
+
+    /// The owner's edit of a saved value drops the participant's current value for that key, and only that one.
+    func testAnOwnersEditOfASavedValueDropsTheParticipantsCurrentValue() async throws {
+        let (participant, _) = try await makeParticipant()
+        defer { participant.cleanUp() }
+        let id = try await share(with: participant)
+        let defaultID = try XCTUnwrap(macA.library.document(id)).defaultEnvironment.id
+        let scope = CurrentValueScope.environment(id, defaultID)
+        try participant.library.mutate(id) { $0.defaultEnvironment.variables[1].value = "participant-s3cret" }
+        participant.library.currentValues.apply([
+            "baseUrl": .value(TemplateVariable(value: "https://participant")),
+            "token": .value(TemplateVariable(value: "session-token", isSecret: true))
+        ], in: scope)
+        await participant.sync.syncNow()
+
+        macA.tick()
+        try macA.library.mutate(id) { $0.defaultEnvironment.variables[0].value = "https://api.v2" }
+        await macA.sync.syncNow()
+        await participant.sync.syncNow()
+
+        XCTAssertEqual(participant.library.document(id)?.defaultEnvironment.variables.first?.value, "https://api.v2")
+        XCTAssertEqual(Set(participant.library.currentValues.values(in: scope).keys), ["token"])
+        XCTAssertEqual(participant.library.document(id)?.defaultEnvironment.variables.last?.value, "participant-s3cret")
     }
 
     /// Each person's secret values and current values for a shared project go to their own database, never its owner's.
@@ -134,6 +158,23 @@ extension LibrarySyncTests {
 
         XCTAssertEqual(participant.library.document(id)?.name, "Renamed by its owner")
         XCTAssertNotNil(home.record(LibraryRecordCoder.currentValuesRecordID(.environment(id, defaultID))), "Its own values still sync")
+        XCTAssertEqual(participant.sharedTransport?.zoneWrites, 0)
+    }
+
+    /// Someone who may only view a project still sets their own secret values, which sync to their own database alone.
+    func testAViewOnlyParticipantSetsTheirOwnSecretValues() async throws {
+        let (participant, home) = try await makeParticipant()
+        defer { participant.cleanUp() }
+        let id = try await share(with: participant, permission: .readOnly)
+        let environment = try XCTUnwrap(participant.library.document(id)).defaultEnvironment
+        let token = try XCTUnwrap(environment.variables.last)
+
+        try participant.library.setSecretValues([SecretKey.variable(token.id, in: environment.id): "viewer-s3cret"], in: id)
+        await participant.sync.syncNow()
+        await macA.sync.syncNow()
+
+        XCTAssertEqual(home.record(LibraryRecordCoder.secretsRecordID(id, environment.id))?.secrets?.values.sorted(), ["viewer-s3cret"])
+        XCTAssertEqual(macA.library.document(id)?.defaultEnvironment.variables.last?.value, "s3cret")
         XCTAssertEqual(participant.sharedTransport?.zoneWrites, 0)
     }
 
@@ -205,6 +246,63 @@ extension LibrarySyncTests {
         XCTAssertNotNil(macA.library.project(id))
         XCTAssertNotNil(cloud.record(SyncRecordID(zone: .project(id), name: SyncRecordID.projectName)))
         XCTAssertEqual(participant.sharedTransport?.zoneWrites, 0)
+    }
+
+    // MARK: - Menus
+
+    /// Share… for a project that syncs, Manage Sharing… once shared, and for someone else's, only with leave to invite.
+    func testWhatEachPersonMayDoAboutSharing() async throws {
+        let (participant, _) = try await makeParticipant()
+        defer { participant.cleanUp() }
+        let id = try await shareProject()
+
+        XCTAssertEqual(macA.sync.shareAction(for: id), .share)
+        cloud.share(.project(id), with: Self.participantAccount, permission: .readOnly)
+        await macA.sync.syncNow()
+        await participant.sync.syncNow()
+        XCTAssertEqual(macA.sync.shareAction(for: id), .manage(readOnlyInvites: false))
+        XCTAssertNil(participant.sync.shareAction(for: id))
+
+        cloud.share(.project(id), with: Self.participantAccount, permission: .readOnly, canInvite: true)
+        await participant.sync.syncNow()
+        XCTAssertEqual(participant.sync.shareAction(for: id), .manage(readOnlyInvites: true))
+
+        let unsynced = try macA.lifecycle.createProject(named: "Not yet")
+        guard case .unavailable? = macA.sync.shareAction(for: unsynced) else {
+            return XCTFail("A project that hasn't synced can't be shared")
+        }
+        macA.sync.stop()
+        guard case .unavailable? = macA.sync.shareAction(for: id) else {
+            return XCTFail("Sharing needs sync")
+        }
+    }
+
+    // MARK: - Titles
+
+    /// A share's title, which invitations show, follows the project's name, whoever renamed it.
+    func testAShareIsTitledAfterItsProjectThroughRenames() async throws {
+        let (participant, _) = try await makeParticipant()
+        defer { participant.cleanUp() }
+        let id = try await share(with: participant)
+        await macA.sync.syncNow()
+
+        XCTAssertEqual(cloud.shareTitles[.project(id)], "API")
+
+        macA.tick()
+        try macA.library.mutate(id) { $0.name = "Renamed by its owner" }
+        await macA.sync.syncNow()
+        XCTAssertEqual(cloud.shareTitles[.project(id)], "Renamed by its owner")
+
+        await participant.sync.syncNow()
+        try participant.library.mutate(id) { $0.name = "Renamed by the participant" }
+        await participant.sync.syncNow()
+        await macA.sync.syncNow()
+        XCTAssertEqual(cloud.shareTitles[.project(id)], "Renamed by the participant")
+
+        let writes = cloud.titleWrites
+        await macA.sync.syncNow()
+        await macB.sync.syncNow()
+        XCTAssertEqual(cloud.titleWrites, writes, "Titled once, not on every sync or by every Mac")
     }
 
     // MARK: - Listing again

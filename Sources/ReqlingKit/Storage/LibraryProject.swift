@@ -72,16 +72,19 @@ public struct ProjectSharing: Codable, Hashable, Sendable {
     public var permission: Permission
     /// Whether this person may invite others, as an administrator.
     public var canInvite: Bool
+    /// The owner's name as their Apple Account gives it, when CloudKit says.
+    public var ownerName: String?
 
     public enum Permission: String, Codable, Hashable, Sendable {
         case readOnly
         case readWrite
     }
 
-    public init(owner: String, permission: Permission, canInvite: Bool) {
+    public init(owner: String, permission: Permission, canInvite: Bool, ownerName: String? = nil) {
         self.owner = owner
         self.permission = permission
         self.canInvite = canInvite
+        self.ownerName = ownerName
     }
 }
 

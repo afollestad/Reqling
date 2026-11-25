@@ -314,6 +314,29 @@ public final class ProjectLibrary {
         return (position, document)
     }
 
+    /// Sets this person's own values for `id`'s secret variables, by `SecretKey`, as in a project they may only view:
+    /// secret values are each person's, never in the project's files, so this writes none and changes nothing anyone
+    /// else sees. Like an edit, it drops the current values it makes stale, and tells the observer, so sync sends them.
+    public func setSecretValues(_ values: [String: String], in id: ProjectID) throws {
+        guard let position = projects.firstIndex(where: { $0.id == id }), let old = projects[position].document else {
+            throw ProjectStorageError.projectNotFound
+        }
+        if projects[position].isNewerFormat {
+            throw ProjectStorageError.readOnly(.newerFormat)
+        }
+        let secretKeys = Set(Self.secretValues(in: old).keys)
+        let changed = values.filter { secretKeys.contains($0.key) }
+        var new = old
+        Self.fillSecretValues(in: &new, from: changed, keepingMissing: true)
+        guard new != old else {
+            return
+        }
+        try updateSecrets(of: .project(id), storing: changed, deleting: [])
+        projects[position].status = .loaded(new)
+        resetCurrentValues(old: old.allEnvironments, new: new.allEnvironments) { .environment(id, $0) }
+        notify(.project(id))
+    }
+
     /// Records how this person holds `id`, someone else's project shared with them, or `nil` once it's their own or gone.
     /// Sync sets it as the share says; it tells the observer nothing.
     func setSharing(_ sharing: ProjectSharing?, for id: ProjectID) {
@@ -472,24 +495,4 @@ public final class ProjectLibrary {
         }
     }
 
-    private func saveRegistry() {
-        let registry = Registry(projects: projects.map { RegistryEntry(id: $0.id, path: $0.url.path, sharing: $0.sharing) })
-        do {
-            try FileManager.default.createDirectory(at: configuration.registryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try ProjectJSON.encode(registry).write(to: configuration.registryURL, options: .atomic)
-        } catch {
-            // The registry only lists folders; every project's data is already safe in its own folder.
-        }
-    }
-
-}
-
-private struct Registry: Codable {
-    var projects: [RegistryEntry]
-}
-
-private struct RegistryEntry: Codable {
-    var id: ProjectID
-    var path: String
-    var sharing: ProjectSharing?
 }

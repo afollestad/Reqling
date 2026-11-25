@@ -72,7 +72,9 @@ enum CloudKitRecords {
             isOwner: isOwner,
             permission: isOwner || current?.permission == .readWrite ? .readWrite : .readOnly,
             canInvite: isOwner || current?.role == .administrator,
-            participantCount: share.participants.filter { $0.role != .owner }.count
+            participantCount: share.participants.filter { $0.role != .owner }.count,
+            title: share[CKShare.SystemFieldKey.title] as? String,
+            ownerName: share.owner.userIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) }
         )
     }
 

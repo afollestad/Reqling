@@ -147,4 +147,9 @@ final class SyncTestSharedTransport: SyncTransport {
         seen = 0
         resets += 1
     }
+
+    /// Only a share's owner titles it here.
+    func setShareTitle(_ title: String, of zone: SyncZone) async throws {
+        throw CloudKitShareError.notSaved
+    }
 }

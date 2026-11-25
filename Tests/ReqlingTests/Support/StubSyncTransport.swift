@@ -33,6 +33,8 @@ final class StubSyncTransport: SyncTransport {
     }
 
     func resetState() {}
+
+    func setShareTitle(_ title: String, of zone: SyncZone) async throws {}
 }
 
 extension AppFixture {

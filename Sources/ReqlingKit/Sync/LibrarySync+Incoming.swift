@@ -301,6 +301,11 @@ extension LibrarySync {
                 try library.applySynced(decoded.document, storingSecrets: decoded.secrets)
             }
             noteChanges(from: previous, to: decoded.document)
+            if role == .shared, let previous, let written = library.document(id) {
+                // Another person's edit of a saved value drops this person's current value for it, as their own edit
+                // would; edits on their own Macs drop it through `personal` instead.
+                library.resetCurrentValues(old: previous.allEnvironments, new: written.allEnvironments) { .environment(id, $0) }
+            }
             return true
         } catch let error as SyncRecordError where previous == nil && [.missingProject, .missingDefaultEnvironment].contains(error) {
             // A project whose own records haven't all arrived, as when only some changed since the last fetch: fetched

@@ -49,11 +49,22 @@ extension ScriptAnalyzer {
 
     /// Every variable the script sets with a literal name through an accessor the catalog knows, `pm`'s included.
     public static func declaredVariables(in source: String) -> [ScriptDeclaredVariable] {
+        namedVariables(in: source, through: ["set"])
+    }
+
+    /// Every variable the script reads with a literal name through an accessor the catalog knows, `pm`'s included.
+    public static func readVariables(in source: String) -> [ScriptDeclaredVariable] {
+        namedVariables(in: source, through: ["get", "has", "isSecret"])
+    }
+
+    /// Every variable the script names, with a literal string, as the first argument of one of `methods` on an accessor
+    /// whose first parameter the catalog completes as a variable name.
+    private static func namedVariables(in source: String, through methods: Set<String>) -> [ScriptDeclaredVariable] {
         let analyzer = ScriptAnalyzer(text: source, context: ScriptAnalysisContext(phase: .preRequest))
         let expressions = analyzer.expressions
         let tokens = expressions.tokens
         var found: [ScriptDeclaredVariable] = []
-        for index in tokens.indices where tokens[index].text == "set" && index >= 1 && index + 2 < tokens.count {
+        for index in tokens.indices where methods.contains(tokens[index].text) && index >= 1 && index + 2 < tokens.count {
             guard ScriptExpressions.isDot(tokens[index - 1]), tokens[index + 1].isPunctuator("("),
                   case .string(terminated: true) = tokens[index + 2].kind,
                   let chain = expressions.chain(endingAt: index),

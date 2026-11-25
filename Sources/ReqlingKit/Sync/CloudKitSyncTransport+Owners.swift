@@ -40,4 +40,8 @@ extension CloudKitSyncTransport {
         owners[zone] = zoneID.ownerName
         return zone
     }
+
+    func setShareTitle(_ title: String, of zone: SyncZone) async throws {
+        try await CloudKitShareService.setTitle(title, ofShareIn: zoneID(zone), of: container.database(with: scope))
+    }
 }

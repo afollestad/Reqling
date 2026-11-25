@@ -112,6 +112,10 @@ final class SyncTestCloud {
     private(set) var shares: [SyncZone: [String: Participant]] = [:]
     /// Each change to a share, by sequence, so participants' fetches bring what it now says.
     private(set) var shareLog: [(sequence: Int, zone: SyncZone)] = []
+    /// Each share's title, as its owner's Macs set it.
+    private(set) var shareTitles: [SyncZone: String] = [:]
+    /// How often the owner's Macs titled a share.
+    private(set) var titleWrites = 0
 
     /// Shares `zone` with `account`, accepted unless said otherwise.
     func share(
@@ -138,6 +142,16 @@ final class SyncTestCloud {
     /// Deletes `zone`'s share: no one but its owner reaches it anymore.
     func stopSharing(_ zone: SyncZone) {
         shares[zone] = nil
+        shareTitles[zone] = nil
+        logShareChange(zone)
+    }
+
+    func setShareTitle(_ title: String, of zone: SyncZone) throws {
+        guard shares[zone] != nil else {
+            throw CloudKitShareError.notSaved
+        }
+        titleWrites += 1
+        shareTitles[zone] = title
         logShareChange(zone)
     }
 
@@ -161,7 +175,9 @@ final class SyncTestCloud {
             isOwner: false,
             permission: participant.permission,
             canInvite: participant.canInvite,
-            participantCount: participants.count
+            participantCount: participants.count,
+            title: shareTitles[zone],
+            ownerName: "Owner A"
         )
     }
 
@@ -289,7 +305,15 @@ final class SyncTestTransport: SyncTransport {
         for zone in Set(cloud.shareLog.filter { isWhole || $0.sequence > seen }.map(\.zone)).sorted(by: { $0.name < $1.name }) {
             let participants = cloud.shares[zone]
             delegate?.transport(didUpdateShareOf: zone, to: participants.map {
-                SyncShareInfo(zone: zone, owner: cloud.ownerName, isOwner: true, permission: .readWrite, canInvite: true, participantCount: $0.count)
+                SyncShareInfo(
+                    zone: zone,
+                    owner: cloud.ownerName,
+                    isOwner: true,
+                    permission: .readWrite,
+                    canInvite: true,
+                    participantCount: $0.count,
+                    title: cloud.shareTitles[zone]
+                )
             })
         }
         var changed: [SyncZone: Set<SyncRecordID>] = [:]
@@ -323,6 +347,10 @@ final class SyncTestTransport: SyncTransport {
     func resetState() {
         seen = 0
         resets += 1
+    }
+
+    func setShareTitle(_ title: String, of zone: SyncZone) async throws {
+        try cloud.setShareTitle(title, of: zone)
     }
 }
 

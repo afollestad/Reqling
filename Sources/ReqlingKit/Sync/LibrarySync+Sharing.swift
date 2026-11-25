@@ -59,9 +59,34 @@ extension LibrarySync {
         }
     }
 
+    /// What this person can do about sharing `id`, or `nil` for nothing to offer: someone else's project they may not
+    /// invite others to, or one that isn't loaded. Only a project that syncs, with none of this person's values left in
+    /// its zone by an older Mac, can be shared, since everyone it's shared with reaches the whole zone.
+    public func shareAction(for id: ProjectID) -> ProjectShareAction? {
+        guard let project = library.project(id), project.document != nil else {
+            return nil
+        }
+        if let sharing = project.sharing {
+            return sharing.canInvite ? .manage(readOnlyInvites: sharing.permission == .readOnly) : nil
+        }
+        guard let store else {
+            return .unavailable("Sharing needs iCloud sync, which is off or not connected.")
+        }
+        guard isInScope(project) else {
+            return .unavailable("Only projects in Reqling's own folder sync, so only they can be shared.")
+        }
+        guard isSyncable(project), store.hasBases(in: .project(id)) else {
+            return .unavailable("This project has to sync with iCloud before it can be shared.")
+        }
+        if holdsLegacyData(id) {
+            return .unavailable("Your values in this project are still moving to their own place in iCloud. Share it once it has synced.")
+        }
+        return store.state.ownedShares[id] == nil ? .share : .manage(readOnlyInvites: false)
+    }
+
     /// Whether `project` is one this account shares with other people.
     public func isShared(_ project: ProjectID) -> Bool {
-        sharing(of: project) != nil || (store?.state.ownedShares[project] ?? 0) > 0
+        sharing(of: project) != nil || (store?.state.ownedShares[project]?.participants ?? 0) > 0
     }
 
     func transport(didUpdateShareOf zone: SyncZone, to share: SyncShareInfo?) {
@@ -79,7 +104,28 @@ extension LibrarySync {
                 library.setSharing(sharing, for: id)
             }
         case .own:
-            store.update { $0.ownedShares[id] = share?.participantCount }
+            store.update { $0.ownedShares[id] = share.map { OwnedShare(participants: $0.participantCount, title: $0.title) } }
+        }
+    }
+
+    /// Keeps each share's title, which invitations show, the project's name: on the owner's Macs, after a rename here or
+    /// one fetched from anyone who can edit it. A title that fails to go tries again at the next sync.
+    func sendShareTitles() async {
+        guard role == .own, let store else {
+            return
+        }
+        for (id, share) in store.state.ownedShares.sorted(by: { $0.key < $1.key }) {
+            guard let name = library.project(id)?.name, share.title != name else {
+                continue
+            }
+            guard (try? await transport.setShareTitle(name, of: .project(id))) != nil else {
+                continue
+            }
+            // Another account connected meanwhile: what's left is that one's to title.
+            guard self.store === store else {
+                return
+            }
+            store.update { $0.ownedShares[id]?.title = name }
         }
     }
 
@@ -245,4 +291,15 @@ extension LibrarySync {
         requestRefetch()
         report("You can no longer change \(name(of: zone)), so your changes to it are undone.")
     }
+}
+
+/// What this person can do about sharing a project, for its menus.
+public enum ProjectShareAction: Equatable, Sendable {
+    /// Share…: a project of their own, syncing, and shared with no one yet.
+    case share
+    /// Manage Sharing…: their own project, shared already, or someone else's they may invite others to; with
+    /// `readOnlyInvites`, only to view it, since this person may only view it themselves.
+    case manage(readOnlyInvites: Bool)
+    /// Share…, unavailable for the reason given.
+    case unavailable(String)
 }

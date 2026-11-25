@@ -73,8 +73,8 @@ final class SyncBaseStore {
         /// Shared projects whose copy here gives way whole to the server's at their next whole fetch, after a change
         /// went out that their share no longer allowed.
         var replacing: Set<ProjectID> = []
-        /// How many people besides this account take part in each project it shares (own coordinator only).
-        var ownedShares: [ProjectID: Int] = [:]
+        /// The share of each project this account shares, as its last fetch said (own coordinator only).
+        var ownedShares: [ProjectID: OwnedShare] = [:]
         /// The last base of what a project's zone held of this person's before it went to `personal`: an environment's
         /// before its secrets were cleared, current values' before they were deleted. A Mac before `personal` that
         /// writes them again saw this version last, so its write merges over it (`LibrarySync.mergeLegacy`).

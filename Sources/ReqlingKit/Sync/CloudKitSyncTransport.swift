@@ -23,7 +23,7 @@ final class CloudKitSyncTransport: SyncTransport {
         }
     }
 
-    private let container: CKContainer
+    let container: CKContainer
     /// `.private` for this account's own zones, `.shared` for the project zones other people share with it.
     let scope: CKDatabase.Scope
     /// Who owns each shared zone, as fetches name them, so a change to one goes to that owner's zone.

@@ -65,11 +65,22 @@ struct SyncShareInfo: Equatable, Sendable {
     let canInvite: Bool
     /// How many people besides the owner take part.
     let participantCount: Int
+    /// What invitations call it, which the owner's Macs keep the project's name (`LibrarySync.sendShareTitles`).
+    var title: String?
+    /// The owner's name as their Apple Account gives it, when CloudKit says.
+    var ownerName: String?
 
     /// How this account holds the zone, when it doesn't own it.
     var sharing: ProjectSharing? {
-        isOwner ? nil : ProjectSharing(owner: owner, permission: permission, canInvite: canInvite)
+        isOwner ? nil : ProjectSharing(owner: owner, permission: permission, canInvite: canInvite, ownerName: ownerName)
     }
+}
+
+/// A share of one of this account's own projects, as its last fetch said.
+struct OwnedShare: Codable, Equatable, Sendable {
+    /// How many people besides this account take part.
+    var participants: Int
+    var title: String?
 }
 
 /// Changes fetched for one zone, delivered once its fetch completes.
@@ -109,6 +120,8 @@ protocol SyncTransport: AnyObject {
     /// Fetches over from the start, so the next fetch is whole: everything that exists, and no deletion; what's queued to
     /// send stays queued.
     func resetState()
+    /// Titles the share of `zone`, one of this account's own, outside the queue: the share isn't one of sync's records.
+    func setShareTitle(_ title: String, of zone: SyncZone) async throws
 }
 
 @MainActor

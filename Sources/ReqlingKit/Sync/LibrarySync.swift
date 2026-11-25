@@ -371,6 +371,7 @@ public final class LibrarySync {
             guard attempt == connection else {
                 return
             }
+            await sendShareTitles()
         }
         store.save()
         if case .syncing = status {
