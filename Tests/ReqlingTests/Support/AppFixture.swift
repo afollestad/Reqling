@@ -118,6 +118,12 @@ final class StubSystemIntegration: SystemIntegration {
         broughtToFront += 1
     }
 
+    private(set) var sharingPickers: [(item: NSItemProvider, anchor: SharingAnchor?)] = []
+
+    func showSharingPicker(_ item: NSItemProvider, anchor: SharingAnchor?) {
+        sharingPickers.append((item, anchor))
+    }
+
     func copyToPasteboard(_ string: String) {
         pasteboard = string
     }

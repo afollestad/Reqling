@@ -1,4 +1,5 @@
 import AppKit
+import CloudKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -14,6 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.registerForRemoteNotifications()
         }
         AppDI.component.appModel.iCloud.start()
+    }
+
+    /// A project's share someone opened in Messages, Mail, or a browser, which macOS hands to Reqling
+    /// (`CKSharingSupported`): accepted, then synced in.
+    func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
+        AppDI.component.appModel.acceptShare(metadata)
     }
 
     /// Applies what iCloud delivered while Reqling was in the background, and syncs.

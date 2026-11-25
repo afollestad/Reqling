@@ -55,6 +55,13 @@ private struct SidebarProjectLabel: View {
             .padding(.leading, Self.caretGap)
             .accessibilityHidden(true)
             SidebarRowName(item: .project(project.id), name: project.name, isEmphasized: true, model: model)
+            if let sharing = model.iCloud.sharingDescription(of: project) {
+                Image(systemName: "person.2.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(sharing)
+                    .accessibilityLabel(sharing)
+            }
             Spacer(minLength: 4)
             if isAvailable {
                 SidebarCount(count: requestCount)
@@ -64,6 +71,8 @@ private struct SidebarProjectLabel: View {
                     .foregroundStyle(.orange)
             }
         }
+        // What a Share… chosen from this row's context menu opens beside.
+        .background(ShareAnchor(origin: .sidebar(project.id), anchors: model.shareAnchors))
         .sidebarRowClick(isEnabled: drag.isIdle) { drag.click(item) }
         .sidebarDragGeometry(item)
         .sidebarDragFade(item, drag: drag)
@@ -104,6 +113,7 @@ private struct SidebarProjectMenu: View {
             Divider()
             Button("Environments…") { model.sheet = .environments(project.id) }
             Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
+            ProjectShareButton(projectID: project.id, origin: .sidebar(project.id), model: model)
             Button("Rename") { model.beginRename(.project(project.id)) }
                 .disabled(!model.canRename(.project(project.id)))
             Button("Clear Run History…") { model.requestClearHistory(of: project.id) }

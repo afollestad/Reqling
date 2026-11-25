@@ -112,6 +112,8 @@ final class SyncTestCloud {
     private(set) var shares: [SyncZone: [String: Participant]] = [:]
     /// Each change to a share, by sequence, so participants' fetches bring what it now says.
     private(set) var shareLog: [(sequence: Int, zone: SyncZone)] = []
+    /// The shares anyone with the link may join.
+    private(set) var links: Set<SyncZone> = []
     /// Each share's title, as its owner's Macs set it.
     private(set) var shareTitles: [SyncZone: String] = [:]
     /// How often the owner's Macs titled a share.
@@ -129,6 +131,13 @@ final class SyncTestCloud {
         logShareChange(zone)
     }
 
+    /// Shares `zone` with anyone who has the link, as the owner can with no one invited.
+    func shareByLink(_ zone: SyncZone) {
+        shares[zone] = shares[zone] ?? [:]
+        links.insert(zone)
+        logShareChange(zone)
+    }
+
     func setPermission(_ permission: ProjectSharing.Permission, for account: String, in zone: SyncZone) {
         shares[zone]?[account]?.permission = permission
         logShareChange(zone)
@@ -142,6 +151,7 @@ final class SyncTestCloud {
     /// Deletes `zone`'s share: no one but its owner reaches it anymore.
     func stopSharing(_ zone: SyncZone) {
         shares[zone] = nil
+        links.remove(zone)
         shareTitles[zone] = nil
         logShareChange(zone)
     }
@@ -312,6 +322,7 @@ final class SyncTestTransport: SyncTransport {
                     permission: .readWrite,
                     canInvite: true,
                     participantCount: $0.count,
+                    byLink: cloud.links.contains(zone),
                     title: cloud.shareTitles[zone]
                 )
             })

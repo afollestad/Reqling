@@ -70,6 +70,7 @@ struct ContentView: View {
             .modifier(FirstSyncNotice(model: model))
             .modifier(HistoryClearConfirmation(model: model))
             .modifier(ScriptTrustAlert(model: model, isInSheet: false))
+            .modifier(AcceptedShareAlert(model: model))
     }
 
     static func colorScheme(for theme: AppTheme) -> ColorScheme? {
@@ -114,6 +115,13 @@ private struct AppSheetView: View {
             )
         case .batchRun(let scope):
             BatchRunSheet(setup: BatchRunSetupModel(scope: scope, app: model))
+        case .shareProject(let project, let origin):
+            ShareProjectSheet(
+                model: model,
+                projectID: project,
+                origin: origin,
+                offer: model.library.globalVariablesOffer(for: project)
+            )
         }
     }
 }

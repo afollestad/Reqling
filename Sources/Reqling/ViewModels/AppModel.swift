@@ -28,6 +28,9 @@ enum AppSheet: Identifiable, Hashable {
     case environments(ProjectID)
     case projectSettings(ProjectID)
     case batchRun(BatchRunScope)
+    /// Before a project is first shared: the Global variables it uses, offered to copy into its Default; the share sheet
+    /// then opens beside where Share… was chosen.
+    case shareProject(ProjectID, from: ShareOrigin)
 
     var id: Self {
         self
@@ -73,6 +76,8 @@ final class AppModel {
         }
     }
     var alert: AppAlert?
+    /// A share this person accepted while iCloud sync is off, which waits for them to turn it on (`AppModel+Sharing`).
+    var shareAwaitingSync: AcceptedShare?
     /// A project, folder, or request awaiting confirmation before it moves to the Trash.
     var trashPending: TrashConfirmation?
     /// A folder or request awaiting confirmation before it moves into another project (`AppModel+Moves.swift`).
@@ -116,6 +121,8 @@ final class AppModel {
     @ObservationIgnored let keychain: any KeychainIdentityStore
     @ObservationIgnored let pkcs12Probe: any PKCS12ImportProbe
     @ObservationIgnored let system: any SystemIntegration
+    /// The sidebar rows and Share buttons the share sheet opens beside.
+    @ObservationIgnored let shareAnchors = ShareAnchors()
     /// What the import sheet reads documents through, files and URLs alike.
     @ObservationIgnored let importFetcher: any ImportFetching
     /// One workspace per project with proto definitions, kept in step by `syncProtoWorkspaces()`.

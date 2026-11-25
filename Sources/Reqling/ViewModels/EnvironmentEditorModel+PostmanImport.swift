@@ -7,6 +7,9 @@ import UniformTypeIdentifiers
 /// leaves everything as it was.
 extension EnvironmentEditorModel {
     func importPostmanEnvironments() async {
+        guard !editsOnlySecretValues else {
+            return
+        }
         let urls = app.system.chooseFiles(prompt: "Import", message: "Choose Postman environment or globals exports.", allowedTypes: [.json])
         guard !urls.isEmpty else {
             return

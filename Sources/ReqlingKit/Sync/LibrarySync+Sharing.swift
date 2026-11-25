@@ -86,7 +86,7 @@ extension LibrarySync {
 
     /// Whether `project` is one this account shares with other people.
     public func isShared(_ project: ProjectID) -> Bool {
-        sharing(of: project) != nil || (store?.state.ownedShares[project]?.participants ?? 0) > 0
+        sharing(of: project) != nil || store?.state.ownedShares[project]?.audience != nil
     }
 
     func transport(didUpdateShareOf zone: SyncZone, to share: SyncShareInfo?) {
@@ -104,7 +104,9 @@ extension LibrarySync {
                 library.setSharing(sharing, for: id)
             }
         case .own:
-            store.update { $0.ownedShares[id] = share.map { OwnedShare(participants: $0.participantCount, title: $0.title) } }
+            let owned = share.map { OwnedShare(participants: $0.participantCount, byLink: $0.byLink, title: $0.title) }
+            store.update { $0.ownedShares[id] = owned }
+            sharedByYou[id] = owned?.audience
         }
     }
 
@@ -290,6 +292,19 @@ extension LibrarySync {
         store.update { $0.replacing.insert(project) }
         requestRefetch()
         report("You can no longer change \(name(of: zone)), so your changes to it are undone.")
+    }
+}
+
+/// Who one of this account's own projects is shared with.
+public struct ShareAudience: Equatable, Sendable {
+    /// How many people besides this account take part, invited or joined by the link.
+    public var people: Int
+    /// Whether anyone with the link may join.
+    public var byLink: Bool
+
+    public init(people: Int, byLink: Bool) {
+        self.people = people
+        self.byLink = byLink
     }
 }
 

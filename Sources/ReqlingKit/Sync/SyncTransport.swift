@@ -65,6 +65,8 @@ struct SyncShareInfo: Equatable, Sendable {
     let canInvite: Bool
     /// How many people besides the owner take part.
     let participantCount: Int
+    /// Whether anyone with the link may join, besides those invited.
+    var byLink = false
     /// What invitations call it, which the owner's Macs keep the project's name (`LibrarySync.sendShareTitles`).
     var title: String?
     /// The owner's name as their Apple Account gives it, when CloudKit says.
@@ -80,7 +82,28 @@ struct SyncShareInfo: Equatable, Sendable {
 struct OwnedShare: Codable, Equatable, Sendable {
     /// How many people besides this account take part.
     var participants: Int
+    /// Whether anyone with the link may join.
+    var byLink: Bool
     var title: String?
+
+    init(participants: Int, byLink: Bool, title: String?) {
+        self.participants = participants
+        self.byLink = byLink
+        self.title = title
+    }
+
+    /// Read without `byLink` as a share no link opens, as kept before it was.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        participants = try container.decode(Int.self, forKey: .participants)
+        byLink = try container.decodeIfPresent(Bool.self, forKey: .byLink) ?? false
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+    }
+
+    /// Who it reaches, or `nil` while it reaches no one: a share made for a sheet that was closed unused.
+    var audience: ShareAudience? {
+        participants > 0 || byLink ? ShareAudience(people: participants, byLink: byLink) : nil
+    }
 }
 
 /// Changes fetched for one zone, delivered once its fetch completes.

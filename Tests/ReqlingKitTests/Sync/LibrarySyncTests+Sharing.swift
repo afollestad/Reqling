@@ -67,6 +67,25 @@ extension LibrarySyncTests {
         XCTAssertEqual(participant.sharedTransport?.startedAccount, home.account)
     }
 
+    /// A project shared only by its link reaches people too, so it reads as shared, as one shared with someone does.
+    func testTheOwnerSeesWhoItsProjectReaches() async throws {
+        let id = try await shareProject()
+
+        cloud.shareByLink(.project(id))
+        await macA.sync.syncNow()
+        XCTAssertEqual(macA.sync.sharedByYou[id], ShareAudience(people: 0, byLink: true))
+        XCTAssertTrue(macA.sync.isShared(id))
+
+        cloud.share(.project(id), with: Self.participantAccount)
+        await macA.sync.syncNow()
+        XCTAssertEqual(macA.sync.sharedByYou[id], ShareAudience(people: 1, byLink: true))
+
+        cloud.stopSharing(.project(id))
+        await macA.sync.syncNow()
+        XCTAssertNil(macA.sync.sharedByYou[id])
+        XCTAssertFalse(macA.sync.isShared(id))
+    }
+
     func testEditsGoBothWaysInAProjectSharedToEdit() async throws {
         let (participant, _) = try await makeParticipant()
         defer { participant.cleanUp() }

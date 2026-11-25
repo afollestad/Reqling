@@ -22,6 +22,14 @@ protocol SystemIntegration {
     func confirmQuitDiscardingUnsavedChanges() -> Bool
     /// Activates Reqling and brings its window forward, for an agent showing the user something.
     func bringToFront()
+    /// Shows the system's share sheet for `item`, a project's iCloud share, beside `anchor`, what the person chose it from.
+    func showSharingPicker(_ item: NSItemProvider, anchor: SharingAnchor?)
+}
+
+/// Where the share sheet opens: beside `view`, on its `edge`.
+struct SharingAnchor {
+    let view: NSView
+    let edge: NSRectEdge
 }
 
 extension SystemIntegration {
@@ -38,6 +46,20 @@ enum PathSharing {
 }
 
 struct AppKitSystemIntegration: SystemIntegration {
+    /// Without an anchor on screen, the sheet opens at the pointer in the key window, where the person just clicked.
+    func showSharingPicker(_ item: NSItemProvider, anchor: SharingAnchor?) {
+        let picker = NSSharingServicePicker(items: [item])
+        if let anchor, anchor.view.window != nil, !anchor.view.isHiddenOrHasHiddenAncestor {
+            picker.show(relativeTo: anchor.view.bounds, of: anchor.view, preferredEdge: anchor.edge)
+            return
+        }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else {
+            return
+        }
+        let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        picker.show(relativeTo: NSRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2), of: view, preferredEdge: .minY)
+    }
+
     func bringToFront() {
         NSApp.activate()
         NSApp.windows.first { $0.canBecomeMain && !$0.isMiniaturized }?.makeKeyAndOrderFront(nil)

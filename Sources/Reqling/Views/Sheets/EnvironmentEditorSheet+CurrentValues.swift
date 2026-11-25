@@ -56,7 +56,7 @@ private struct CurrentValueRowView: View {
                     .help("Secret: stored in your Keychain and masked in previews")
                     .accessibilityLabel("Secret")
             }
-            if row.value != nil {
+            if row.value != nil, !editor.isSelectedLocked {
                 Button("Save as Value") { editor.saveCurrentValueAsValue(row.key) }
                     .help("Make this the environment's saved value, shared with the project")
             }

@@ -22,9 +22,11 @@ final class ICloudSyncModel {
 
     /// `nil` where sync can't run: a test graph, which must never reach iCloud, or a build without the entitlement.
     @ObservationIgnored let sync: LibrarySync?
-    @ObservationIgnored private let library: ProjectLibrary
+    /// Projects' iCloud shares, for the share sheet and accepting a share; `nil` wherever `sync` is.
+    @ObservationIgnored let shareService: CloudKitShareService?
+    @ObservationIgnored let library: ProjectLibrary
     @ObservationIgnored private let settings: SettingsStore
-    @ObservationIgnored private let system: any SystemIntegration
+    @ObservationIgnored let system: any SystemIntegration
     /// When this build's provisioning profile expires; `nil` when it has none, as a debug build signed ad hoc.
     @ObservationIgnored private let profileExpiry: Date?
     @ObservationIgnored private let now: () -> Date
@@ -33,6 +35,7 @@ final class ICloudSyncModel {
 
     init(
         sync: LibrarySync?,
+        shareService: CloudKitShareService? = nil,
         library: ProjectLibrary,
         settings: SettingsStore,
         system: any SystemIntegration,
@@ -41,6 +44,7 @@ final class ICloudSyncModel {
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.sync = sync
+        self.shareService = shareService
         self.library = library
         self.settings = settings
         self.system = system
@@ -126,7 +130,7 @@ final class ICloudSyncModel {
     }
 
     /// Syncs once edits pause, fetching first, so a deletion goes out too (`LibrarySync.onLocalChange`).
-    private func syncSoon() {
+    func syncSoon() {
         scheduledSync?.cancel()
         scheduledSync = Task { [weak self, sleep] in
             do {

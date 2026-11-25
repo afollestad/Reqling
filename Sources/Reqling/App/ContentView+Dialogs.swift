@@ -20,6 +20,25 @@ struct TrashConfirmationDialog: ViewModifier {
     }
 }
 
+/// Offers to turn on iCloud sync for a project's share accepted while it was off, since the project arrives only with
+/// a sync; see `AppModel.acceptShare(_:)`.
+struct AcceptedShareAlert: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.alert(
+            model.shareAwaitingSync?.title.map { "“\($0)” Is Shared with You" } ?? "A Project Is Shared with You",
+            isPresented: Binding(get: { model.shareAwaitingSync != nil }, set: { if !$0 { model.shareAwaitingSync = nil } }),
+            presenting: model.shareAwaitingSync
+        ) { _ in
+            Button("Turn On iCloud Sync") { model.turnOnSyncForAcceptedShare() }
+            Button("Not Now", role: .cancel) {}
+        } message: { _ in
+            Text("Shared projects arrive through iCloud sync, which is off. Turn it on to open this one here.")
+        }
+    }
+}
+
 /// Asks before a folder or request moves into another project; see `AppModel.requestMove(_:from:to:into:at:)`.
 struct MoveConfirmationDialog: ViewModifier {
     let model: AppModel

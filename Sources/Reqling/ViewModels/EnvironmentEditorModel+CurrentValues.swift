@@ -60,7 +60,7 @@ extension EnvironmentEditorModel {
     /// Puts the current value into the draft as the variable's saved value, the way the library's Save as Value does,
     /// and stages dropping the current value, which a value already equal to the saved one would otherwise keep.
     func saveCurrentValueAsValue(_ key: String) {
-        guard case .value(let current)? = currentValues(of: selectedID)[key] else {
+        guard !isSelectedLocked, case .value(let current)? = currentValues(of: selectedID)[key] else {
             return
         }
         var environment = selected

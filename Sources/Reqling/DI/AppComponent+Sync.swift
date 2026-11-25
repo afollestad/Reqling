@@ -29,6 +29,8 @@ extension AppComponent {
         shared {
             ICloudSyncModel(
                 sync: librarySync,
+                // Only where sync runs: `CKContainer` traps in a build that can't use iCloud.
+                shareService: librarySync == nil ? nil : CloudKitShareService(),
                 library: projectLibrary,
                 settings: settingsStore,
                 system: systemIntegration,

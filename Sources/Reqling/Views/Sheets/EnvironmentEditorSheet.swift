@@ -28,11 +28,14 @@ struct EnvironmentEditorSheet: View {
 
     /// A reserved name blocking Done first, then what a Postman import added to the draft.
     private var footerNote: String {
-        editor.reservedNameProblem ?? editor.postmanImportNote ?? Self.note
+        editor.reservedNameProblem ?? editor.postmanImportNote ?? (editor.editsOnlySecretValues ? Self.viewOnlyNote : Self.note)
     }
 
     private static let note = "Default overrides Global, and the active environment overrides Default. "
         + "Secret values are stored in your Keychain, never in the project."
+
+    private static let viewOnlyNote = "This project is shared with you to view. You can set your own secret values, "
+        + "which only you see, and edit Global."
 }
 
 private struct EnvironmentList: View {
@@ -56,6 +59,7 @@ private struct EnvironmentList: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .disabled(editor.editsOnlySecretValues)
                 .help("Add an environment")
                 .accessibilityLabel("Add an environment")
                 Button {
@@ -72,6 +76,7 @@ private struct EnvironmentList: View {
                 } label: {
                     Image(systemName: "square.and.arrow.down")
                 }
+                .disabled(editor.editsOnlySecretValues)
                 .help("Import Postman environments or globals")
                 .accessibilityLabel("Import Postman environments or globals")
             }
@@ -95,8 +100,10 @@ private struct EnvironmentList: View {
             // Inset to the text rather than the icon, they read as stray lines between so few rows.
             .listRowSeparator(.hidden)
             .contextMenu {
-                Button("Duplicate") { editor.duplicateEnvironment(environment.id) }
-                if editor.environments.contains(where: { $0.id == environment.id }) {
+                if !editor.editsOnlySecretValues {
+                    Button("Duplicate") { editor.duplicateEnvironment(environment.id) }
+                }
+                if editor.canRemove(environment.id) {
                     Button("Delete", role: .destructive) { editor.removeEnvironment(environment.id) }
                 }
             }
@@ -142,6 +149,7 @@ private struct EnvironmentDetail: View {
                 TextField("Name", text: $editor.selected.name)
                     .textFieldStyle(.plain)
                     .font(.title3.weight(.semibold))
+                    .disabled(editor.isSelectedLocked)
                     .accessibilityLabel("Environment name")
                 if RequestEnvironment.isGlobalName(editor.selected.name) {
                     Label(EnvironmentEditorModel.reservedNameWarning, systemImage: "exclamationmark.triangle")
@@ -159,7 +167,7 @@ private struct EnvironmentDetail: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    VariableTable(variables: $editor.selected.variables)
+                    VariableTable(variables: $editor.selected.variables, onlySecretValues: editor.isSelectedLocked)
                     CurrentValuesSection(editor: editor)
                 }
             }
@@ -188,6 +196,8 @@ private struct FixedEnvironmentHeader: View {
 /// field committing as it loses focus) finds nothing to change instead of overwriting whichever row took its place.
 private struct VariableTable: View {
     @Binding var variables: [Variable]
+    /// Whether only secret values may change, as in a project shared to view: no row is added, removed, or rekeyed.
+    let onlySecretValues: Bool
     /// The identity the draft row gives the variable its first edit creates, so the new row keeps the draft row's view
     /// identity, and with it the text field's focus.
     @State private var draftID = VariableID()
@@ -195,13 +205,14 @@ private struct VariableTable: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !variables.isEmpty {
+            if !variables.isEmpty, !onlySecretValues {
                 CheckboxSelectionBar(rows: $variables, isOn: \.isEnabled)
             }
-            ForEach(variables + [Variable(id: draftID, key: "", value: "")]) { variable in
+            ForEach(onlySecretValues ? variables : variables + [Variable(id: draftID, key: "", value: "")]) { variable in
                 VariableRow(
                     variable: variable,
                     isDraft: variable.id == draftID,
+                    onlySecretValue: onlySecretValues,
                     onEdit: { edit(variable.id, $0) },
                     onToggle: { checkboxRange.click(\.isEnabled, to: $0, at: variable.id, in: $variables) },
                     onRemove: { variables.removeAll { $0.id == variable.id } }
@@ -229,6 +240,8 @@ private struct VariableTable: View {
 private struct VariableRow: View {
     let variable: Variable
     let isDraft: Bool
+    /// Whether only a secret variable's value may change here.
+    let onlySecretValue: Bool
     /// Applies one field's change to the table's current copy of this variable, never to this render's `variable`,
     /// so a second edit before the next render cannot revert the first.
     let onEdit: @MainActor (_ change: (inout Variable) -> Void) -> Void
@@ -241,24 +254,27 @@ private struct VariableRow: View {
             Toggle("Enabled", isOn: Binding(get: { variable.isEnabled }, set: { onToggle($0) }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
-                .disabled(isDraft)
+                .disabled(isDraft || onlySecretValue)
                 .accessibilityLabel("Use this variable")
             TextField("Key", text: binding(\.key))
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
                 .frame(maxWidth: 200)
+                .disabled(onlySecretValue)
             if variable.isSecret {
-                SecureField("Value", text: binding(\.value))
+                SecureField(onlySecretValue ? "Your value" : "Value", text: binding(\.value))
                     .textFieldStyle(.roundedBorder)
             } else {
                 TextField("Value", text: binding(\.value))
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
+                    .disabled(onlySecretValue)
             }
             Toggle(isOn: binding(\.isSecret)) {
                 Image(systemName: variable.isSecret ? "lock.fill" : "lock.open")
             }
             .toggleStyle(IconToggleStyle())
+            .disabled(onlySecretValue)
             .help(variable.isSecret ? "Secret: stored in your Keychain and masked in previews" : "Mark as secret")
             .accessibilityLabel("Secret")
             Button(action: onRemove) {
@@ -267,8 +283,8 @@ private struct VariableRow: View {
             .buttonStyle(IconButtonStyle())
             .help("Remove this variable")
             .accessibilityLabel("Remove this variable")
-            .opacity(isDraft ? 0 : 1)
-            .disabled(isDraft)
+            .opacity(isDraft || onlySecretValue ? 0 : 1)
+            .disabled(isDraft || onlySecretValue)
         }
         .opacity(variable.isEnabled || isDraft ? 1 : 0.55)
     }

@@ -69,7 +69,22 @@ final class EnvironmentEditorModel {
 
     /// Whether the selection can be removed: only a project's own environments other than Default can.
     var canRemoveSelected: Bool {
-        environments.contains { $0.id == selectedID }
+        canRemove(selectedID)
+    }
+
+    func canRemove(_ id: EnvironmentID) -> Bool {
+        !editsOnlySecretValues && environments.contains { $0.id == id }
+    }
+
+    /// Whether the project is shared with this person to view: its environments stay as its owner has them, but for this
+    /// person's own secret values, which never reach anyone else (`ProjectLibrary.setSecretValues`). Global stays theirs.
+    var editsOnlySecretValues: Bool {
+        app.library.project(projectID)?.readOnlyReason == .sharedReadOnly
+    }
+
+    /// Whether the selected environment takes only secret values: one of a project shared to view.
+    var isSelectedLocked: Bool {
+        editsOnlySecretValues && !isGlobalSelected
     }
 
     static let reservedNameWarning = "“\(RequestEnvironment.globalName)” is reserved for the environment every project shares."
@@ -110,13 +125,16 @@ final class EnvironmentEditorModel {
     }
 
     func addEnvironment() {
+        guard !editsOnlySecretValues else {
+            return
+        }
         let environment = RequestEnvironment(name: uniqueName("New Environment"))
         environments.append(environment)
         selectedID = environment.id
     }
 
     func removeEnvironment(_ id: EnvironmentID) {
-        guard environments.contains(where: { $0.id == id }) else {
+        guard canRemove(id) else {
             return
         }
         environments.removeAll { $0.id == id }
@@ -126,7 +144,7 @@ final class EnvironmentEditorModel {
     }
 
     func duplicateEnvironment(_ id: EnvironmentID) {
-        guard let source = allEnvironments.first(where: { $0.id == id }) else {
+        guard !editsOnlySecretValues, let source = allEnvironments.first(where: { $0.id == id }) else {
             return
         }
         let copy = RequestEnvironment(
@@ -164,6 +182,9 @@ final class EnvironmentEditorModel {
     /// The project's environments after Done: merged and saved, or as stored when the sheet changed none of them, since
     /// a read-only project refuses even an empty save and Done may have changed only Global.
     private func saveProjectEnvironments() -> (RequestEnvironment, [RequestEnvironment])? {
+        if editsOnlySecretValues {
+            return saveSecretValuesOnly()
+        }
         let draftDefault = defaultEnvironment
         let draftEnvironments = environments.map { environment in
             var trimmed = environment
@@ -186,6 +207,26 @@ final class EnvironmentEditorModel {
                 )
                 return (document.defaultEnvironment, document.environments)
             }
+        }
+    }
+
+    /// A project shared to view keeps its environments as they're stored; only the secret values changed here go, as
+    /// this person's own.
+    private func saveSecretValuesOnly() -> (RequestEnvironment, [RequestEnvironment])? {
+        let base = Dictionary(([baseDefaultEnvironment] + baseEnvironments).map { ($0.id, $0) }) { first, _ in first }
+        var values: [String: String] = [:]
+        for environment in projectEnvironments {
+            let before = Dictionary((base[environment.id]?.variables ?? []).map { ($0.id, $0.value) }) { first, _ in first }
+            for variable in environment.variables where variable.isSecret && before[variable.id] != variable.value {
+                values[SecretKey.variable(variable.id, in: environment.id)] = variable.value
+            }
+        }
+        return app.perform("Couldn't Save Your Secret Values") {
+            try app.library.setSecretValues(values, in: projectID)
+            guard let document = app.library.document(projectID) else {
+                throw ProjectStorageError.projectNotFound
+            }
+            return (document.defaultEnvironment, document.environments)
         }
     }
 

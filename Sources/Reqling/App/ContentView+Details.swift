@@ -26,6 +26,8 @@ struct ProjectDetailView: View {
                             .buttonStyle(.borderedProminent)
                         Button("Environments…") { model.sheet = .environments(project.id) }
                         Button("Project Settings…") { model.sheet = .projectSettings(project.id) }
+                        ProjectShareButton(projectID: project.id, origin: .details(project.id), model: model)
+                            .background(ShareAnchor(origin: .details(project.id), anchors: model.shareAnchors))
                         Button("Run Project…") { model.openBatchRun(BatchRunScope(projectID: project.id, folderID: nil)) }
                             .disabled(!model.canRunBatch(BatchRunScope(projectID: project.id, folderID: nil)))
                         Button("Reveal in Finder") { model.revealProject(project.id) }

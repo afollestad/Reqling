@@ -73,9 +73,17 @@ enum CloudKitRecords {
             permission: isOwner || current?.permission == .readWrite ? .readWrite : .readOnly,
             canInvite: isOwner || current?.role == .administrator,
             participantCount: share.participants.filter { $0.role != .owner }.count,
+            byLink: share.publicPermission != .none,
             title: share[CKShare.SystemFieldKey.title] as? String,
-            ownerName: share.owner.userIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) }
+            ownerName: ownerName(of: share)
         )
+    }
+
+    /// The owner's name as their Apple Account gives it, or `nil` when CloudKit gives none: a participant's copy of a
+    /// share can carry empty name parts, which would read as a blank name.
+    private static func ownerName(of share: CKShare) -> String? {
+        let name = share.owner.userIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) }
+        return name?.isEmpty == false ? name : nil
     }
 
     /// Whether `recordType` is CloudKit's share record, which a shared zone holds beside Reqling's own. It says who the

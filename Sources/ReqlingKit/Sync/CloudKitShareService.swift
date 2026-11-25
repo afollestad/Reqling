@@ -4,8 +4,7 @@ import Foundation
 /// Shares as the share sheet and accepting one need them, outside sync's engine, which learns of each from its next
 /// fetch: a project's zone-wide share, made once and found again after, and a share someone accepted. Only a project's
 /// zone is ever shared; each person's values for it live in their own `personal` zone, which no share reaches.
-@MainActor
-public final class CloudKitShareService {
+public final class CloudKitShareService: Sendable {
     public let container: CKContainer
 
     /// Only where sync can run (`SyncAvailability.isEntitled`), since `CKContainer` traps elsewhere.
@@ -33,16 +32,17 @@ public final class CloudKitShareService {
         return try await Self.save(share, in: database)
     }
 
-    /// Accepts `metadata`'s share for this account and returns the project it shares. Its owner opening their own link
-    /// accepts nothing. Throws `CloudKitShareError.notAProject` for a share that isn't a Reqling project's.
-    public func accept(_ metadata: CKShare.Metadata) async throws -> ProjectID {
+    /// Accepts `metadata`'s share for this account and says what it shares. Its owner opening their own link accepts
+    /// nothing. Throws `CloudKitShareError.notAProject` for a share that isn't a Reqling project's.
+    public func accept(_ metadata: CKShare.Metadata) async throws -> AcceptedShare {
         guard metadata.containerIdentifier == container.containerIdentifier, let id = Self.project(sharedBy: metadata) else {
             throw CloudKitShareError.notAProject
         }
-        if metadata.participantRole != .owner {
+        let isOwner = metadata.participantRole == .owner
+        if !isOwner {
             _ = try await container.accept(metadata)
         }
-        return id
+        return AcceptedShare(project: id, title: metadata.share[CKShare.SystemFieldKey.title] as? String, isOwner: isOwner)
     }
 
     /// The project `metadata` shares: a project's whole zone, the only kind of share Reqling makes.
@@ -85,14 +85,31 @@ public final class CloudKitShareService {
     }
 }
 
+/// A share this person opened, accepted.
+public struct AcceptedShare: Equatable, Sendable {
+    public let project: ProjectID
+    /// The project's name, as its share was last titled.
+    public let title: String?
+    /// Whether it's this person's own project, whose link they opened.
+    public let isOwner: Bool
+
+    public init(project: ProjectID, title: String?, isOwner: Bool) {
+        self.project = project
+        self.title = title
+        self.isOwner = isOwner
+    }
+}
+
 public enum CloudKitShareError: Error, Equatable, LocalizedError {
     case notAProject
     case notSaved
+    case notFound
 
     public var errorDescription: String? {
         switch self {
         case .notAProject: "This link doesn't share a Reqling project."
         case .notSaved: "iCloud didn't save the share. Try again."
+        case .notFound: "This project's share is no longer in iCloud."
         }
     }
 }

@@ -15,6 +15,9 @@ public final class LibrarySync {
     public internal(set) var status: SyncStatus = .off
     /// What went wrong with particular items, in words for Settings.
     public internal(set) var issues: [String] = []
+    /// Who each project this account shares reaches, mirrored from what sync keeps, which the sidebar can't observe
+    /// (`transport(didUpdateShareOf:to:)`).
+    public internal(set) var sharedByYou: [ProjectID: ShareAudience] = [:]
 
     @ObservationIgnored let role: SyncRole
     /// The coordinator for projects other people share with this account, over the shared database; `nil` without a
@@ -253,6 +256,7 @@ public final class LibrarySync {
         }
         let store = SyncBaseStore(directory: directory, account: account, key: key)
         self.store = store
+        sharedByYou = store.state.ownedShares.compactMapValues(\.audience)
         status = .syncing
         if role == .own, store.isFirstSync {
             // An account the person just chose what to merge into needs no word on what syncs.
