@@ -27,7 +27,16 @@ enum SyncScope {
 /// Whether this build can use iCloud at all. `CKContainer` traps in a process without the iCloud container
 /// entitlement (ad hoc builds, the test bundle), so this is checked before CloudKit is touched.
 public enum SyncAvailability {
-    public static let containerIdentifier = "iCloud.com.afollestad.reqling"
+    /// `iCloud.com.afollestad.reqling`, or in a debug build, the container its `Info.plist` names instead: the sharing
+    /// harness's build (`scripts/sharing-e2e.sh`) names one of its own, so its runs never reach the app's data.
+    public static let containerIdentifier: String = {
+        #if DEBUG
+        if let harness = Bundle.main.object(forInfoDictionaryKey: "ReqlingCloudKitContainer") as? String {
+            return harness
+        }
+        #endif
+        return "iCloud.com.afollestad.reqling"
+    }()
 
     public static var isEntitled: Bool {
         guard let task = SecTaskCreateFromSelf(nil),

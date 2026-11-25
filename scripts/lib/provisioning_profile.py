@@ -5,7 +5,7 @@
 macOS honors iCloud and push entitlements only when the embedded profile allows them, and refuses to launch an app
 that claims one its profile doesn't, so every check here runs before signing rather than leaving it to a launch.
 
-    check PROFILE --bundle-id ID --certificate SHA1 [--device UDID] [--distribution] [--min-days N]
+    check PROFILE --bundle-id ID --certificate SHA1 [--device UDID] [--distribution] [--min-days N] [--container ID]
     find DIRECTORY --bundle-id ID --certificate SHA1 --device UDID
     entitlements PROFILE TEMPLATE OUTPUT
     verify-app APP --team TEAM --template TEMPLATE [--min-days N]
@@ -59,8 +59,9 @@ def problems(
     device: str | None = None,
     distribution: bool = False,
     min_days: int = 0,
+    container: str = CONTAINER,
 ) -> list[str]:
-    """Why `profile` can't sign `bundle_id` with `certificate` for iCloud sync; empty when it can."""
+    """Why `profile` can't sign `bundle_id` with `certificate` for iCloud sync in `container`; empty when it can."""
     entitlements = profile.get("Entitlements") or {}
     found: list[str] = []
     if "OSX" not in (profile.get("Platform") or []):
@@ -79,10 +80,12 @@ def problems(
     if distribution:
         if profile.get("ProvisionedDevices") or not profile.get("ProvisionsAllDevices"):
             found.append("it's a development profile; releases need a Developer ID one")
+    elif device is not None and profile.get("ProvisionsAllDevices"):
+        found.append("it's a Developer ID profile; this build needs a development one that lists its Macs")
     elif device is not None and device not in (profile.get("ProvisionedDevices") or []):
-        found.append(f"it doesn't list this Mac ({device}); add it in Devices, then regenerate the profile")
-    if CONTAINER not in (entitlements.get(CONTAINERS) or []):
-        found.append(f"its App ID has no {CONTAINER}: assign it under iCloud, save the App ID, then regenerate the profile")
+        found.append(f"it doesn't list the Mac {device}; add it in Devices, then regenerate the profile")
+    if container not in (entitlements.get(CONTAINERS) or []):
+        found.append(f"its App ID has no {container}: assign it under iCloud, save the App ID, then regenerate the profile")
     services = entitlements.get(SERVICES)
     if services != "*" and "CloudKit" not in (services or []):
         found.append("its App ID doesn't include CloudKit")
@@ -166,6 +169,7 @@ def main(arguments: list[str]) -> int:
         command.add_argument("--device")
     check.add_argument("--distribution", action="store_true")
     check.add_argument("--min-days", type=int, default=0)
+    check.add_argument("--container", default=CONTAINER)
     entitlements = commands.add_parser("entitlements")
     entitlements.add_argument("profile", type=Path)
     entitlements.add_argument("template", type=Path)
@@ -187,6 +191,7 @@ def main(arguments: list[str]) -> int:
                 device=options.device,
                 distribution=options.distribution,
                 min_days=options.min_days,
+                container=options.container,
             )
             for problem in found:
                 print(f"error: {options.profile.name}: {problem}", file=sys.stderr)

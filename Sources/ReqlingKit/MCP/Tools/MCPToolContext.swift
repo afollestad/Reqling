@@ -40,6 +40,10 @@ public final class MCPToolContext {
     public weak var host: (any MCPAppHost)?
     /// The updater, for the status and check tools; `nil` where updates aren't wired, as in tests.
     public var updates: AppUpdateManager?
+    #if DEBUG
+    /// The end-to-end harness's CloudKit probe, whose tools are listed only when it's set (`MCPHarnessTools`).
+    public var probe: CloudKitProbe?
+    #endif
     /// The dispatcher serving these tools, for resources, which read through the matching tools.
     weak var dispatcher: MCPToolDispatcher?
 

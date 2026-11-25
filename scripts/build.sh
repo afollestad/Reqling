@@ -5,16 +5,26 @@ source "$repo_root/scripts/lib/needle.sh"
 source "$repo_root/scripts/lib/typecheck-budget.sh"
 
 usage() {
-  echo "usage: $0 [--release] [--no-xcsift]" >&2
+  echo "usage: $0 [--release | --e2e] [--no-xcsift]" >&2
 }
 
 # Set CODESIGN_IDENTITY (e.g. "Developer ID Application") to sign either configuration for distribution; a release signed
 # that way also needs PROVISIONING_PROFILE. Otherwise releases sign ad hoc, and debug builds sign with
 # DEBUG_CODESIGN_IDENTITY (`-` for ad hoc), else an Apple Development identity, else ad hoc.
+#
+# `--e2e` builds the iCloud sharing harness's copy of the debug app (`scripts/sharing-e2e.sh`): signed with
+# E2E_CODESIGN_IDENTITY (an Apple Development identity by default) beside E2E_PROVISIONING_PROFILE, a development
+# profile for com.afollestad.reqling.debug listing this Mac and E2E_PARTICIPANT_DEVICE, the Mac or VM it also runs on,
+# and syncing through its own container in CloudKit's Development environment, never the app's. A Developer ID profile
+# won't do: it allows only CloudKit's Production environment.
 configuration=debug
+e2e=false
 build_flags=()
 for arg in "$@"; do
   case "$arg" in
+    --e2e)
+      e2e=true
+      ;;
     --release)
       configuration=release
       # Releases ship for Apple silicon only, whatever Mac builds them; Reqling doesn't support Intel Macs.
@@ -30,6 +40,20 @@ for arg in "$@"; do
   esac
 done
 
+# Which bundle this makes: the configuration's, or the harness's copy of a debug build.
+flavor=$configuration
+if [ "$e2e" = true ]; then
+  if [ "$configuration" = release ]; then
+    usage
+    exit 1
+  fi
+  flavor=e2e
+fi
+if [ "$flavor" = e2e ] && [ -z "${E2E_PROVISIONING_PROFILE:-}" ]; then
+  echo "error: set E2E_PROVISIONING_PROFILE to a development profile for com.afollestad.reqling.debug (scripts/sharing-e2e.sh)" >&2
+  exit 1
+fi
+
 generate_needle
 
 # The `+` guards keep macOS's bash 3.2 from treating an empty array as unbound under `set -u`.
@@ -39,8 +63,8 @@ run_filtered build "${swift_build[@]}"
 typecheck_budget_report_offenders "$logs_dir/build.log"
 bin_path=$("${swift_build[@]}" --show-bin-path)
 
-app=$(app_path "$configuration")
-dsyms=$(dsyms_path "$configuration")
+app=$(app_path "$flavor")
+dsyms=$(dsyms_path "$flavor")
 rm -rf "$app" "$dsyms"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_path/$app_name" "$app/Contents/MacOS/"
@@ -137,6 +161,11 @@ certificate_hash() {
   fi
 }
 
+# This Mac's Provisioning UDID, which a development profile must list for an app it signs to launch here.
+provisioning_udid() {
+  system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/ { print $2; exit }' || true
+}
+
 # Embeds profile $1 and signs the app with template $2's entitlements plus the identifiers $1 grants.
 use_profile() {
   entitlements_file=$(mktemp -t reqling-entitlements)
@@ -148,7 +177,27 @@ use_profile() {
 # Each branch signs the helpers before the bundle, the same way: the bundle's signature seals its nested code, and
 # updates verify it with `codesign --deep --strict`.
 identity=${CODESIGN_IDENTITY:--}
-if [ "$identity" != - ]; then
+if [ "$flavor" = e2e ]; then
+  e2e_container=iCloud.com.afollestad.reqling.e2e
+  e2e_identity=${E2E_CODESIGN_IDENTITY:-Apple Development}
+  certificate=$(certificate_hash "$e2e_identity")
+  if [ -z "$certificate" ]; then
+    echo "error: no single valid signing identity matches \"$e2e_identity\"; set E2E_CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+  for device in "$(provisioning_udid)" ${E2E_PARTICIPANT_DEVICE:+"$E2E_PARTICIPANT_DEVICE"}; do
+    "${profile_tool[@]}" check "$E2E_PROVISIONING_PROFILE" --bundle-id com.afollestad.reqling.debug --certificate "$certificate" \
+      --device "$device" --container "$e2e_container"
+  done
+  # `SyncAvailability.containerIdentifier` reads this in a debug build, so the harness syncs through its own container.
+  /usr/libexec/PlistBuddy -c "Add :ReqlingCloudKitContainer string $e2e_container" "$app/Contents/Info.plist"
+  use_profile "$E2E_PROVISIONING_PROFILE" "$repo_root/Config/Entitlements/ReqlingE2E.entitlements"
+  for helper in "${helpers[@]}"; do
+    codesign --force --timestamp=none --sign "$certificate" "$helper"
+  done
+  codesign --force --timestamp=none --sign "$certificate" "${entitlement_flags[@]}" \
+    --requirements "$repo_root/Config/CodeSigning/ReqlingDebugTCC.requirements" "$app"
+elif [ "$identity" != - ]; then
   if [ "$configuration" = release ]; then
     # A release without sync would ship silently, so a missing or unusable profile stops it.
     if [ -z "${PROVISIONING_PROFILE:-}" ]; then
@@ -187,7 +236,7 @@ elif [ "$configuration" = debug ]; then
     echo "error: no single valid signing identity matches \"$debug_identity\"; set DEBUG_CODESIGN_IDENTITY=- to sign ad hoc" >&2
     exit 1
   elif [ "${debug_identity:--}" != - ]; then
-    device=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/ { print $2; exit }' || true)
+    device=$(provisioning_udid)
     debug_profile=${DEBUG_PROVISIONING_PROFILE:-}
     if [ -n "$debug_profile" ]; then
       "${profile_tool[@]}" check "$debug_profile" --bundle-id com.afollestad.reqling.debug --certificate "$certificate" --device "$device"

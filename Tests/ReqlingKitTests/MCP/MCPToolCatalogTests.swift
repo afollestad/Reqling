@@ -48,6 +48,24 @@ final class MCPToolCatalogTests: XCTestCase {
         XCTAssertFalse(names.contains { $0.contains("token") || $0.contains("mcp") }, "Agents never manage the server itself")
     }
 
+    /// The sharing harness's CloudKit probes are listed only on a debug build launched as the harness, and take strict
+    /// objects like every other tool.
+    func testHarnessProbesAreListedOnlyWithAProbe() throws {
+        XCTAssertFalse(fixture.dispatcher.definitions.contains { $0.name.hasPrefix("probe_") })
+
+        fixture.context.probe = CloudKitProbe(containerIdentifier: "iCloud.test")
+        let probes = MCPToolCatalog.tools(fixture.context).map(\.definition).filter { $0.name.hasPrefix("probe_") }
+
+        XCTAssertEqual(probes.count, 12)
+        for tool in probes {
+            let schema = try XCTUnwrap(tool.inputSchema.objectValue, tool.name)
+            XCTAssertEqual(schema["additionalProperties"], false, tool.name)
+            let properties = Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? [])
+            let required = Set(schema["required"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+            XCTAssertTrue(required.isSubset(of: properties), "\(tool.name) requires an unlisted field")
+        }
+    }
+
     func testUnknownToolsAndFieldsAreRefused() async {
         let unknownTool = await fixture.failure("drop_tables")
         let unknownField = await fixture.failure("list_projects", ["verbose": true])

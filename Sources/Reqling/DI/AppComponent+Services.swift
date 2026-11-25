@@ -11,7 +11,7 @@ extension AppComponent {
             if storageProfile.isEphemeral {
                 return testSecretStore ?? InMemorySecretStore() as any SecretStore
             }
-            return KeychainSecretStore(service: "\(appInfo.bundleIdentifier).secrets")
+            return KeychainSecretStore(service: "\(keychainNamespace).secrets")
         }
     }
 

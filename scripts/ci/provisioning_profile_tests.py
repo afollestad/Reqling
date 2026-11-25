@@ -93,6 +93,29 @@ class ProblemsTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("assign it under iCloud", found[0])
 
+    def test_the_sharing_harness_profile_names_its_own_container_and_each_mac_a_copy_runs_on(self) -> None:
+        participant = "47e716a046b7de5a496e2c03f4708afc8a52c27d"
+        harness = profile(
+            ProvisionedDevices=[DEVICE, participant],
+            entitlements={"com.apple.developer.icloud-container-identifiers": ["iCloud.com.afollestad.reqling.e2e"]},
+        )
+
+        def check(container: str, device: str) -> list[str]:
+            return tool.problems(harness, bundle_id="com.afollestad.reqling.debug", certificate=CERTIFICATE_SHA1, now=NOW,
+                                 device=device, container=container)
+
+        self.assertEqual(check("iCloud.com.afollestad.reqling.e2e", DEVICE), [])
+        self.assertEqual(check("iCloud.com.afollestad.reqling.e2e", participant), [])
+        self.assertTrue(any("assign it under iCloud" in problem for problem in check("iCloud.com.afollestad.reqling", DEVICE)))
+        self.assertIn("doesn't list the Mac another Mac", check("iCloud.com.afollestad.reqling.e2e", "another Mac")[0])
+        developer_id = profile(distribution=True, entitlements={
+            "com.apple.application-identifier": "TEAM123456.com.afollestad.reqling.debug",
+            "com.apple.developer.icloud-container-identifiers": ["iCloud.com.afollestad.reqling.e2e"],
+        })
+        found = tool.problems(developer_id, bundle_id="com.afollestad.reqling.debug", certificate=CERTIFICATE_SHA1, now=NOW,
+                              device=participant, container="iCloud.com.afollestad.reqling.e2e")
+        self.assertTrue(any("it's a Developer ID profile" in problem for problem in found), found)
+
     def test_a_development_profile_cant_sign_a_release(self) -> None:
         found = self.check(profile(entitlements={"com.apple.application-identifier": "TEAM123456.com.afollestad.reqling"}),
                            distribution=True)
@@ -145,7 +168,7 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(self.run_tool(*arguments).returncode, 0)
             refused = self.run_tool(*arguments[:-1], "another Mac")
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn("doesn't list this Mac", refused.stderr)
+            self.assertIn("doesn't list the Mac", refused.stderr)
 
     def test_find_picks_a_usable_profile_and_entitlements_fill_the_identifiers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

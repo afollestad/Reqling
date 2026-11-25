@@ -41,13 +41,14 @@ Features and screenshots are at [reqling.af.codes](https://reqling.af.codes), an
 | Command | Does |
 | --- | --- |
 | `./scripts/setup.sh` | Installs tools, resolves packages, and installs the pre-commit hook |
-| `./scripts/build.sh [--release]` | Builds `.build/app/<debug\|release>/Reqling.app` |
+| `./scripts/build.sh [--release \| --e2e]` | Builds `.build/app/<debug\|release\|e2e>/Reqling.app` |
 | `./scripts/run.sh [-b]` | (Re)launches the dev app; `-b` builds first |
 | `./scripts/test.sh [filter ...]` | Runs the tests; filters are `swift test --filter` patterns |
 | `./scripts/snapshots.sh <verify\|record>` | Verifies or re-records snapshot baselines |
 | `./scripts/lint.sh [--fix]` | Runs SwiftLint; `--fix` autocorrects |
 | `./scripts/screenshots.sh [-b]` | Captures the website's screenshots of a demo project, in light and dark |
 | `./scripts/graphql-server.sh` | Serves a GraphQL schema on `127.0.0.1:4000` to try requests against |
+| `./scripts/sharing-e2e.sh <command>` | Runs iCloud sharing against real CloudKit, between this Mac and a VM or another Mac |
 
 Launch through `run.sh`, not `swift run` or Xcode, since only the bundle `build.sh` assembles has the Info.plist, assets, helpers, and signature. Builds run from `.build/` can check for updates but not install them.
 

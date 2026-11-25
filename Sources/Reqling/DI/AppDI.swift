@@ -9,6 +9,9 @@ enum AppDI {
         if let screenshotMode = ScreenshotMode.current {
             return screenshotMode.makeComponent()
         }
+        if let harness = SharingHarnessMode.current {
+            return harness.makeComponent()
+        }
         #endif
         return AppComponent(storageProfile: .production)
     }()

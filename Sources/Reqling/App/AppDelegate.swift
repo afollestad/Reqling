@@ -21,8 +21,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppDI.component.appModel.iCloud.setActive(true)
     }
 
-    /// Holds what iCloud delivers until Reqling comes back, so applying it never asks for the Keychain unseen.
+    /// Holds what iCloud delivers until Reqling comes back, so applying it never asks for the Keychain unseen. The sharing
+    /// harness's copies keep applying it: they run in the background, where a test run would otherwise wait on a click.
     func applicationDidResignActive(_ notification: Notification) {
+        #if DEBUG
+        if AppDI.component.harness != nil {
+            return
+        }
+        #endif
         AppDI.component.appModel.iCloud.setActive(false)
     }
 

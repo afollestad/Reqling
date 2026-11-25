@@ -12,6 +12,9 @@ struct AppStorageProfile: @unchecked Sendable {
     let preferences: any Preferences
     /// Only ephemeral profiles may be wiped; `cleanUp()` refuses everything else.
     let isEphemeral: Bool
+    /// What the Keychain services for secrets and the MCP token start with, in place of the bundle identifier, so a
+    /// debug harness (`SharingHarnessMode`) keeps its items apart from the build it runs as.
+    var keychainNamespace: String?
 
     /// Scoped by bundle identifier, so "Reqling Dev" (`com.afollestad.reqling.debug`) keeps its own
     /// Application Support folder and preferences domain beside the release build's.

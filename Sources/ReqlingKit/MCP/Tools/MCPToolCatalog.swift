@@ -19,7 +19,7 @@ public enum MCPToolCatalog {
 
     /// Every tool. `MCPToolDispatcher` traps when two share a name.
     static func tools(_ context: MCPToolContext) -> [MCPTool] {
-        MCPProjectTools(context: context).tools
+        var tools = MCPProjectTools(context: context).tools
             + MCPEnvironmentTools(context: context).tools
             + MCPRequestTools(context: context).tools
             + MCPExecutionTools(context: context).tools
@@ -30,5 +30,11 @@ public enum MCPToolCatalog {
             + MCPGraphQLTools(context: context).tools
             + MCPTLSTools(context: context).tools
             + MCPAppTools(context: context).tools
+        #if DEBUG
+        if let probe = context.probe {
+            tools += MCPHarnessTools(probe: probe).tools
+        }
+        #endif
+        return tools
     }
 }

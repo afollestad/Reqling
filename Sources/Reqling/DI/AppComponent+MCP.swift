@@ -9,7 +9,12 @@ extension AppComponent {
             if storageProfile.isEphemeral {
                 return InMemoryMCPTokenStore() as any MCPTokenStore
             }
-            return KeychainMCPTokenStore(service: "\(appInfo.bundleIdentifier).mcp")
+            #if DEBUG
+            if let harness {
+                return InMemoryMCPTokenStore(token: harness.token) as any MCPTokenStore
+            }
+            #endif
+            return KeychainMCPTokenStore(service: "\(keychainNamespace).mcp")
         }
     }
 
@@ -25,6 +30,11 @@ extension AppComponent {
                 appInfo: appInfo
             )
             context.updates = appUpdates
+            #if DEBUG
+            if harness != nil {
+                context.probe = CloudKitProbe(containerIdentifier: SyncAvailability.containerIdentifier)
+            }
+            #endif
             return MCPServerController(
                 context: context,
                 settings: settingsStore,
