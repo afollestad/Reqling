@@ -4,22 +4,24 @@ import Foundation
 /// editing different items never conflict; membership travels as each item's `parentID` and order as each parent's
 /// list of IDs, since slugs are this Mac's file names.
 ///
-/// Payloads carry no secret values: `Variable.encode` strips them, and they travel in the record's `secrets`, keyed by
-/// variable ID. A record decodes only into what this version understands; `LibrarySync` defers a project whose
-/// records it can't read rather than guessing.
+/// No record carries a secret value: `Variable.encode` strips them from payloads, and an environment's go in its
+/// project's `personal` zone (`LibraryRecordCoder.secretsRecord`), so the project's zone can be shared without them. A
+/// record decodes only into what this version understands; `LibrarySync` defers a project whose records it can't read
+/// rather than guessing.
 enum ProjectRecordCoder {
-    /// Bumped whenever a payload's encoded keys change, so an older Mac defers what it would otherwise strip.
-    /// `ProjectRecordCoderTests.testThePayloadSchemaMatchesItsVersion` fails until it is.
-    static let schemaVersion = 1
+    /// Bumped whenever a payload's encoded keys change, or what a record holds moves, so an older Mac defers what it
+    /// would otherwise strip or write back where it used to live: 2 moved secret values and current values into
+    /// `personal`. `ProjectRecordCoderTests.testThePayloadSchemaMatchesItsVersion` fails until it is.
+    static let schemaVersion = 2
     /// Nesting beyond this is refused, since the writer and the tree helpers recurse.
     static let maxDepth = 64
     static let maxItems = 20_000
 
     // MARK: - Encoding
 
-    /// Every record of `document`. `secrets` is the project's Keychain item, or `nil` when it couldn't be read, which
-    /// sends no secret values at all rather than blanks. A secret this Mac has no value for is left out, never sent empty.
-    static func records(for document: ProjectDocument, secrets: [String: String]?) throws -> [SyncRecordID: SyncRecord] {
+    /// Every record of `document`. An environment's carries an empty `secrets`, which clears the values it held before
+    /// they moved to `personal`, once they're safe there (`LibrarySync.sendable(_:)`).
+    static func records(for document: ProjectDocument) throws -> [SyncRecordID: SyncRecord] {
         let zone = SyncZone.project(document.id)
         var records: [SyncRecordID: SyncRecord] = [:]
         func add(_ name: String, _ type: SyncRecordType, _ payload: some Encodable, secrets: [String: String]? = nil) throws {
@@ -40,7 +42,7 @@ enum ProjectRecordCoder {
         }
         try addNodes(document.items, parent: nil)
         for environment in document.allEnvironments {
-            try add(environment.id.description, .environment, environment, secrets: secrets.map { secretValues(of: environment, from: $0) })
+            try add(environment.id.description, .environment, environment, secrets: [:])
         }
         return records
     }
@@ -64,9 +66,10 @@ enum ProjectRecordCoder {
         var secrets: [String: String]
     }
 
-    /// Builds the project from every record its zone holds. A secret whose value didn't come along keeps `local`'s, so an
-    /// absent value never blanks one. Membership comes from `parentID` alone; an item whose folder is gone goes to the
-    /// top level, and a cycle two Macs' moves made is broken at its lowest ID, so every Mac repairs alike.
+    /// Builds the project from every record its zone holds. A secret whose value didn't come along, as none does once
+    /// they live in `personal`, keeps `local`'s, so an absent value never blanks one. Membership comes from `parentID`
+    /// alone; an item whose folder is gone goes to the top level, and a cycle two Macs' moves made is broken at its
+    /// lowest ID, so every Mac repairs alike.
     static func document(
         _ project: ProjectID,
         from records: some Collection<SyncRecord>,
@@ -130,7 +133,7 @@ enum ProjectRecordCoder {
                 case .environment:
                     let environment = try decode(RequestEnvironment.self, from: record)
                     environments[environment.id] = (environment, record.secrets)
-                case .project, .currentValues, .globalEnvironment, .projectTombstone:
+                case .project, .currentValues, .globalEnvironment, .projectTombstone, .personalSecrets:
                     continue
                 }
             }

@@ -26,8 +26,8 @@ public enum SyncStopReason: Equatable, Sendable {
     case encryptionReset
 }
 
-/// Syncs the projects in Reqling's own folder, Global, and current values through the transport (`CloudKitSyncTransport`
-/// in the app), keeping each project folder the source of truth on each Mac.
+/// Syncs the projects in Reqling's own folder, Global, and this person's secret and current values through the
+/// transport (`CloudKitSyncTransport` in the app), keeping each project folder the source of truth on each Mac.
 ///
 /// Outgoing, every change this Mac makes (`ProjectLibrary.changeObserver`) is compared, record by record, against
 /// what was last synced (`SyncBaseStore`), and what differs is queued; records are built only as they're sent.
@@ -67,6 +67,11 @@ public final class LibrarySync {
     @ObservationIgnored var heldEvents: [HeldFetchEvent] = []
     /// The zone deletions of the fetch being applied, judged together once it finishes (`finish(wholeDelivery:)`).
     @ObservationIgnored var heldZoneDeletions: [(SyncZone, SyncZoneDeletionReason)] = []
+    /// The personal zones the fetch being applied delivered, applied once it finishes, after its project zones.
+    @ObservationIgnored var personalAwaitingFetchEnd: [SyncFetchedZone] = []
+    /// What older Macs left that may fill in personal values once those zones are applied, each with the personal
+    /// record it stands for (`mergeLegacy`).
+    @ObservationIgnored var legacyAwaitingFetchEnd: [(original: SyncRecord, personal: SyncRecord)] = []
     /// The zones the fetch under way has delivered, so a whole one can tell which zones are gone.
     @ObservationIgnored var deliveredZones: Set<SyncZone> = []
     /// Whether a refetch was asked for since the current fetch began, so finishing a whole one keeps the request.
@@ -167,6 +172,8 @@ public final class LibrarySync {
         transport.delegate = nil
         store?.save()
         store = nil
+        personalAwaitingFetchEnd = []
+        legacyAwaitingFetchEnd = []
     }
 
     /// Opens the signed-in account's state, or pauses when the account isn't the one this Mac last synced with. Accepting
@@ -234,6 +241,8 @@ public final class LibrarySync {
         transport.stop()
         heldEvents = []
         heldZoneDeletions = []
+        personalAwaitingFetchEnd = []
+        legacyAwaitingFetchEnd = []
         deliveredZones = []
         refetchRaised = false
         wholeFetchFellShort = false
@@ -259,7 +268,8 @@ public final class LibrarySync {
             requestRefetch()
         }
         transport.enqueue(store.state.outgoingTombstones.map { .save(LibraryRecordCoder.tombstoneRecordID($0)) })
-        transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.project($0)) })
+        // Each personal zone first; its project's follows once that's gone (`handleSent`).
+        transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.personal($0)) })
         // A tombstone withdrawn as its project came back (`readd`) has no record here to reconcile, so its deletion,
         // kept pending, is queued again; left on the server, it would stop other Macs sending the project's edits.
         let tombstones = SyncZone.library.name + "/" + SyncRecordID.tombstonePrefix

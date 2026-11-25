@@ -20,6 +20,8 @@ final class SyncBaseStore {
         var secrets: [String: String]
         /// The server's version, opaque.
         var systemFields: Data?
+        /// The record's `ProjectRecordCoder.schemaVersion`; `nil` for one kept before bases noted it, which was 1.
+        var schemaVersion: Int?
     }
 
     /// An edit not yet confirmed saved: when it was made, and a digest of what it holds, so reconciling an unchanged
@@ -63,6 +65,10 @@ final class SyncBaseStore {
         var awaitingConfirmation: [ProjectID] = []
         /// Records iCloud refused as too large, by the fingerprint refused, so the same content isn't sent again.
         var tooLarge: [String: String] = [:]
+        /// The last base of what a project's zone held of this person's before it went to `personal`: an environment's
+        /// before its secrets were cleared, current values' before they were deleted. A Mac before `personal` that
+        /// writes them again saw this version last, so its write merges over it (`LibrarySync.mergeLegacy`).
+        var legacyBases: [String: Base] = [:]
         /// The transport's own state (`CKSyncEngine.State.Serialization`), saved only once what it covers is applied.
         var transportState: Data?
         /// Whether some fetched change couldn't be applied, so everything must be fetched again; cleared only once a whole
@@ -99,6 +105,7 @@ final class SyncBaseStore {
             outgoingZoneDeletions = field(.outgoingZoneDeletions, [])
             awaitingConfirmation = field(.awaitingConfirmation, [])
             tooLarge = field(.tooLarge, [:])
+            legacyBases = field(.legacyBases, [:])
             transportState = field(.transportState, nil)
             needsRefetch = field(.needsRefetch, false)
             clockSkew = field(.clockSkew, 0)
@@ -187,6 +194,10 @@ final class SyncBaseStore {
         state.bases[id.description]
     }
 
+    func legacyBase(_ id: SyncRecordID) -> Base? {
+        state.legacyBases[id.description]
+    }
+
     func baseIDs(in zone: SyncZone) -> [SyncRecordID] {
         let prefix = zone.name + "/"
         return state.bases.keys.filter { $0.hasPrefix(prefix) }.map { SyncRecordID(zone: zone, name: String($0.dropFirst(prefix.count))) }
@@ -224,17 +235,24 @@ final class SyncBaseStore {
         let key = record.id.description
         let previous = state.bases[key]
         let secrets = record.secrets.map(secretDigests) ?? (keepingSecretsIfUnsent ? previous?.secrets ?? [:] : [:])
+        if record.type == .environment, secrets.isEmpty, let previous, !previous.secrets.isEmpty {
+            state.legacyBases[key] = previous
+        }
         state.bases[key] = Base(
             fingerprint: digester.fingerprint(record.payload),
             tree: OrderedJSONCodable(digester.tree(record.payload)),
             secrets: secrets,
-            systemFields: record.systemFields ?? previous?.systemFields
+            systemFields: record.systemFields ?? previous?.systemFields,
+            schemaVersion: record.schemaVersion
         )
         state.tooLarge[key] = nil
         isDirty = true
     }
 
     func removeBase(_ id: SyncRecordID) {
+        if case .project = id.zone, id.name.hasPrefix(SyncRecordID.currentValuesPrefix), let previous = state.bases[id.description] {
+            state.legacyBases[id.description] = previous
+        }
         state.bases[id.description] = nil
         isDirty = true
     }
@@ -245,6 +263,7 @@ final class SyncBaseStore {
         state.bases = state.bases.filter { !$0.key.hasPrefix(prefix) }
         state.pending = state.pending.filter { !$0.key.hasPrefix(prefix) }
         state.tooLarge = state.tooLarge.filter { !$0.key.hasPrefix(prefix) }
+        state.legacyBases = state.legacyBases.filter { !$0.key.hasPrefix(prefix) }
         isDirty = true
     }
 

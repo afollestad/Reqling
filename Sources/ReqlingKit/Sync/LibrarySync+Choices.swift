@@ -70,8 +70,10 @@ extension LibrarySync {
             if confirmed {
                 deleteRemotelyDeleted(project)
             } else {
-                store.forget(.project(project))
-                transport.cancelPending(in: .project(project))
+                for zone in [SyncZone.project(project), .personal(project)] {
+                    store.forget(zone)
+                    transport.cancelPending(in: zone)
+                }
                 store.update { $0.detached.insert(project) }
             }
         }

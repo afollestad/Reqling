@@ -205,17 +205,41 @@ public final class ProjectLibrary {
 
     /// Writes a document another Mac changed: `mutate`'s save, storing exactly the secret values that came with it,
     /// without dropping current values (as a reload never does) or deleting secrets the change removed (so a deletion
-    /// stays recoverable), and without telling the observer.
+    /// stays recoverable), and without telling the observer. A secret still blank, as one made secret elsewhere arrives,
+    /// takes what the Keychain holds, which its values may have brought first (`applySyncedSecrets`).
     func applySynced(_ document: ProjectDocument, storingSecrets secrets: [String: String]) throws {
         isApplyingSync = true
         defer { isApplyingSync = false }
         reloadProjectSecretsIfUnread(document.id)
+        var document = document
+        if let held = try? configuration.secretStore.secrets(for: document.id) {
+            for environment in document.allEnvironments {
+                document.updateEnvironment(environment.id) { Self.fillBlankSecrets(in: &$0, from: held) }
+            }
+        }
         let (position, old) = try editableProject(document.id)
         guard document != old else {
             return
         }
         let current = Self.secretValues(in: old)
         try commit(document, at: position, storing: secrets.filter { current[$0.key] != $0.value }, deleting: [])
+    }
+
+    /// Stores secret values another Mac synced, by `SecretKey`, and fills them into the project's copy in memory. No
+    /// file holds them, so nothing is written, and the observer is told nothing. Works for a project not listed yet,
+    /// whose adoption fills them from the Keychain (`adoptSyncedProject`), since its values may arrive first.
+    func applySyncedSecrets(_ secrets: [String: String], in id: ProjectID) throws {
+        guard !secrets.isEmpty else {
+            return
+        }
+        try updateSecrets(of: .project(id), storing: secrets, deleting: [])
+        guard let position = projects.firstIndex(where: { $0.id == id }), var document = projects[position].document else {
+            return
+        }
+        Self.fillSecretValues(in: &document, from: secrets, keepingMissing: true)
+        if document != projects[position].document {
+            projects[position].status = .loaded(document)
+        }
     }
 
     /// Writes every file whose encoding differs from what was read, which states the IDs the reader derived for files
@@ -409,7 +433,7 @@ public final class ProjectLibrary {
         if hasSecrets {
             do {
                 let secrets = try configuration.secretStore.secrets(for: document.id)
-                Self.fillSecretValues(in: &document, from: secrets)
+                Self.fillSecretValues(in: &document, from: secrets, keepingMissing: false)
             } catch {
                 projectsWithUnreadSecrets.insert(document.id)
                 issues.append(ProjectLoadIssue(path: "", message: Self.unreadableSecretsMessage, losesContent: false))
@@ -418,34 +442,8 @@ public final class ProjectLibrary {
         return LibraryProject(id: document.id, url: url, status: .loaded(document), issues: issues, isReadOnly: result.isReadOnly)
     }
 
-    private static func fillSecretValues(in document: inout ProjectDocument, from secrets: [String: String]) {
-        for environment in document.allEnvironments {
-            document.updateEnvironment(environment.id) { environment in
-                for index in environment.variables.indices where environment.variables[index].isSecret {
-                    let key = SecretKey.variable(environment.variables[index].id, in: environment.id)
-                    environment.variables[index].value = secrets[key] ?? ""
-                }
-            }
-        }
-    }
-
     func updateSecrets(of account: SecretAccount, storing values: [String: String], deleting keys: Set<String>) throws {
         try configuration.secretStore.update(account, storing: values, deleting: keys)
-    }
-
-    private static func secretValues(in document: ProjectDocument) -> [String: String] {
-        secretValues(in: document.allEnvironments)
-    }
-
-    /// Every secret variable's value, keyed by `SecretKey`.
-    static func secretValues(in environments: [RequestEnvironment]) -> [String: String] {
-        var values: [String: String] = [:]
-        for environment in environments {
-            for variable in environment.variables where variable.isSecret {
-                values[SecretKey.variable(variable.id, in: environment.id)] = variable.value
-            }
-        }
-        return values
     }
 
     private func startMonitoring(_ id: ProjectID, at url: URL) {

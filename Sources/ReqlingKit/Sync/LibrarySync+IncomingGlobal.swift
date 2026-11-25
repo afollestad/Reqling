@@ -102,7 +102,7 @@ extension LibrarySync {
                 let decoded = try LibraryRecordCoder.currentValues(from: record)
                 let (values, secrets) = secured(decoded.values, decoded.secrets, in: .global, document: nil)
                 library.currentValues.applySynced(values, secrets: secrets, in: .global)
-            case .project, .folder, .request, .environment, .projectTombstone:
+            case .project, .folder, .request, .environment, .projectTombstone, .personalSecrets:
                 return false
             }
             return true
@@ -124,13 +124,11 @@ extension LibrarySync {
     }
 
     /// Writes each changed scope's current values, forcing secret any value this Mac knows to be one, and empties each
-    /// scope deleted on both Macs.
-    func applyCurrentValues(_ records: [SyncRecord], cleared: Set<SyncRecordID>, in document: ProjectDocument) {
+    /// scope deleted on both Macs. One whose environment `document` lacks is written all the same, since a project's
+    /// personal values may arrive before the environment does (`applyPersonal`).
+    func applyCurrentValues(_ records: [SyncRecord], cleared: Set<SyncRecordID>, in document: ProjectDocument?) {
         for record in records {
             guard let scope = LibraryRecordCoder.scope(of: record.id), let decoded = try? LibraryRecordCoder.currentValues(from: record) else {
-                continue
-            }
-            if case .environment(_, let environment) = scope, document.environment(environment) == nil {
                 continue
             }
             let (values, secrets) = secured(decoded.values, decoded.secrets, in: scope, document: document)

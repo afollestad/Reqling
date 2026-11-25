@@ -1,18 +1,31 @@
 import Foundation
 
-/// A record zone: one per project, so deleting a project deletes everything it held at once, and `library` for what
-/// every project shares. Names are the only zone identity CloudKit sees, so parsing them is strict.
+/// A record zone: one per project, so deleting a project deletes everything it held at once; beside each, the
+/// project's `personal` zone, for what is this person's own rather than the project's (secret values and current
+/// values), so the project's zone can be shared without them; and `library` for what every project shares. Names are
+/// the only zone identity CloudKit sees, so parsing them is strict.
 enum SyncZone: Hashable, Sendable {
     case library
     case project(ProjectID)
+    case personal(ProjectID)
 
     static let libraryName = "library"
     static let projectPrefix = "project-"
+    static let personalPrefix = "personal-"
 
     var name: String {
         switch self {
         case .library: Self.libraryName
         case .project(let id): Self.projectPrefix + id.description
+        case .personal(let id): Self.personalPrefix + id.description
+        }
+    }
+
+    /// The project the zone belongs to, if one.
+    var project: ProjectID? {
+        switch self {
+        case .library: nil
+        case .project(let id), .personal(let id): id
         }
     }
 
@@ -20,13 +33,22 @@ enum SyncZone: Hashable, Sendable {
     init?(name: String) {
         if name == Self.libraryName {
             self = .library
-        } else if name.hasPrefix(Self.projectPrefix),
-                  let id = ProjectID(string: String(name.dropFirst(Self.projectPrefix.count))),
-                  id.description == String(name.dropFirst(Self.projectPrefix.count)) {
+        } else if let id = Self.projectID(in: name, after: Self.projectPrefix) {
             self = .project(id)
+        } else if let id = Self.projectID(in: name, after: Self.personalPrefix) {
+            self = .personal(id)
         } else {
             return nil
         }
+    }
+
+    /// The ID after `prefix`, only as Reqling writes one.
+    private static func projectID(in name: String, after prefix: String) -> ProjectID? {
+        guard name.hasPrefix(prefix) else {
+            return nil
+        }
+        let suffix = String(name.dropFirst(prefix.count))
+        return ProjectID(string: suffix).flatMap { $0.description == suffix ? $0 : nil }
     }
 }
 
@@ -39,12 +61,15 @@ enum SyncRecordType: String, Hashable, Sendable, CaseIterable {
     case currentValues = "CurrentValues"
     case globalEnvironment = "GlobalEnvironment"
     case projectTombstone = "ProjectTombstone"
+    /// One environment's secret values, as this person holds them.
+    case personalSecrets = "PersonalSecrets"
 
-    /// Whether a record of this kind may sit in `zone`; one anywhere else is ignored.
+    /// Whether a record of this kind may sit in `zone`; one anywhere else is ignored. Current values in a project's zone
+    /// are where they lived before `personal` existed, read only to bring them over (`LibrarySync+PersonalData.swift`).
     func belongs(in zone: SyncZone) -> Bool {
         switch (self, zone) {
         case (.currentValues, _): true
-        case (.globalEnvironment, .library), (.projectTombstone, .library): true
+        case (.globalEnvironment, .library), (.projectTombstone, .library), (.personalSecrets, .personal): true
         case (.project, .project), (.folder, .project), (.request, .project), (.environment, .project): true
         default: false
         }
@@ -62,6 +87,7 @@ struct SyncRecordID: Hashable, Sendable, CustomStringConvertible {
     static let projectName = "project"
     static let globalName = "global"
     static let currentValuesPrefix = "current-"
+    static let secretsPrefix = "secrets-"
     static let tombstonePrefix = "tombstone-"
 }
 

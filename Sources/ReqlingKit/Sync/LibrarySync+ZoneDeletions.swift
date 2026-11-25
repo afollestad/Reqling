@@ -30,6 +30,8 @@ extension LibrarySync {
         guard let store else {
             return
         }
+        applyPersonalAwaitingFetchEnd()
+        fillLegacyAwaitingFetchEnd()
         lastFetchFinished = fetchedAt
         var deletions = heldZoneDeletions
         heldZoneDeletions = []
@@ -131,11 +133,15 @@ extension LibrarySync {
 
     /// A project that can't go to the Trash stays here, detached, rather than being uploaded again as new.
     func deleteRemotelyDeleted(_ id: ProjectID) {
-        store?.forget(.project(id))
-        transport.cancelPending(in: .project(id))
+        for zone in [SyncZone.project(id), .personal(id)] {
+            store?.forget(zone)
+            transport.cancelPending(in: zone)
+        }
         encoded[.project(id)] = nil
         do {
             try lifecycle.deleteSyncedProject(id)
+            // Its personal zone goes too, as a Mac before `personal` that deleted the project left it.
+            transport.enqueue([.deleteZone(.personal(id))])
         } catch {
             store?.update { $0.detached.insert(id) }
             report("\(name(of: .project(id))) was deleted on another Mac but couldn't be moved to the Trash here, so it stays and no longer syncs.")
@@ -189,7 +195,7 @@ extension LibrarySync: SyncTransportDelegate {
     static let deletionFetchWindow: TimeInterval = 60
 
     private func isTombstoned(_ zone: SyncZone) -> Bool {
-        guard case .project(let id) = zone, let store else {
+        guard let id = zone.project, let store else {
             return false
         }
         return store.state.tombstones.contains(id)
@@ -201,7 +207,7 @@ extension LibrarySync: SyncTransportDelegate {
             return true
         }
         switch id.zone {
-        case .project(let project):
+        case .project(let project), .personal(let project):
             return store.state.deferred.contains(project) || store.state.detached.contains(project)
         case .library:
             return LibraryRecordCoder.tombstonedProject(id) == nil && (store.state.libraryDeferred || store.state.libraryDetached)

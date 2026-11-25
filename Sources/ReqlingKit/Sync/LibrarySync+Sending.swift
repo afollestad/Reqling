@@ -9,7 +9,7 @@ extension LibrarySync {
         guard let store else {
             return nil
         }
-        if case .project(let project) = id.zone, let local = library.project(project), !isReadFully(local) {
+        if let project = id.zone.project, let local = library.project(project), !isReadFully(local) {
             return nil
         }
         var record: SyncRecord
@@ -59,10 +59,7 @@ extension LibrarySync {
                 reportFailure(message)
                 failingZones.insert(zone)
             case .zoneDeleted(let zone):
-                store.forget(zone)
-                if case .project(let project) = zone {
-                    store.update { $0.outgoingZoneDeletions.remove(project) }
-                }
+                zoneDeleted(zone, in: store)
             case .conflict(let id, let server):
                 // The server already holds a tombstone for it: as good as saved.
                 guard LibraryRecordCoder.tombstonedProject(id) == nil else {
@@ -89,9 +86,24 @@ extension LibrarySync {
         // when the server's record was what this Mac last synced, goes out again on the server's version; but only once
         // the merge took, since one that couldn't be written would conflict the same way again.
         for (zone, records) in conflicts {
-            apply(SyncFetchedZone(zone: zone, changed: records, deleted: []))
+            apply(SyncFetchedZone(zone: zone, changed: records, deleted: []), deferringPersonal: false)
             let settled = records.filter { store.base($0.id)?.systemFields == $0.systemFields }
             transport.enqueue(settled.filter { store.pending($0.id).map { !$0.isDeletion } == true }.map { .save($0.id) })
+        }
+        advanceBringingOver(after: results)
+    }
+
+    /// A zone this Mac deleted is gone. A deleted project's personal zone goes first, so none of its values outlive it
+    /// should Reqling quit between, and the project's own follows.
+    private func zoneDeleted(_ zone: SyncZone, in store: SyncBaseStore) {
+        store.forget(zone)
+        switch zone {
+        case .personal(let project) where store.state.outgoingZoneDeletions.contains(project):
+            transport.enqueue([.deleteZone(.project(project))])
+        case .project(let project):
+            store.update { $0.outgoingZoneDeletions.remove(project) }
+        case .personal, .library:
+            break
         }
     }
 
@@ -127,7 +139,7 @@ extension LibrarySync {
         if zoneChangeFailed {
             zoneChangeFailed = false
             transport.enqueue(store.state.outgoingTombstones.map { .save(LibraryRecordCoder.tombstoneRecordID($0)) })
-            transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.project($0)) })
+            transport.enqueue(store.state.outgoingZoneDeletions.map { .deleteZone(.personal($0)) })
         }
     }
 
@@ -141,9 +153,9 @@ extension LibrarySync {
         if let server = record.serverModifiedAt {
             store.update { $0.clockSkew = self.now().timeIntervalSince(server) }
         }
-        if case .project(let project) = record.id.zone,
+        if let project = record.id.zone.project,
            store.state.outgoingTombstones.contains(project) || store.state.outgoingZoneDeletions.contains(project) {
-            // Saved as the project was deleted here: its zone goes, so nothing of it is kept.
+            // Saved as the project was deleted here: its zones go, so nothing of it is kept.
             return
         }
         tombstoneSaved(record.id)
@@ -184,7 +196,8 @@ extension LibrarySync {
             state.outgoingTombstones.remove(project)
             state.outgoingZoneDeletions.insert(project)
         }
-        transport.enqueue([.deleteZone(.project(project))])
+        // Its personal zone first; the project's follows once that's gone (`handleSent`).
+        transport.enqueue([.deleteZone(.personal(project))])
     }
 
     /// A save refused because its zone is gone. Sent before its zone was, as in a first upload, it goes again with the
@@ -192,7 +205,7 @@ extension LibrarySync {
     /// which only the next fetch can explain: deleted with a tombstone, or vanished, and either way judged there
     /// (`judgeDeletion(of:)`), never recreated here.
     private func zoneMissing(for id: SyncRecordID, in store: SyncBaseStore) {
-        if case .project(let project) = id.zone, store.state.tombstones.contains(project) {
+        if let project = id.zone.project, store.state.tombstones.contains(project) {
             // Deleted on another Mac; the fetch that brought the tombstone deletes it here.
             store.clearPending(id)
         } else if failingZones.contains(id.zone) {
@@ -204,7 +217,7 @@ extension LibrarySync {
 
     /// Whether `zone` is still one to sync into: Global's, or a project's that's here and syncs.
     private func isStillSyncing(_ zone: SyncZone) -> Bool {
-        guard case .project(let project) = zone else {
+        guard let project = zone.project else {
             return true
         }
         return library.project(project).map(isSyncable) ?? false
@@ -223,7 +236,7 @@ extension LibrarySync {
     func name(of zone: SyncZone) -> String {
         switch zone {
         case .library: "Global"
-        case .project(let id): library.project(id).map { "“\($0.name)”" } ?? "a project"
+        case .project(let id), .personal(let id): library.project(id).map { "“\($0.name)”" } ?? "a project"
         }
     }
 }

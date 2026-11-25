@@ -26,12 +26,13 @@ extension LibrarySync {
             }
         case .removed(let id):
             encoded[.project(id)] = nil
+            let zones = [SyncZone.project(id), .personal(id)]
             store.update { state in
                 state.excluded.insert(id)
                 state.detached.remove(id)
-                state.pending = state.pending.filter { !$0.key.hasPrefix(SyncZone.project(id).name + "/") }
+                state.pending = state.pending.filter { entry in !zones.contains { entry.key.hasPrefix($0.name + "/") } }
             }
-            transport.cancelPending(in: .project(id))
+            zones.forEach(transport.cancelPending)
             store.save()
         case .deleted(let id):
             encoded[.project(id)] = nil
@@ -79,12 +80,14 @@ extension LibrarySync {
             || state.outgoingZoneDeletions.contains(id) || store.base(tombstone) != nil
         let zone = SyncZone.project(id)
         encoded[zone] = nil
-        let here = (localRecords(in: zone) ?? [:]).merging(currentValuesRecords(in: zone)) { first, _ in first }
-        for recordID in store.baseIDs(in: zone) where here[recordID].map({ differs(sendable($0), from: store.base(recordID)) }) ?? true {
+        let here = (localRecords(in: zone) ?? [:]).merging(personalRecords(of: id) ?? [:]) { first, _ in first }
+        for recordID in store.baseIDs(in: zone) + store.baseIDs(in: .personal(id))
+        where here[recordID].map({ differs(sendable($0), from: store.base(recordID)) }) ?? true {
             store.removeBase(recordID)
         }
-        // A deletion of its zone still queued.
+        // A deletion of its zones still queued.
         transport.cancelPending(in: zone)
+        transport.cancelPending(in: .personal(id))
         store.update { state in
             state.excluded.remove(id)
             state.tombstones.remove(id)
@@ -176,32 +179,44 @@ extension LibrarySync {
         guard let records = localRecords(in: zone) else {
             return
         }
-        let all = records.merging(currentValuesRecords(in: zone)) { first, _ in first }
-        queueDifferences(all, in: zone, deletingMissing: true, at: editedAt ?? now(), valuesAt: valuesEditedAt)
+        let date = editedAt ?? now()
+        // First, so what's left of this person's in the project's zone waits for what's still to go to `personal`.
+        reconcilePersonal(id, at: date, valuesAt: valuesEditedAt)
+        // Current values left in its zone go only once they're safe in `personal` (`LibrarySync+PersonalData.swift`).
+        let legacyValues = legacyValueIDs(in: id)
+        legacyValues.filter { store.pending($0)?.isDeletion == false }.forEach(store.clearPending)
+        let kept = Set(legacyValues.filter { !mayDeleteLegacyValues($0) })
+        queueDifferences(records, in: zone, deletingMissing: true, keeping: kept, at: date)
     }
 
-    /// The project's, folders', requests', and environments' records this Mac holds for `zone`, or Global's; `nil` when it
-    /// holds none to compare. Current values are apart (`currentValuesRecords(in:)`). Each carries every secret value
-    /// this Mac has, for merging; what may be sent is `sendable(_:)`.
+    /// The project's, folders', requests', and environments' records this Mac holds for `zone`, Global's, or a project's
+    /// secret values; `nil` when it holds none to compare. Current values are apart (`currentValuesRecords(in:)`). Each
+    /// carries every secret value this Mac has, for merging; what may be sent is `sendable(_:)`.
     func localRecords(in zone: SyncZone) -> [SyncRecordID: SyncRecord]? {
+        if case .personal(let id) = zone {
+            // Built fresh rather than kept in `encoded`, which only a project's edits clear, not the Keychain's.
+            return personalSecretsRecords(of: id)
+        }
         if let cached = encoded[zone] {
             return cached
         }
         var records: [SyncRecordID: SyncRecord] = [:]
         switch zone {
         case .project(let id):
-            guard let document = library.document(id) else {
+            guard let document = library.document(id), let built = try? ProjectRecordCoder.records(for: document) else {
                 return nil
             }
+            // An environment's record carries no values, but one an older Mac left holding a value this Mac lacks is
+            // fetched again, which brings it to `personal` before the record is cleared.
             let keychain = try? secretStore.secrets(for: .project(id))
-            guard let built = try? ProjectRecordCoder.records(for: document, secrets: keychain) else {
-                return nil
-            }
-            for (recordID, record) in built where record.type == .environment {
-                let environment = EnvironmentID(string: recordID.name).flatMap(document.environment)
-                noteWithheld(record, expecting: secretVariableKeys(environment))
+            for environment in document.allEnvironments {
+                let recordID = SyncRecordID(zone: zone, name: environment.id.description)
+                let held = keychain.map { ProjectRecordCoder.secretValues(of: environment, from: $0) }
+                noteWithheld(recordID, holding: held, expecting: secretVariableKeys(environment))
             }
             records = built
+        case .personal:
+            return nil
         case .library:
             let global = library.globalEnvironment
             if let record = try? LibraryRecordCoder.globalRecord(global, secrets: try? secretStore.secrets(for: .global)) {
@@ -220,7 +235,7 @@ extension LibrarySync {
             switch (zone, scope) {
             case (.library, .global):
                 break
-            case let (.project(id), .environment(project, environment)) where project == id && library.document(id)?.environment(environment) != nil:
+            case let (.personal(id), .environment(project, environment)) where project == id && library.document(id)?.environment(environment) != nil:
                 break
             default:
                 continue
@@ -235,33 +250,38 @@ extension LibrarySync {
         return records
     }
 
-    private func secretVariableKeys(_ environment: RequestEnvironment?) -> Set<String> {
+    func secretVariableKeys(_ environment: RequestEnvironment?) -> Set<String> {
         Set((environment?.variables ?? []).filter(\.isSecret).map(\.id.description))
     }
 
     /// Notes whether `record`'s secrets must stay unsent: the base says the server holds a value for one of `expected`
     /// that this Mac has none for, and the field is replaced whole, so sending the rest would erase that one. Such a
     /// record is fetched whole again, so the merge fills in the missing value and the rest can go out with it.
-    private func noteWithheld(_ record: SyncRecord, expecting expected: Set<String>) {
+    func noteWithheld(_ record: SyncRecord, expecting expected: Set<String>) {
+        noteWithheld(record.id, holding: record.secrets, expecting: expected)
+    }
+
+    /// `noteWithheld(_:expecting:)` for the record `id`, whose secrets this Mac holds as `held`, or can't read.
+    func noteWithheld(_ id: SyncRecordID, holding held: [String: String]?, expecting expected: Set<String>) {
         guard let store else {
             return
         }
-        let held = record.secrets.map { Set($0.keys) } ?? []
-        let lacking = expected.subtracting(held).map { store.digester.digest("secret-key:" + $0) }
-        let base = store.base(record.id)
-        guard record.secrets != nil, lacking.contains(where: { base?.secrets[$0] != nil }) else {
-            withheld.remove(record.id)
+        let lacking = expected.subtracting(held.map { Set($0.keys) } ?? []).map { store.digester.digest("secret-key:" + $0) }
+        let base = store.base(id)
+        guard held != nil, lacking.contains(where: { base?.secrets[$0] != nil }) else {
+            withheld.remove(id)
             return
         }
-        if withheld.insert(record.id).inserted {
+        if withheld.insert(id).inserted {
             requestRefetch()
-            report("Some secret values in \(name(of: record.id.zone)) aren't on this Mac, so its own secret changes wait for them from iCloud.")
+            report("Some secret values in \(name(of: id.zone)) aren't on this Mac, so its own secret changes wait for them from iCloud.")
         }
     }
 
-    /// `record` as it may be sent: without its secrets while some are withheld.
+    /// `record` as it may be sent: without its secrets while some are withheld, or, for an environment's, until clearing
+    /// them loses none (`mayClearSecrets`), which leaves the server's as they are meanwhile.
     func sendable(_ record: SyncRecord) -> SyncRecord {
-        guard withheld.contains(record.id) else {
+        guard withheld.contains(record.id) || (record.type == .environment && !mayClearSecrets(record.id)) else {
             return record
         }
         var sendable = record
@@ -285,9 +305,12 @@ extension LibrarySync {
             return
         }
         var zones: [SyncZone] = store.state.libraryDetached || store.state.libraryDeferred ? [] : [.library]
-        zones += library.projects.filter { isSyncable($0) && isReadFully($0) }.map { .project($0.id) }
+        zones += library.projects.filter { isSyncable($0) && isReadFully($0) }.map { .personal($0.id) }
         for zone in zones {
             let records = currentValuesRecords(in: zone)
+            if case .personal = zone, !records.isEmpty, !store.hasBases(in: zone) {
+                transport.enqueue([.saveZone(zone)])
+            }
             queueDifferences(records, in: zone, deletingMissing: false, at: editedAt ?? now())
             var deletions: [SyncPendingChange] = []
             for id in store.baseIDs(in: zone) where id.name.hasPrefix(SyncRecordID.currentValuesPrefix) && records[id] == nil {
@@ -312,13 +335,15 @@ extension LibrarySync {
     // MARK: - Queueing
 
     /// Queues each record that differs from what was last synced, made `at` (current values `valuesAt`, when given), and,
-    /// with `deletingMissing`, the deletion of each synced record this Mac no longer has. Saves go parents first and
-    /// deletions children first, so a fetch between two batches never finds a request without its folder, which it
-    /// would move to the top level and so keep. An edit already queued keeps its time unless what it holds changed again.
+    /// with `deletingMissing`, the deletion of each synced record this Mac no longer has, other than those `keeping`
+    /// names. Saves go parents first and deletions children first, so a fetch between two batches never finds a request
+    /// without its folder, which it would move to the top level and so keep. An edit already queued keeps its time
+    /// unless what it holds changed again.
     func queueDifferences(
         _ records: [SyncRecordID: SyncRecord],
         in zone: SyncZone,
         deletingMissing: Bool,
+        keeping kept: Set<SyncRecordID> = [],
         at date: Date,
         valuesAt valuesDate: Date? = nil
     ) {
@@ -348,7 +373,7 @@ extension LibrarySync {
         let rank = sendRank(in: zone)
         var changes: [SyncPendingChange] = saves.sorted { (rank[$0] ?? .max, $0.name) < (rank[$1] ?? .max, $1.name) }.map { .save($0) }
         if deletingMissing {
-            for id in deletionOrder(store.baseIDs(in: zone).filter { records[$0] == nil }) {
+            for id in deletionOrder(store.baseIDs(in: zone).filter { records[$0] == nil && !kept.contains($0) }) {
                 store.notePending(id, fingerprint: nil, at: date)
                 changes.append(.delete(id))
             }
@@ -407,7 +432,9 @@ extension LibrarySync {
         return rank
     }
 
-    /// Whether `record` holds anything its base doesn't. A secret this Mac has no value for counts as unchanged.
+    /// Whether `record` holds anything its base doesn't. A secret this Mac has no value for counts as unchanged, but an
+    /// environment's empty secrets clear what it held before they moved to `personal`. A project's header at a newer
+    /// schema than its base's counts as changed, so it goes up as the fence an older Mac holds the project back at.
     func differs(_ record: SyncRecord, from base: SyncBaseStore.Base?) -> Bool {
         guard let store, let base else {
             return true
@@ -415,8 +442,14 @@ extension LibrarySync {
         if store.digester.fingerprint(record.payload) != base.fingerprint {
             return true
         }
+        if record.type == .project, record.schemaVersion > base.schemaVersion ?? 1 {
+            return true
+        }
         guard let secrets = record.secrets else {
             return false
+        }
+        if record.type == .environment, secrets.isEmpty, !base.secrets.isEmpty {
+            return true
         }
         return store.secretDigests(secrets).contains { base.secrets[$0.key] != $0.value }
     }
@@ -440,6 +473,8 @@ extension LibrarySync {
         }
         let zone = SyncZone.project(id)
         transport.cancelPending(in: zone)
+        transport.cancelPending(in: .personal(id))
+        store.forget(.personal(id))
         // Records out for saving may land yet, as when a project goes during its first upload.
         guard store.hasBases(in: zone) || sentEdits.keys.contains(where: { $0.zone == zone }) else {
             // Never sent, as with an import rolled back: nothing on the server to delete or leave behind.

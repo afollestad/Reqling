@@ -104,7 +104,7 @@ extension LibrarySyncTests {
     /// newer Reqling wrote it.
     func testAProjectWhoseRecordsHaventAllArrivedWaitsForThem() async throws {
         let document = ProjectDocument(name: "Arriving")
-        let records = try ProjectRecordCoder.records(for: document, secrets: [:])
+        let records = try ProjectRecordCoder.records(for: document)
         let projectRecord = SyncRecordID(zone: .project(document.id), name: SyncRecordID.projectName)
         _ = cloud.saveZone(.project(document.id))
         _ = cloud.save(try XCTUnwrap(records[projectRecord]))

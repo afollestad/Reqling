@@ -3,7 +3,8 @@ import Foundation
 @testable import ReqlingKit
 import XCTest
 
-/// A project survives the trip into records and back, with secrets only in the records' `secrets`.
+/// A project survives the trip into records and back, with its secret values only in its `personal` records'
+/// `secrets`, never in the project's.
 final class SyncRecordCoderTests: XCTestCase {
     private var token = Variable(key: "token", value: "s3cret", isSecret: true)
 
@@ -50,46 +51,53 @@ final class SyncRecordCoderTests: XCTestCase {
     func testAProjectRoundTripsThroughItsRecords() throws {
         let document = sampleDocument()
 
-        let records = try ProjectRecordCoder.records(for: document, secrets: keychain(for: document))
-        let decoded = try ProjectRecordCoder.document(document.id, from: Array(records.values), local: nil)
+        let records = try ProjectRecordCoder.records(for: document)
+        let decoded = try ProjectRecordCoder.document(document.id, from: Array(records.values), local: document)
 
         XCTAssertEqual(decoded.document, document)
-        XCTAssertEqual(decoded.secrets, keychain(for: document))
+        XCTAssertEqual(decoded.secrets, [:])
         XCTAssertEqual(records.count, 1 + 5 + 3, "The project, each folder and request, and each environment")
     }
 
-    func testPayloadsCarryNoSecretValues() throws {
+    /// The project's records clear the secret values an environment's held before they moved, and its `personal`
+    /// record holds them instead.
+    func testOnlyPersonalRecordsCarrySecretValues() throws {
         let document = sampleDocument()
 
-        let records = try ProjectRecordCoder.records(for: document, secrets: keychain(for: document))
+        let records = try ProjectRecordCoder.records(for: document)
+        let personal = LibraryRecordCoder.secretsRecord(document.id, document.defaultEnvironment, secrets: keychain(for: document))
 
         for record in records.values {
             XCTAssertFalse(record.payload.prettyPrinted().contains("s3cret"), record.id.description)
         }
         let environment = try XCTUnwrap(records[SyncRecordID(zone: .project(document.id), name: document.defaultEnvironment.id.description)])
-        XCTAssertEqual(environment.secrets, [token.id.description: "s3cret"])
+        XCTAssertEqual(environment.secrets, [:])
+        XCTAssertEqual(personal.id.zone, .personal(document.id))
+        XCTAssertEqual(personal.payload, .object([]))
+        XCTAssertEqual(personal.secrets, [token.id.description: "s3cret"])
+        XCTAssertEqual(LibraryRecordCoder.secretValues(from: personal), keychain(for: document))
     }
 
     /// A Mac that couldn't read its Keychain, or never received a value, sends none; the receiver keeps its own.
     func testAnAbsentSecretIsNeverSentOrAppliedAsBlank() throws {
         var document = sampleDocument()
 
-        let unread = try ProjectRecordCoder.records(for: document, secrets: nil)
-        let missing = try ProjectRecordCoder.records(for: document, secrets: [:])
-        let environmentID = SyncRecordID(zone: .project(document.id), name: document.defaultEnvironment.id.description)
-        let decoded = try ProjectRecordCoder.document(document.id, from: Array(missing.values), local: document)
+        let unread = LibraryRecordCoder.secretsRecord(document.id, document.defaultEnvironment, secrets: nil)
+        let missing = LibraryRecordCoder.secretsRecord(document.id, document.defaultEnvironment, secrets: [:])
+        let records = try ProjectRecordCoder.records(for: document)
+        let decoded = try ProjectRecordCoder.document(document.id, from: Array(records.values), local: document)
 
-        XCTAssertNil(unread[environmentID]?.secrets)
-        XCTAssertEqual(missing[environmentID]?.secrets, [:])
+        XCTAssertNil(unread.secrets)
+        XCTAssertEqual(missing.secrets, [:])
         XCTAssertEqual(decoded.document.defaultEnvironment.variables.last?.value, "s3cret", "The receiver keeps its own value")
         XCTAssertEqual(decoded.secrets, [:], "Nothing is stored over it")
         document.defaultEnvironment.variables[1].value = ""
-        XCTAssertEqual(try ProjectRecordCoder.document(document.id, from: Array(missing.values), local: nil).document, document)
+        XCTAssertEqual(try ProjectRecordCoder.document(document.id, from: Array(records.values), local: nil).document, document)
     }
 
     func testAZoneWithoutItsProjectOrDefaultEnvironmentIsRefused() throws {
         let document = sampleDocument()
-        let records = try ProjectRecordCoder.records(for: document, secrets: [:])
+        let records = try ProjectRecordCoder.records(for: document)
 
         XCTAssertThrowsError(try ProjectRecordCoder.document(document.id, from: records.values.filter { $0.type != .project }, local: nil))
         XCTAssertThrowsError(try ProjectRecordCoder.document(
@@ -147,7 +155,7 @@ final class SyncRecordCoderTests: XCTestCase {
                 break
             }
         }
-        for record in try ProjectRecordCoder.records(for: richDocument(), secrets: [:]).values {
+        for record in try ProjectRecordCoder.records(for: richDocument()).values {
             collect(record.payload, into: &keys[record.type, default: []], path: "")
         }
         let schema = keys.sorted { $0.key.rawValue < $1.key.rawValue }
@@ -155,7 +163,8 @@ final class SyncRecordCoderTests: XCTestCase {
             .joined(separator: "\n")
         let fingerprint = SHA256.hash(data: Data(schema.utf8)).map { String(format: "%02x", $0) }.joined()
 
-        XCTAssertEqual(ProjectRecordCoder.schemaVersion, 1)
+        // 2 moved secret and current values into `personal`, which changed no payload key.
+        XCTAssertEqual(ProjectRecordCoder.schemaVersion, 2)
         let expected = "9181156f8e1f49d52864750c4d0069e3686263d8de48790ebc293c472f84b0b4"
         XCTAssertEqual(fingerprint, expected, "The payload keys are now:\n\(schema)\nBump the schema version, then set this to \(fingerprint).")
     }

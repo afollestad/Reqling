@@ -133,7 +133,7 @@ extension LibrarySyncTests {
     /// A conflict whose merge can't be written isn't sent again and again: it waits for the next fetch.
     func testAConflictThatCantBeWrittenIsntResentEndlessly() async throws {
         let id = try await shareProject()
-        let environment = SyncRecordID(zone: .project(id), name: try XCTUnwrap(macA.library.document(id)).defaultEnvironment.id.description)
+        let environment = LibraryRecordCoder.secretsRecordID(id, try XCTUnwrap(macA.library.document(id)).defaultEnvironment.id)
         func setToken(_ value: String, on mac: SyncTestMac) throws {
             try mac.library.mutate(id) { document in
                 if let index = document.defaultEnvironment.variables.firstIndex(where: { $0.key == "token" }) {

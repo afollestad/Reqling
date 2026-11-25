@@ -4,7 +4,9 @@ import Foundation
 /// is in front; a record this version can't read holds its whole project back, rather than leaving gaps that would read
 /// as deletions; and nothing a merge resolves is written before the secrets it needs are in the Keychain.
 extension LibrarySync {
-    func apply(_ fetched: SyncFetchedZone) {
+    /// Applies a fetched zone. A personal zone waits for the end of its fetch, `deferringPersonal`, so every project zone
+    /// it fetched is applied first, and the environments its values belong to are known (`applyPersonalAwaitingFetchEnd`).
+    func apply(_ fetched: SyncFetchedZone, deferringPersonal: Bool = true) {
         guard let store else {
             return
         }
@@ -23,6 +25,27 @@ extension LibrarySync {
             applyLibrary(fetched)
         case .project(let id):
             applyProject(id, fetched)
+        case .personal(let id):
+            if deferringPersonal {
+                if fetched.isWhole {
+                    // A whole delivery holds all the zone has, and an older one still waiting would bring back what's gone.
+                    personalAwaitingFetchEnd.removeAll { $0.zone == fetched.zone }
+                }
+                personalAwaitingFetchEnd.append(fetched)
+            } else {
+                applyPersonal(id, fetched)
+            }
+        }
+    }
+
+    /// The personal zones the fetch ending delivered, after its project zones.
+    func applyPersonalAwaitingFetchEnd() {
+        let waiting = personalAwaitingFetchEnd
+        personalAwaitingFetchEnd = []
+        for fetched in waiting {
+            if case .personal(let id) = fetched.zone {
+                applyPersonal(id, fetched)
+            }
         }
     }
 
@@ -47,7 +70,7 @@ extension LibrarySync {
     /// Whether anything fetched waits to be applied or judged. Nothing is sent meanwhile, since what's queued may be
     /// about to merge with it.
     var isHoldingFetchedChanges: Bool {
-        !heldEvents.isEmpty || !heldZoneDeletions.isEmpty
+        !heldEvents.isEmpty || !heldZoneDeletions.isEmpty || !personalAwaitingFetchEnd.isEmpty || !legacyAwaitingFetchEnd.isEmpty
     }
 
     /// Whether nothing fetched for `id` may land here: removed here, held back, or deleted here with its deletion still on
@@ -113,20 +136,42 @@ extension LibrarySync {
             guard let held = localRecords(in: zone) else {
                 return
             }
-            working = held.merging(currentValuesRecords(in: zone)) { first, _ in first }
+            working = held
         }
-        let outcome = merge(changed, deleted: fetched.deleted, into: &working, hasLocal: local != nil)
-        guard write(working, to: id, replacing: local?.document, arrived: Set(changed.map(\.id)), cleared: outcome.cleared) else {
+        // What an older Mac left here of this person's merges into `personal` instead (`mergeLegacy`), and the bases
+        // keep it until it's cleared from here; the project takes the rest.
+        let legacy = changed.filter(isLegacyPersonalData)
+        let own = changed.filter { $0.type != .currentValues }.map(withoutPersonalData)
+        let outcome = merge(own, deleted: fetched.deleted, into: &working, hasLocal: local != nil)
+        let fenced = isFenced(id) || changed.contains { $0.type == .project && $0.schemaVersion >= Self.personalSchemaVersion }
+        guard write(working, to: id, replacing: local?.document), mergeLegacy(legacy, of: id, fenced: fenced) else {
             return
         }
         encoded[zone] = nil
-        settle(changed, deleted: fetched.deleted, outcome: outcome)
+        // What waits to fill in (`fillLegacyAwaitingFetchEnd`) is taken as agreed only once written there: an
+        // environment's own fields now, its secret values then, and current values whole then.
+        let waiting = Set(legacyAwaitingFetchEnd.map(\.original.id))
+        let settling = changed.compactMap { record -> SyncRecord? in
+            guard waiting.contains(record.id) else {
+                return record
+            }
+            guard record.type == .environment else {
+                return nil
+            }
+            var fieldsOnly = record
+            fieldsOnly.secrets = nil
+            return fieldsOnly
+        }
+        settle(settling, deleted: fetched.deleted, outcome: outcome)
         queue(outcome.resend, from: working)
+        if !legacy.isEmpty {
+            advanceBringingOver(id)
+        }
     }
 
     /// Records what was written as agreed with the server. A merge with nothing left to send holds this Mac's edit, if
     /// any, so its pending entry goes; so does one for a record deleted on both sides.
-    private func settle(_ changed: [SyncRecord], deleted: [SyncRecordID], outcome: MergeOutcome) {
+    func settle(_ changed: [SyncRecord], deleted: [SyncRecordID], outcome: MergeOutcome) {
         guard let store else {
             return
         }
@@ -146,7 +191,7 @@ extension LibrarySync {
 
     /// `changed` without what this Mac already agrees with, such as its own saves coming back, whose only news, the
     /// server's version, goes into the bases. One carrying secret values this Mac lacks is kept, to fill them in.
-    private func droppingEchoes(_ changed: [SyncRecord]) -> [SyncRecord] {
+    func droppingEchoes(_ changed: [SyncRecord]) -> [SyncRecord] {
         guard let store else {
             return changed
         }
@@ -160,7 +205,7 @@ extension LibrarySync {
     }
 
     /// Folds the server's changes into what this Mac holds.
-    private func merge(
+    func merge(
         _ changed: [SyncRecord],
         deleted: [SyncRecordID],
         into working: inout [SyncRecordID: SyncRecord],
@@ -208,19 +253,14 @@ extension LibrarySync {
         return store.pending(held.id).map { !$0.isDeletion } == true && differs(held, from: base)
     }
 
-    /// Writes the merged project and its current values, first its secrets. `false` when nothing could be written.
-    private func write(
-        _ working: [SyncRecordID: SyncRecord],
-        to id: ProjectID,
-        replacing previous: ProjectDocument?,
-        arrived: Set<SyncRecordID>,
-        cleared: Set<SyncRecordID>
-    ) -> Bool {
+    /// Writes the merged project. Its records carry no values of this person's, so it stores none. `false` when nothing
+    /// could be written.
+    private func write(_ working: [SyncRecordID: SyncRecord], to id: ProjectID, replacing previous: ProjectDocument?) -> Bool {
         guard store != nil else {
             return false
         }
         do {
-            let decoded = try ProjectRecordCoder.document(id, from: working.values.filter { $0.type != .currentValues }, local: previous)
+            let decoded = try ProjectRecordCoder.document(id, from: Array(working.values), local: previous)
             // Before another Mac's change lands, every file chosen here is settled where it was chosen, and every file
             // this Mac reads a client identity from is marked, so one the change moves elsewhere can't be read there.
             lifecycle.prepareForOutsideChange(to: id, from: previous)
@@ -229,9 +269,6 @@ extension LibrarySync {
             } else {
                 try library.applySynced(decoded.document, storingSecrets: decoded.secrets)
             }
-            // Only the scopes that changed, so each fetch doesn't rewrite every secret current value in the Keychain.
-            let values = working.values.filter { $0.type == .currentValues && arrived.contains($0.id) }
-            applyCurrentValues(values, cleared: cleared, in: decoded.document)
             noteChanges(from: previous, to: decoded.document)
             return true
         } catch let error as SyncRecordError where previous == nil && [.missingProject, .missingDefaultEnvironment].contains(error) {
@@ -262,6 +299,7 @@ extension LibrarySync {
         case .currentValues: return LibraryRecordCoder.scope(of: record.id) != nil
         case .globalEnvironment: return record.id == LibraryRecordCoder.globalRecordID
         case .projectTombstone: return LibraryRecordCoder.tombstonedProject(record.id) != nil
+        case .personalSecrets: return LibraryRecordCoder.secretsEnvironment(record.id) != nil
         }
     }
 

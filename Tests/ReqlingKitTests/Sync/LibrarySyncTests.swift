@@ -58,12 +58,12 @@ final class LibrarySyncTests: XCTestCase {
         XCTAssertEqual(macB.sync.status, .upToDate(macB.clock))
     }
 
-    /// A Keychain that refuses the secrets leaves no project behind; the next start fetches it all again.
-    func testAProjectThatCantStoreItsSecretsArrivesOnlyOnceTheKeychainWorks() async throws {
+    /// A Keychain that refuses the secret values leaves them unset, never blank in it; the next start fetches them again.
+    func testSecretValuesTheKeychainRefusesArriveOnceItTakesThem() async throws {
         macB.storage.secrets.isFailingWrites = true
         let id = try await shareProject()
 
-        XCTAssertNil(macB.library.project(id))
+        XCTAssertEqual(macB.library.document(id)?.defaultEnvironment.variables.last?.value, "")
         XCTAssertFalse(macB.sync.issues.isEmpty)
 
         macB.storage.secrets.isFailingWrites = false
@@ -71,6 +71,7 @@ final class LibrarySyncTests: XCTestCase {
         await macB.sync.start()
 
         XCTAssertEqual(macB.library.document(id), macA.library.document(id))
+        XCTAssertEqual(try macB.storage.secrets.secrets(for: .project(id)).values.sorted(), ["s3cret"])
     }
 
     // MARK: - Merging
@@ -206,7 +207,7 @@ final class LibrarySyncTests: XCTestCase {
         await macB.sync.syncNow()
         await macA.sync.syncNow()
 
-        let record = try XCTUnwrap(cloud.record(SyncRecordID(zone: .project(id), name: defaultID.description)))
+        let record = try XCTUnwrap(cloud.record(LibraryRecordCoder.secretsRecordID(id, defaultID)))
         XCTAssertEqual(record.secrets?.values.sorted(), ["s3cret"])
         XCTAssertEqual(try macA.storage.secrets.secrets(for: .project(id)).values.sorted(), ["s3cret"])
         XCTAssertEqual(macA.library.document(id)?.defaultEnvironment.variables[0].value, "https://staging")
@@ -222,9 +223,9 @@ final class LibrarySyncTests: XCTestCase {
         await macB.sync.syncNow()
         macB.storage.secrets.isFailingReads = false
 
-        let record = try XCTUnwrap(cloud.record(SyncRecordID(zone: .project(id), name: defaultID.description)))
-        XCTAssertEqual(record.secrets?.values.sorted(), ["s3cret"])
-        XCTAssertTrue(record.payload.prettyPrinted().contains("https://staging"))
+        let environment = try XCTUnwrap(cloud.record(SyncRecordID(zone: .project(id), name: defaultID.description)))
+        XCTAssertEqual(try XCTUnwrap(cloud.record(LibraryRecordCoder.secretsRecordID(id, defaultID))).secrets?.values.sorted(), ["s3cret"])
+        XCTAssertTrue(environment.payload.prettyPrinted().contains("https://staging"))
     }
 
     /// A file that can't be read drops out of the document, which mustn't reach Mac A as a deletion.
