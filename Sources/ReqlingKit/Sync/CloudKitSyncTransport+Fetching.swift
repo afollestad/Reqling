@@ -42,7 +42,9 @@ extension CloudKitSyncTransport {
         for record in changes.modifications.compactMap({ CloudKitRecords.syncRecord($0.record) }) {
             fetch?.changed(record)
         }
-        for id in changes.deletions.compactMap({ CloudKitRecords.syncID($0.recordID) }) {
+        // A share going, as when sharing stops, is no record of the project's going (`CloudKitRecords.isShare`).
+        let deletions = changes.deletions.filter { !CloudKitRecords.isShare($0.recordType) }
+        for id in deletions.compactMap({ CloudKitRecords.syncID($0.recordID) }) {
             fetch?.deleted(id)
         }
     }

@@ -79,6 +79,14 @@ final class CloudKitRecordsTests: XCTestCase {
         XCTAssertEqual(readUnversioned.payload, .null, "Unreadable, so it fails to decode rather than reading as empty")
     }
 
+    /// A shared zone holds CloudKit's share record beside the project's; read as one of them, its unknown type would
+    /// hold the project back as from a newer version, on every Mac and for good.
+    func testAShareRecordIsNotOneOfTheProjects() {
+        let share = CKShare(recordZoneID: CloudKitRecords.zoneID(.project(project)))
+
+        XCTAssertNil(CloudKitRecords.syncRecord(share))
+    }
+
     func testARecordInAZoneReqlingNeverWritesIsIgnored() {
         let foreign = CKRecord(recordType: "Request", recordID: CKRecord.ID(recordName: "x", zoneID: CKRecordZone.ID(zoneName: "other")))
 

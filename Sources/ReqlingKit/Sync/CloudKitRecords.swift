@@ -61,11 +61,19 @@ enum CloudKitRecords {
         return ckRecord
     }
 
-    /// The record as sync reads it, or `nil` for one in a zone Reqling never writes. One whose type or versions this
-    /// version can't read arrives as from a newer version, so its project is held back rather than half understood;
-    /// a payload that won't parse arrives as one that won't decode, which holds it back until the next launch.
+    /// Whether `recordType` is CloudKit's share record, which a shared zone holds beside Reqling's own. It says who the
+    /// zone is shared with, not what the project holds; read as one of its records, its unknown type would hold the
+    /// project back on every Mac, as from a newer version, and an update would never bring it in.
+    static func isShare(_ recordType: CKRecord.RecordType) -> Bool {
+        recordType == CKRecord.SystemType.share
+    }
+
+    /// The record as sync reads it, or `nil` for one in a zone Reqling never writes, or a share (`isShare`). One whose
+    /// type or versions this version can't read arrives as from a newer version, so its project is held back rather
+    /// than half understood; a payload that won't parse arrives as one that won't decode, which holds it back until the
+    /// next launch.
     static func syncRecord(_ ckRecord: CKRecord) -> SyncRecord? {
-        guard let id = syncID(ckRecord.recordID) else {
+        guard !isShare(ckRecord.recordType), let id = syncID(ckRecord.recordID) else {
             return nil
         }
         let values = ckRecord.encryptedValues
