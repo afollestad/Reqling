@@ -122,7 +122,10 @@ private struct SidebarProjectMenu: View {
         Button("Reveal in Finder") { model.revealProject(project.id) }
         Button("Remove from Reqling") { model.removeProject(project.id) }
         if project.document != nil {
-            Button("Move to Trash…", role: .destructive) { model.requestTrash(.project(project.id)) }
+            // Someone else's project is left, not deleted: it stays with everyone else (`LibrarySync.leave`).
+            Button(project.sharing == nil ? "Move to Trash…" : "Leave Shared Project…", role: .destructive) {
+                model.requestTrash(.project(project.id))
+            }
         }
     }
 }

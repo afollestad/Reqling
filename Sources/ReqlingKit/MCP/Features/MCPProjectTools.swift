@@ -111,12 +111,18 @@ struct MCPProjectTools {
             "delete_project",
             title: "Delete project",
             description: "Moves the project's folder to the Trash, removes it from Reqling, and deletes its secrets; one that "
-                + "syncs with iCloud goes to the Trash on every Mac. To close a project but keep it, use remove_project.",
+                + "syncs with iCloud goes to the Trash on every Mac. Refuses a project shared between people, which only "
+                + "the person can leave or delete in Reqling. To close a project but keep it, use remove_project.",
             properties: ["project": MCPSchema.project],
             required: ["project"],
             annotations: .edit
         ) { arguments in
             let project = try context.project(try arguments.string("project"))
+            // Deleting would leave someone else's share, or delete this person's own for everyone it's shared with.
+            if project.sharing != nil || context.sync?.isShared(project.id) == true {
+                throw MCPToolError("“\(project.name)” is shared between people, so it can be left or deleted only in Reqling "
+                    + "itself. To close it on this Mac but keep it, use remove_project.")
+            }
             do {
                 try context.lifecycle.deleteProject(project.id)
             } catch {

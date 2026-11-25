@@ -30,6 +30,7 @@ extension AppComponent {
                 appInfo: appInfo
             )
             context.updates = appUpdates
+            context.sync = librarySync
             #if DEBUG
             if harness != nil {
                 context.probe = CloudKitProbe(containerIdentifier: SyncAvailability.containerIdentifier)

@@ -91,4 +91,16 @@ final class MCPProjectToolsTests: XCTestCase {
         XCTAssertEqual(fixture.storage.trashedNames(), ["Doomed.reqling"])
         XCTAssertNil(fixture.workspace.state.projects[project.description])
     }
+
+    /// Someone else's project is only ever left in Reqling, never deleted by an agent.
+    func testDeletingRefusesAProjectSharedWithThisPerson() async throws {
+        let project = try await fixture.makeProject("Theirs")
+        fixture.library.setSharing(ProjectSharing(owner: "owner", permission: .readWrite, canInvite: false), for: project)
+
+        let refused = await fixture.failure("delete_project", ["project": .string(project.description)])
+
+        XCTAssertTrue(refused.contains("shared between people"), refused)
+        XCTAssertNotNil(fixture.library.project(project))
+        XCTAssertEqual(fixture.storage.trashedNames(), [])
+    }
 }

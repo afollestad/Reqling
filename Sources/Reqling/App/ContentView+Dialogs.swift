@@ -13,7 +13,7 @@ struct TrashConfirmationDialog: ViewModifier {
             // The action takes the item from here, not the model: dismissal may clear `trashPending` first.
             presenting: model.trashPending
         ) { confirmation in
-            Button("Move to Trash", role: .destructive) { model.trash(confirmation) }
+            Button(confirmation.actionTitle, role: .destructive) { model.trash(confirmation) }
         } message: { confirmation in
             Text(confirmation.consequences)
         }

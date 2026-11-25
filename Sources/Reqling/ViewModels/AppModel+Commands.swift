@@ -204,8 +204,14 @@ extension AppModel {
         }
         let syncs = iCloud.sync?.syncs(item.projectID) ?? false
         switch item {
-        case .project:
-            return TrashConfirmation(item: item, name: document.name, kind: .project, syncs: syncs)
+        case .project(let id):
+            var confirmation = TrashConfirmation(item: item, name: document.name, kind: .project, syncs: syncs)
+            if library.project(id)?.sharing != nil {
+                confirmation.sharing = .withYou
+            } else if let audience = iCloud.sync?.sharedByYou[id] {
+                confirmation.sharing = .byYou(audience)
+            }
+            return confirmation
         case .node(_, let id):
             return document.node(id).map { TrashConfirmation(item: item, name: $0.name, kind: $0.isFolder ? .folder : .request, syncs: syncs) }
         }

@@ -174,6 +174,7 @@ Scripts can read a project's variables and Global's, secrets included, so a proj
 - **Running a folder or project** asks once for the whole run, listing every script it would run ([Running folders and projects](running-folders.md)).
 - **Moving scripts in.** Moving a request or folder with scripts from a project you haven't trusted into one you have asks again before the next run, since you haven't seen those scripts.
 - **Changes from another Mac.** Scripts changed on another Mac through [iCloud sync](projects.md#syncing-with-icloud) ask again before they next run here. Changes pulled from git don't.
+- **Shared projects.** A project someone [shares with you](projects.md#sharing-with-other-people) asks before its scripts first run, and again whenever anyone else changes them.
 - **Change it** in the project's pane, under its scripts.
 
 ## Libraries and limits

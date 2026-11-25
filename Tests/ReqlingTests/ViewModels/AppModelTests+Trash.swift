@@ -1,5 +1,5 @@
 import Foundation
-import ReqlingKit
+@testable import ReqlingKit
 import XCTest
 
 @testable import Reqling
@@ -23,6 +23,27 @@ extension AppModelTests {
         XCTAssertNil(model.trashPending)
         XCTAssertNil(fixture.library.document(project)?.node(request))
         XCTAssertNil(model.alert)
+    }
+
+    /// Someone else's project is left rather than deleted, and the owner's deletion says it goes for everyone.
+    func testTrashingASharedProjectSaysWhatItDoesToOthers() throws {
+        let project = try makeProject()
+        fixture.library.setSharing(ProjectSharing(owner: "owner", permission: .readWrite, canInvite: false), for: project)
+
+        model.requestTrash(.project(project))
+
+        let leaving = try XCTUnwrap(model.trashPending)
+        XCTAssertEqual(leaving.sharing, .withYou)
+        XCTAssertTrue(leaving.title.hasPrefix("Leave"))
+        XCTAssertEqual(leaving.actionTitle, "Leave")
+        XCTAssertTrue(leaving.consequences.contains("stays with its owner"))
+
+        func owned(_ audience: ShareAudience) -> TrashConfirmation {
+            TrashConfirmation(item: .project(project), name: "API", kind: .project, syncs: true, sharing: .byYou(audience))
+        }
+        XCTAssertEqual(owned(ShareAudience(people: 2, byLink: false)).actionTitle, "Move to Trash")
+        XCTAssertTrue(owned(ShareAudience(people: 2, byLink: false)).consequences.contains("shared with 2 people, so it's deleted for them too"))
+        XCTAssertTrue(owned(ShareAudience(people: 0, byLink: true)).consequences.contains("shared with anyone who has the link, so"))
     }
 
     func testTrashingAFolderTakesItsContents() throws {

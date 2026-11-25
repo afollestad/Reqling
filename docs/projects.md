@@ -34,7 +34,7 @@ Scripts sit beside the file they belong to, as `.pre.js` (before the request), `
 Reqling syncs through your iCloud account, so each Mac signed in to it has the same projects. It's on by default; Settings ▸ iCloud turns it off.
 
 - **What syncs:** projects in Reqling's own folder, Global, and current values, secret values included. A project anywhere else, such as in a repository, stays on its Mac, for git to share. Run history, the active environment, the files requests use, Keychain identities, and certificate passphrases stay on each Mac too.
-- **What Apple sees.** Everything you write is end-to-end encrypted. Apple sees only each record's kind (a project, folder, request, or environment), its ID, its size, and when it changed.
+- **What Apple sees.** Everything you write is end-to-end encrypted. Apple sees only each record's kind (a project, folder, request, or environment), its ID, its size, and when it changed. For a project you [share](#sharing-with-other-people), Apple also sees its name, which invitations show, and who it's shared with. With Advanced Data Protection on, a project shared with anyone who has its link isn't end-to-end encrypted.
 - **Every Mac signed in to the account can change** the projects that sync. Scripts another Mac changed ask for [trust](scripts.md#trust) again before they run here, and a file chosen on one Mac stays missing on another until it's chosen there.
 - **Edits on two Macs** merge field by field. Where both changed the same field, the later edit wins.
 - **On a new Mac,** the first sync brings every project, Global, and current value, secret values into its Keychain. Projects with scripts ask for trust before they first run.
@@ -43,6 +43,18 @@ Reqling syncs through your iCloud account, so each Mac signed in to it has the s
 - **Another iCloud account** signing in pauses sync until you choose which of this Mac's projects merge into it, if any.
 - **Deleting Reqling's data** from iCloud in System Settings (**Open iCloud Settings…**) turns sync off and leaves your project folders as they are. Turning it on again uploads them.
 - **A project changed by a newer Reqling** stops syncing on this Mac, as Settings ▸ iCloud lists, until you update. Edits you make to it meanwhile sync then.
+
+### Sharing with other people
+
+Share a project that syncs with anyone who has an Apple Account: choose **Share…** from its menu in the sidebar or on its page, then how to invite them. For each person you choose whether they can make changes or only view it, and whether they can invite others; someone who can only view invites others only to view. **Manage Sharing…** changes this later, or stops sharing it. Once anyone can reach the project, by invitation or its link, the sidebar marks it, and pointing at the mark says who.
+
+- **Before it's first shared,** Reqling offers to copy the Global variables the project uses into its Default environment, since everyone else has their own Global.
+- **Each person's own values.** Secret values and current values are each person's, synced only across their own Macs. Secret variables arrive empty, for each person to fill in from the project's Environments sheet, even someone who can only view it. When someone else changes a saved value, your current value for it is dropped, as your own edit would.
+- **Opening an invitation** adds the project to Reqling's own folder, marked in the sidebar. With iCloud sync off, Reqling offers to turn it on. Scripts someone else wrote ask for [trust](scripts.md#trust) before they run, and again when they change.
+- **Leaving.** **Leave Shared Project…** moves your copy to the Trash, and the project stays with its owner and everyone else. When its owner stops sharing it, removes you, or deletes it, your copy goes to the Trash too, where Finder can put it back as your own, and Settings ▸ iCloud says why.
+- **Deleting a project you share** deletes it for everyone it's shared with.
+- **Files** that requests use, Keychain identities, and certificate passphrases stay on each Mac, so each person chooses their own.
+- **Reqling 0.1** doesn't share. A Mac still running it holds shared projects back until it's updated.
 
 ## Importing
 

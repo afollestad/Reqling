@@ -100,7 +100,7 @@ Releases embed a Developer ID provisioning profile, without which macOS won't le
 
 **Renew it before it expires.** Gatekeeper checks the profile at every launch, so installed copies stop opening when it expires, and the updater can't fix that. Release verification fails within 30 days of expiry. Regenerate the profile whenever the App ID's capabilities change, renewing the certificate included, and reset the secret.
 
-**Deploy the CloudKit schema before the first release that syncs.** Debug builds create record types in CloudKit's Development environment; releases use Production, which has only what CloudKit Console → Schema → **Deploy Schema Changes…** promotes. Deploy again whenever a release adds a record type or field. Production can never lose either.
+**Deploy the CloudKit schema before the first release that syncs.** Debug builds create record types in CloudKit's Development environment; releases use Production, which has only what CloudKit Console → Schema → **Deploy Schema Changes…** promotes. Deploy again whenever a release adds a record type or field. Production can never lose either. Sharing needs `cloudkit.share` there too, which appears in Development only once a debug build has shared a project.
 
 ### Notarization API key
 

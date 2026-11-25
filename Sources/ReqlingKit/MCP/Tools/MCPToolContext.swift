@@ -40,6 +40,8 @@ public final class MCPToolContext {
     public weak var host: (any MCPAppHost)?
     /// The updater, for the status and check tools; `nil` where updates aren't wired, as in tests.
     public var updates: AppUpdateManager?
+    /// iCloud sync, which says which projects this person shares (`delete_project`); `nil` where sync can't run.
+    public var sync: LibrarySync?
     #if DEBUG
     /// The end-to-end harness's CloudKit probe, whose tools are listed only when it's set (`MCPHarnessTools`).
     public var probe: CloudKitProbe?
