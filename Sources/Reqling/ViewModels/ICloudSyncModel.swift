@@ -40,6 +40,7 @@ final class ICloudSyncModel {
         settings: SettingsStore,
         system: any SystemIntegration,
         profileExpiry: Date?,
+        announcesFirstSync: Bool = true,
         now: @escaping () -> Date = Date.init,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
@@ -54,8 +55,10 @@ final class ICloudSyncModel {
         sync?.onLocalChange = { [weak self] in
             self?.syncSoon()
         }
-        sync?.onFirstSync = { [weak self] in
-            self?.showsFirstSyncNotice = true
+        if announcesFirstSync {
+            sync?.onFirstSync = { [weak self] in
+                self?.showsFirstSyncNotice = true
+            }
         }
         // Sync already stopped itself; the setting only follows, so Settings keeps saying why.
         sync?.onStop = { [weak self] _ in

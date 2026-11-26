@@ -35,8 +35,11 @@ public enum SyncAvailability {
             return harness
         }
         #endif
-        return "iCloud.com.afollestad.reqling"
+        return appContainerIdentifier
     }()
+
+    /// The app's own container, holding people's real data, which the sharing harness never runs in (`SharingHarness`).
+    static let appContainerIdentifier = "iCloud.com.afollestad.reqling"
 
     public static var isEntitled: Bool {
         guard let task = SecTaskCreateFromSelf(nil),

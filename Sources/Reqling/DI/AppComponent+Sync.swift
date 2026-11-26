@@ -27,14 +27,21 @@ extension AppComponent {
 
     var iCloudSync: ICloudSyncModel {
         shared {
-            ICloudSyncModel(
+            #if DEBUG
+            // The sharing harness's copies start from no files on every run, so each would put the notice up again.
+            let announcesFirstSync = harness == nil
+            #else
+            let announcesFirstSync = true
+            #endif
+            return ICloudSyncModel(
                 sync: librarySync,
                 // Only where sync runs: `CKContainer` traps in a build that can't use iCloud.
                 shareService: librarySync == nil ? nil : CloudKitShareService(),
                 library: projectLibrary,
                 settings: settingsStore,
                 system: systemIntegration,
-                profileExpiry: storageProfile.isEphemeral ? nil : ProvisioningProfile.expirationDate(of: ProvisioningProfile.embeddedURL)
+                profileExpiry: storageProfile.isEphemeral ? nil : ProvisioningProfile.expirationDate(of: ProvisioningProfile.embeddedURL),
+                announcesFirstSync: announcesFirstSync
             )
         }
     }

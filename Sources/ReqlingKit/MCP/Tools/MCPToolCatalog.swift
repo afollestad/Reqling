@@ -34,6 +34,9 @@ public enum MCPToolCatalog {
         if let probe = context.probe {
             tools += MCPHarnessTools(probe: probe).tools
         }
+        if let harness = context.sharingHarness {
+            tools += MCPSharingHarnessTools(context: context, harness: harness).tools
+        }
         #endif
         return tools
     }

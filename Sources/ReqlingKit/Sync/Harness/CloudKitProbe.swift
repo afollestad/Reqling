@@ -16,6 +16,9 @@ public final class CloudKitProbe {
     private let containerIdentifier: String
     /// Made on first use, so building the harness's tools doesn't need the iCloud entitlement, as in tests.
     private lazy var container = CKContainer(identifier: containerIdentifier)
+    private var shares: HarnessShares {
+        HarnessShares(container: container)
+    }
     /// Where each database's changes were last read, so `changes` reports only what's new.
     private var tokens: [CKDatabase.Scope: CKServerChangeToken] = [:]
     private var zoneTokens: [CKRecordZone.ID: CKServerChangeToken] = [:]
@@ -45,7 +48,7 @@ public final class CloudKitProbe {
         share[CKShare.SystemFieldKey.title] = "Probe"
         share.publicPermission = publicPermission
         if let invite {
-            share.addParticipant(try await participant(invite))
+            share.addParticipant(try await shares.participant(invite))
         }
         let results = try await database.modifyRecords(saving: [record, share], deleting: [])
         let saved = try results.saveResults[share.recordID]?.get() as? CKShare
@@ -56,37 +59,16 @@ public final class CloudKitProbe {
     /// participant to add or change. As an administrator, this is how a participant invites.
     func updateShare(zone: String, owner: String?, publicPermission: CKShare.ParticipantPermission?, invite: Invitation?) async throws {
         let (database, zoneID) = place(zone, owner: owner)
-        let share = try await zoneShare(zoneID, in: database)
-        if let publicPermission {
-            share.publicPermission = publicPermission
-        }
-        if let invite {
-            let found = try await participant(invite)
-            if let existing = share.participants.first(where: { $0.userIdentity.lookupInfo?.emailAddress == invite.email }) {
-                existing.permission = invite.permission
-                existing.role = invite.role
-            } else {
-                share.addParticipant(found)
-            }
-        }
-        _ = try await database.modifyRecords(saving: [share], deleting: []).saveResults[share.recordID]?.get()
+        try await shares.update(zoneID, in: database, publicPermission: publicPermission, invite: invite)
     }
 
     func removeParticipant(zone: String, email: String) async throws {
-        let database = container.privateCloudDatabase
-        let zoneID = CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName)
-        let share = try await zoneShare(zoneID, in: database)
-        for participant in share.participants where participant.userIdentity.lookupInfo?.emailAddress == email {
-            share.removeParticipant(participant)
-        }
-        _ = try await database.modifyRecords(saving: [share], deleting: []).saveResults[share.recordID]?.get()
+        try await shares.removeParticipant(email, from: CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName))
     }
 
     /// Deletes `zone`'s share, as the owner: sharing stops for everyone.
     func stopSharing(zone: String) async throws {
-        let zoneID = CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName)
-        let id = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
-        _ = try await container.privateCloudDatabase.modifyRecords(saving: [], deleting: [id]).deleteResults[id]?.get()
+        try await shares.stopSharing(CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName))
     }
 
     func deleteZone(_ zone: String) async throws {
@@ -108,6 +90,22 @@ public final class CloudKitProbe {
 
     // MARK: - Participating
 
+    /// The share of `zone`, a probe's or a project's, as the server holds it now, owned by `owner` (`nil` for this
+    /// account's own): the link's permission, and each participant's role, permission, and acceptance, but not who
+    /// they are.
+    func participants(zone: String, owner: String?) async throws -> (publicPermission: String, participants: [[String: String]]) {
+        let (database, zoneID) = place(zone, owner: owner)
+        let share = try await shares.share(in: zoneID, of: database)
+        let participants = share.participants.map { participant in
+            [
+                "role": Self.describe(participant.role),
+                "permission": Self.describe(participant.permission),
+                "acceptance": Self.describe(participant.acceptanceStatus)
+            ]
+        }
+        return (Self.describe(share.publicPermission), participants)
+    }
+
     /// Accepts the share at `url`, and says how this account takes part.
     func accept(_ url: URL) async throws -> [String: String] {
         let metadata = try await container.shareMetadata(for: url)
@@ -124,9 +122,7 @@ public final class CloudKitProbe {
 
     /// Deletes this account's place in `zone`'s share, as a participant: leaving it.
     func leave(zone: String, owner: String) async throws {
-        let zoneID = CKRecordZone.ID(zoneName: zone, ownerName: owner)
-        let id = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
-        _ = try await container.sharedCloudDatabase.modifyRecords(saving: [], deleting: [id]).deleteResults[id]?.get()
+        try await shares.leave(CKRecordZone.ID(zoneName: zone, ownerName: owner))
     }
 
     // MARK: - Either side
@@ -197,19 +193,7 @@ public final class CloudKitProbe {
 
     // MARK: - Helpers
 
-    /// Someone to invite, by the email address their Apple Account uses.
-    struct Invitation {
-        let email: String
-        let permission: CKShare.ParticipantPermission
-        let role: CKShare.ParticipantRole
-    }
-
-    private func participant(_ invite: Invitation) async throws -> CKShare.Participant {
-        let participant = try await container.shareParticipant(forEmailAddress: invite.email)
-        participant.permission = invite.permission
-        participant.role = invite.role
-        return participant
-    }
+    typealias Invitation = HarnessShares.Invitation
 
     /// The database and zone ID for `zone`: this account's own, or, with `owner`, one shared with it.
     private func place(_ zone: String, owner: String?) -> (CKDatabase, CKRecordZone.ID) {
@@ -217,14 +201,6 @@ public final class CloudKitProbe {
             return (container.privateCloudDatabase, CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName))
         }
         return (container.sharedCloudDatabase, CKRecordZone.ID(zoneName: zone, ownerName: owner))
-    }
-
-    private func zoneShare(_ zoneID: CKRecordZone.ID, in database: CKDatabase) async throws -> CKShare {
-        let record = try await database.record(for: CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID))
-        guard let share = record as? CKShare else {
-            throw CKError(.unknownItem)
-        }
-        return share
     }
 
     static func describe(_ error: any Error) -> String {
@@ -252,6 +228,16 @@ public final class CloudKitProbe {
         case .administrator: "administrator"
         case .unknown: "unknown"
         @unknown default: "\(role.rawValue)"
+        }
+    }
+
+    static func describe(_ acceptance: CKShare.ParticipantAcceptanceStatus) -> String {
+        switch acceptance {
+        case .pending: "pending"
+        case .accepted: "accepted"
+        case .removed: "removed"
+        case .unknown: "unknown"
+        @unknown default: "\(acceptance.rawValue)"
         }
     }
 

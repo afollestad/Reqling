@@ -3,11 +3,12 @@ import Foundation
 import ReqlingKit
 
 /// A launch as the end-to-end sharing harness, read from `-DebugSharingHarness <config.json>`
-/// (`scripts/sharing-e2e.sh` passes it on each Mac). The app then keeps its files under the config's directory and its
-/// Keychain items under a namespace of their own, so a run never reads or writes Reqling Dev's, and serves MCP on the
-/// config's port with its token, adding the CloudKit probes (`MCPHarnessTools`). Sync runs against the container the
-/// harness build names (`SyncAvailability.containerIdentifier`), never the app's own, and applies what it fetches even in
-/// the background (`AppDelegate.applicationDidResignActive`).
+/// (`scripts/sharing-e2e.sh` passes it on each Mac). The app then keeps its files under the config's directory, its Trash
+/// included, and its Keychain items under a namespace of their own, so a run never reads or writes Reqling Dev's or fills
+/// the Mac's Trash. It skips the first-sync notice, which a run starting from no files would raise every time, and serves
+/// MCP on the config's port with its token, adding the CloudKit probes (`MCPHarnessTools`). Sync runs against the
+/// container the harness build names (`SyncAvailability.containerIdentifier`), never the app's own, and applies what it
+/// fetches even in the background (`AppDelegate.applicationDidResignActive`).
 struct SharingHarnessMode: Decodable {
     /// Where the harness's projects, sync state, and history live, kept between launches so a restart resumes.
     let directory: String

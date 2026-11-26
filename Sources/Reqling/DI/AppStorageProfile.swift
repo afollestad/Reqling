@@ -102,7 +102,7 @@ struct AppStorageProfile: @unchecked Sendable {
         applicationSupportDirectory.appendingPathComponent("Updates", isDirectory: true)
     }
 
-    /// Ephemeral profiles "trash" into their own directory; the real Trash belongs to the user.
+    /// Ephemeral profiles and the sharing harness "trash" into their own directory; the real Trash belongs to the user.
     var trashDirectory: URL {
         applicationSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
     }

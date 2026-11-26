@@ -48,16 +48,22 @@ final class MCPToolCatalogTests: XCTestCase {
         XCTAssertFalse(names.contains { $0.contains("token") || $0.contains("mcp") }, "Agents never manage the server itself")
     }
 
-    /// The sharing harness's CloudKit probes are listed only on a debug build launched as the harness, and take strict
-    /// objects like every other tool.
-    func testHarnessProbesAreListedOnlyWithAProbe() throws {
-        XCTAssertFalse(fixture.dispatcher.definitions.contains { $0.name.hasPrefix("probe_") })
+    /// The sharing harness's tools, its CloudKit probes and its sharing of real projects, are listed only on a debug build
+    /// launched as the harness, and take strict objects like every other tool.
+    func testHarnessToolsAreListedOnlyOnTheHarness() throws {
+        XCTAssertFalse(fixture.dispatcher.definitions.contains { $0.name.hasPrefix("probe_") || $0.name.hasPrefix("harness_") })
+        let mac = try SyncTestMac(cloud: SyncTestCloud())
+        defer { mac.cleanUp() }
 
         fixture.context.probe = CloudKitProbe(containerIdentifier: "iCloud.test")
-        let probes = MCPToolCatalog.tools(fixture.context).map(\.definition).filter { $0.name.hasPrefix("probe_") }
+        fixture.context.sharingHarness = SharingHarness(containerIdentifier: "iCloud.test", sync: mac.sync, library: fixture.context.library)
+        let tools = MCPToolCatalog.tools(fixture.context).map(\.definition)
+        let probes = tools.filter { $0.name.hasPrefix("probe_") }
+        let harness = tools.filter { $0.name.hasPrefix("harness_") }
 
-        XCTAssertEqual(probes.count, 12)
-        for tool in probes {
+        XCTAssertEqual(probes.count, 13)
+        XCTAssertEqual(harness.count, 10)
+        for tool in probes + harness {
             let schema = try XCTUnwrap(tool.inputSchema.objectValue, tool.name)
             XCTAssertEqual(schema["additionalProperties"], false, tool.name)
             let properties = Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? [])

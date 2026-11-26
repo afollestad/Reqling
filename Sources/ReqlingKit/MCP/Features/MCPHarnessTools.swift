@@ -10,7 +10,7 @@ struct MCPHarnessTools {
     let probe: CloudKitProbe
 
     var tools: [MCPTool] {
-        [identity, share, updateShare, removeParticipant, stopSharing, deleteZone, reset, accept, leave, write, read, changes]
+        [identity, share, updateShare, participants, removeParticipant, stopSharing, deleteZone, reset, accept, leave, write, read, changes]
     }
 
     private static let zone = MCPSchema.string("A probe zone's name, as `probe_share` returned it.")
@@ -46,6 +46,27 @@ struct MCPHarnessTools {
                 invite: try Self.invitation(arguments)
             )
             return .object(shared.mapValues(Value.string))
+        }
+    }
+
+    private var participants: MCPTool {
+        MCPTool(
+            "probe_participants",
+            title: "Probe: a share's participants",
+            description: "A zone's share as the server holds it now: its link's permission, and each participant's role, "
+                + "permission, and acceptance, but not who they are.",
+            properties: [
+                "zone": MCPSchema.string("A probe zone's name, as `probe_share` returned it, or a project's, `project-<ID>`."),
+                "owner": Self.owner
+            ],
+            required: ["zone"],
+            annotations: .read
+        ) { arguments in
+            let share = try await probe.participants(zone: try arguments.string("zone"), owner: try arguments.optionalString("owner"))
+            return .object([
+                "publicPermission": .string(share.publicPermission),
+                "participants": .array(share.participants.map { .object($0.mapValues(Value.string)) })
+            ])
         }
     }
 
@@ -187,7 +208,7 @@ struct MCPHarnessTools {
 
     // MARK: - Arguments
 
-    private static func permission(_ arguments: MCPArguments, _ key: String) throws -> CKShare.ParticipantPermission? {
+    static func permission(_ arguments: MCPArguments, _ key: String) throws -> CKShare.ParticipantPermission? {
         switch try arguments.optionalString(key) {
         case nil: nil
         case "none": CKShare.ParticipantPermission.none
@@ -197,7 +218,7 @@ struct MCPHarnessTools {
         }
     }
 
-    private static func invitation(_ arguments: MCPArguments) throws -> CloudKitProbe.Invitation? {
+    static func invitation(_ arguments: MCPArguments) throws -> CloudKitProbe.Invitation? {
         guard let email = try arguments.optionalString("invite") else {
             return nil
         }

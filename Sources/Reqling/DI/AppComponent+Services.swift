@@ -20,6 +20,12 @@ extension AppComponent {
             if storageProfile.isEphemeral {
                 return DirectoryTrash(directory: storageProfile.trashDirectory) as any FileTrashing
             }
+            #if DEBUG
+            // The sharing harness's copies delete and lose projects on every run, which would fill each Mac's Trash.
+            if harness != nil {
+                return DirectoryTrash(directory: storageProfile.trashDirectory) as any FileTrashing
+            }
+            #endif
             return SystemTrash()
         }
     }

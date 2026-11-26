@@ -34,6 +34,13 @@ extension AppComponent {
             #if DEBUG
             if harness != nil {
                 context.probe = CloudKitProbe(containerIdentifier: SyncAvailability.containerIdentifier)
+                if let librarySync {
+                    context.sharingHarness = SharingHarness(
+                        containerIdentifier: SyncAvailability.containerIdentifier,
+                        sync: librarySync,
+                        library: projectLibrary
+                    )
+                }
             }
             #endif
             return MCPServerController(

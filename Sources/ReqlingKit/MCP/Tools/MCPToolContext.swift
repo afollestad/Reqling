@@ -45,6 +45,9 @@ public final class MCPToolContext {
     #if DEBUG
     /// The end-to-end harness's CloudKit probe, whose tools are listed only when it's set (`MCPHarnessTools`).
     public var probe: CloudKitProbe?
+    /// The end-to-end harness's sharing of real projects, whose tools are listed only when it's set
+    /// (`MCPSharingHarnessTools`).
+    public var sharingHarness: SharingHarness?
     #endif
     /// The dispatcher serving these tools, for resources, which read through the matching tools.
     weak var dispatcher: MCPToolDispatcher?

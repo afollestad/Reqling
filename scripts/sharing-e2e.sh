@@ -25,6 +25,13 @@ owner, and a participant reached over SSH, either a tart VM made here or another
   launch     Builds the harness's copy of the app (`build.sh --e2e`), runs it here as the owner and on the participant,
              and tunnels that copy's MCP server here. Needs E2E_PROVISIONING_PROFILE, which it remembers.
   probe      Runs raw CloudKit probes on both sides and writes what the server did to .build/logs/e2e/.
+  run [--take-focus] [<scenario> ...]
+             Deletes both accounts' data in the harness's container, starts both copies from no files, and runs the
+             sharing scenarios, all or those named, writing what each found to .build/logs/e2e/. Run launch first.
+             It keeps bringing the participant's copy to the front, so CloudKit fetches there at once: keep the
+             participant unlocked, and don't use it meanwhile. This Mac's copy waits for pushes, which in Development
+             can take over 20 minutes, so some checks time out; --take-focus brings it forward too, and keeps this
+             Mac awake, so a run takes minutes, but this Mac can't be used meanwhile.
   quit       Quits both copies and closes the tunnel.
   unpair     Quits both copies, deletes the copy and its data from the participant, and forgets the key.
 
@@ -187,6 +194,9 @@ Then, in the VM's System Settings:
   4. General > Sharing: turn on Remote Login.
   5. Users & Groups: set Automatically log in as your account.
   6. General > Software Update > Automatic Updates: turn everything off, so the VM stays on the macOS it was made with.
+  7. Lock Screen: set Turn display off when inactive and Require password after screen saver begins or display is
+     turned off to Never. A locked VM can't bring its copy of the app forward, which is how `run` makes it fetch at
+     once; `launch` keeps the screen saver from starting while that copy runs.
 Shut the VM down when you're done, then run ./scripts/sharing-e2e.sh pair --vm.
 CHECKLIST
   tart run "$vm_name"
@@ -293,34 +303,104 @@ launch() {
   fi
   quit_apps
   E2E_PROVISIONING_PROFILE="$profile" E2E_PARTICIPANT_DEVICE="$device" "$repo_root/scripts/build.sh" --e2e
-  local owner_token participant_token remote_home
+  remote "mkdir -p $remote_folder"
+  rsync -a --delete -e "ssh ${ssh_options[*]}" "$(e2e_app)/" "$target:$remote_folder/Reqling.app/"
+  start_apps
+}
+
+# Starts both copies of the built app, each with a new token, and tunnels the participant's MCP server here.
+start_apps() {
+  local target owner_token participant_token remote_home pid participant_forward owner_forward
+  target=$(participant)
   owner_token=$(uuidgen)
   participant_token=$(uuidgen)
   # shellcheck disable=SC2016 # Expanded on the participant.
   remote_home=$(remote 'echo $HOME')
-  remote "mkdir -p $remote_folder"
-  rsync -a --delete -e "ssh ${ssh_options[*]}" "$(e2e_app)/" "$target:$remote_folder/Reqling.app/"
   harness_config "$remote_home/$remote_folder/Data" "$participant_port" "$participant_token" | remote "cat > $remote_folder/harness.json"
   remote "open -n -g $remote_folder/Reqling.app --args -DebugSharingHarness $remote_home/$remote_folder/harness.json"
+  # After 20 minutes without input, the screen saver starts, and on macOS 26 it brings up the lock screen, which nothing
+  # comes forward over; holding the display awake for as long as this copy runs keeps the screen saver from starting.
+  if ! pid=$(remote "pgrep -nf '$remote_folder/Reqling.app/Contents/MacOS/$app_name'"); then
+    echo "error: the participant's copy didn't start" >&2
+    exit 1
+  fi
+  remote "nohup caffeinate -d -w $pid </dev/null >/dev/null 2>&1 &"
   harness_config "$config_dir/Owner" "$owner_port" "$owner_token" >"$config_dir/owner.json"
   open -n -g "$(e2e_app)" --args -DebugSharingHarness "$config_dir/owner.json"
   ssh -f -N "${ssh_options[@]}" -o ExitOnForwardFailure=yes -L "$participant_port:127.0.0.1:$participant_port" "$target"
+  participant_forward=$(json_array ssh "${ssh_options[@]}" -o BatchMode=yes "$target" "$(come_forward_script "$remote_folder/Reqling.app")")
+  owner_forward=$(json_array bash -c "$(come_forward_script "$(e2e_app)")")
   cat >"$endpoints_path" <<ENDPOINTS
 {
-  "owner": {"port": $owner_port, "token": "$owner_token"},
-  "participant": {"port": $participant_port, "token": "$participant_token", "email": "$(setting PARTICIPANT_EMAIL)"}
+  "owner": {"port": $owner_port, "token": "$owner_token", "comeForward": $owner_forward},
+  "participant": {"port": $participant_port, "token": "$participant_token", "email": "$(setting PARTICIPANT_EMAIL)",
+                  "comeForward": $participant_forward}
 }
 ENDPOINTS
   chmod 600 "$endpoints_path" "$config_dir/owner.json"
   echo "Both copies are running: the owner here on port $owner_port, the participant on $target, tunneled to $participant_port."
 }
 
+# What the runner runs where the copy at $1 runs before each of that copy's syncs: Finder to the front, then the copy,
+# waiting for each. CloudKit fetches at once only as the app becomes active, and the copy can't make itself active,
+# since macOS's cooperative activation ignores `activate()` from an app in the background. $1 is absolute, or relative
+# to the home folder.
+come_forward_script() {
+  local app suffix
+  app=$(printf '%q' "$1")
+  suffix=$(printf '%q' "/${1#/}")
+  # shellcheck disable=SC2016 # Expanded where it runs.
+  printf '%s' 'await_front() { tries=0; until /usr/bin/lsappinfo info -only bundlepath "$(/usr/bin/lsappinfo front)" | grep -qF -- "$1\""; do' \
+    ' tries=$((tries + 1)); if [ "$tries" -ge 100 ]; then echo "$1 never came to the front; is the screen locked?" >&2; return 1; fi;' \
+    ' sleep 0.1; done; }; ' \
+    "open -a Finder && await_front /Finder.app && open $app && await_front $suffix"
+}
+
+# Its arguments as a JSON array of strings.
+json_array() {
+  python3 -I -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@"
+}
+
+# Quits both copies and closes the tunnel, waiting until each copy has exited, so nothing writes to its files after.
 quit_apps() {
-  pkill -f "$(e2e_app)/Contents/MacOS/$app_name" 2>/dev/null || true
+  local here="$(e2e_app)/Contents/MacOS/$app_name" there="$remote_folder/Reqling.app/Contents/MacOS/$app_name" tries=0
+  pkill -f "$here" 2>/dev/null || true
   pkill -f "ssh .*-L $participant_port:127.0.0.1:$participant_port" 2>/dev/null || true
   if participant_up; then
-    remote "pkill -f '$remote_folder/Reqling.app/Contents/MacOS/$app_name'" 2>/dev/null || true
+    remote "pkill -f '$there'" 2>/dev/null || true
   fi
+  while pgrep -f "$here" >/dev/null || { participant_up && remote "pgrep -f '$there'" >/dev/null 2>&1; }; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+      echo "error: a copy of the app didn't quit" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+# Resets both accounts' data in the harness's container, starts both copies from no files, and runs the scenarios.
+run_scenarios() {
+  if [ ! -f "$endpoints_path" ]; then
+    echo "error: run ./scripts/sharing-e2e.sh launch first" >&2
+    exit 1
+  fi
+  local runner=(python3 -I "$repo_root/scripts/lib/sharing_scenarios.py") take_focus=()
+  if [ "${1:-}" = --take-focus ]; then
+    take_focus=(--take-focus)
+    shift
+  fi
+  "${runner[@]}" reset "$endpoints_path"
+  quit_apps
+  rm -rf "$config_dir/Owner"
+  remote "rm -rf $remote_folder/Data"
+  start_apps
+  if [ ${#take_focus[@]} -gt 0 ]; then
+    # As on the participant, so the screen saver doesn't lock this Mac while the runner brings this copy forward.
+    nohup caffeinate -d -w "$(pgrep -nf "$(e2e_app)/Contents/MacOS/$app_name")" </dev/null >/dev/null 2>&1 &
+  fi
+  mkdir -p "$logs_dir/e2e"
+  "${runner[@]}" run "$endpoints_path" "$logs_dir/e2e/scenarios-$(date +%Y%m%d-%H%M%S).json" ${take_focus[@]+"${take_focus[@]}"} "$@"
 }
 
 probe() {
@@ -371,6 +451,7 @@ case "${1:-}" in
   pair) shift; pair "$@" ;;
   launch) launch ;;
   probe) probe ;;
+  run) shift; run_scenarios "$@" ;;
   quit) quit_apps ;;
   unpair) unpair ;;
   -h|--help) usage ;;
