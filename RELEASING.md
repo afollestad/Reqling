@@ -23,7 +23,7 @@ To release, bump both, commit as `Release Reqling vX.Y.Z`, and push to `main`. C
 
 - With publishing enabled, a push publishes the current version whenever its tag is missing, which covers the first release and retrying a failed one.
 - The tag is pushed only after signing, verification, notarization, stapling, packaging, and release-note generation succeed.
-- Release notes are written by Copilot CLI from the commits since the previous release (or the whole history for the first one), limited to user-facing changes and grouped by theme.
+- Release notes are written by Copilot CLI from the commits since the previous release (or the whole history for the first one), condensed to one imperative bullet per user-facing feature or improvement.
 - A newer canary cancels an unfinished one. Release and dry run builds are never cancelled.
 - The release-only steps (previous tag, release notes, tag, GitHub Release) first run at the first publish; a dry run stops before them.
 

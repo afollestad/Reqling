@@ -15,11 +15,8 @@ FULL_CHANGELOG = f"**Full Changelog**: https://github.com/{REPOSITORY}/compare/{
 FIRST_RELEASE_CHANGELOG = f"**Full Changelog**: https://github.com/{REPOSITORY}/commits/{TAG_NAME}"
 COMMIT_LINK = f"[`abc1234`](https://github.com/{REPOSITORY}/commit/abc1234)"
 SECOND_COMMIT_LINK = f"[`def5678`](https://github.com/{REPOSITORY}/commit/def5678)"
-# A well-formed group, for cases where something other than the bullet shape is under test.
-VALID_GROUP = (
-    "- **Stay awake**\n"
-    f"  - *Added a duration slider* ({COMMIT_LINK}) by @author\n"
-)
+# A well-formed bullet, for cases where something other than the bullet shape is under test.
+VALID_BULLET = f"- Add a duration slider. ({COMMIT_LINK}) by @author\n"
 
 
 class GenerateReleaseNotesTests(unittest.TestCase):
@@ -90,12 +87,11 @@ class GenerateReleaseNotesTests(unittest.TestCase):
     def prompt(self) -> str:
         return (Path(self.fake_directory.name) / "prompt.txt").read_text(encoding="utf-8")
 
-    def test_accepts_grouped_bullets_and_footer(self) -> None:
+    def test_accepts_bullets_and_footer(self) -> None:
         self.commit("Add duration slider")
         notes = (
-            "- **Stay awake**\n"
-            f"  - *Added a duration slider* ({COMMIT_LINK}, {SECOND_COMMIT_LINK}) by @author\n"
-            f"  - *Restarts the timer when the duration changes* ({COMMIT_LINK}) by @author\n"
+            f"- Add a duration slider. ({COMMIT_LINK}, {SECOND_COMMIT_LINK}) by @author\n"
+            f"- Improve timer reliability. ({COMMIT_LINK}) by @author, @other\n"
             f"\n{FULL_CHANGELOG}\n"
         )
 
@@ -107,7 +103,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
 
     def test_first_release_covers_full_history_and_links_its_commits(self) -> None:
         self.commit("Add duration slider")
-        notes = f"{VALID_GROUP}\n{FIRST_RELEASE_CHANGELOG}\n"
+        notes = f"{VALID_BULLET}\n{FIRST_RELEASE_CHANGELOG}\n"
 
         result = self.run_generator(generated_notes=notes, previous_tag="", release_notes_base="")
 
@@ -118,32 +114,18 @@ class GenerateReleaseNotesTests(unittest.TestCase):
     def test_first_release_rejects_a_compare_footer(self) -> None:
         self.commit("Add duration slider")
 
-        result = self.run_generator(generated_notes=f"{VALID_GROUP}\n{FULL_CHANGELOG}\n", previous_tag="", release_notes_base="")
+        result = self.run_generator(generated_notes=f"{VALID_BULLET}\n{FULL_CHANGELOG}\n", previous_tag="", release_notes_base="")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside the required Markdown format", result.stderr)
 
-    def test_separates_footer_from_last_child_bullet(self) -> None:
+    def test_separates_footer_from_last_bullet(self) -> None:
         self.commit("Add duration slider")
 
-        result = self.run_generator(generated_notes=f"{VALID_GROUP}{FULL_CHANGELOG}\n")
+        result = self.run_generator(generated_notes=f"{VALID_BULLET}{FULL_CHANGELOG}\n")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.notes(), f"{VALID_GROUP}\n{FULL_CHANGELOG}\n")
-
-    def test_accepts_multiple_groups(self) -> None:
-        self.commit("Add duration slider")
-        notes = (
-            f"{VALID_GROUP}"
-            "- **Other**\n"
-            f"  - *Internal maintenance and build improvements* ({SECOND_COMMIT_LINK}) by @author\n"
-            f"\n{FULL_CHANGELOG}\n"
-        )
-
-        result = self.run_generator(generated_notes=notes)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.notes(), notes)
+        self.assertEqual(self.notes(), f"{VALID_BULLET}\n{FULL_CHANGELOG}\n")
 
     def test_zero_candidate_commits_writes_only_footer(self) -> None:
         result = self.run_generator(release_notes_base="HEAD")
@@ -162,7 +144,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
     def test_rejects_whats_changed_heading(self) -> None:
         self.commit("Add duration slider")
 
-        result = self.run_generator(generated_notes=f"## What's changed\n\n{VALID_GROUP}\n{FULL_CHANGELOG}\n")
+        result = self.run_generator(generated_notes=f"## What's changed\n\n{VALID_BULLET}\n{FULL_CHANGELOG}\n")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside the required Markdown format", result.stderr)
@@ -175,58 +157,21 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside the required Markdown format", result.stderr)
 
-    def test_rejects_flat_ungrouped_bullet(self) -> None:
+    def test_rejects_theme_groups(self) -> None:
         self.commit("Add duration slider")
+        notes = f"- **Stay awake**\n  - *Add a duration slider* ({COMMIT_LINK}) by @author\n\n{FULL_CHANGELOG}\n"
 
-        result = self.run_generator(generated_notes=f"- Add duration slider ({COMMIT_LINK}) by @author\n\n{FULL_CHANGELOG}\n")
+        result = self.run_generator(generated_notes=notes)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside the required Markdown format", result.stderr)
         # Rejections happen after the release is signed and notarized, so diagnostics show what was generated.
-        self.assertIn("groups: 0, children: 0", result.stderr)
-        self.assertIn("- Add duration slider", result.stderr)
+        self.assertIn("bullets: 1, footers: 1, invalid lines: 1, bullets without commit links: 1", result.stderr)
+        self.assertIn("- **Stay awake**", result.stderr)
 
-    def test_rejects_child_before_group(self) -> None:
+    def test_rejects_bullet_without_commit_link(self) -> None:
         self.commit("Add duration slider")
-        notes = (
-            f"  - *Added a duration slider* ({COMMIT_LINK}) by @author\n"
-            f"{VALID_GROUP}"
-            f"\n{FULL_CHANGELOG}\n"
-        )
-
-        result = self.run_generator(generated_notes=notes)
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside the required Markdown format", result.stderr)
-
-    def test_rejects_group_without_children(self) -> None:
-        self.commit("Add duration slider")
-
-        result = self.run_generator(generated_notes=f"- **Stay awake**\n\n{FULL_CHANGELOG}\n")
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside the required Markdown format", result.stderr)
-
-    def test_rejects_empty_group_before_next_group(self) -> None:
-        self.commit("Add duration slider")
-
-        result = self.run_generator(generated_notes=f"- **Menu bar**\n{VALID_GROUP}\n{FULL_CHANGELOG}\n")
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside the required Markdown format", result.stderr)
-
-    def test_rejects_non_italic_child(self) -> None:
-        self.commit("Add duration slider")
-        notes = f"- **Stay awake**\n  - Added a duration slider ({COMMIT_LINK}) by @author\n\n{FULL_CHANGELOG}\n"
-
-        result = self.run_generator(generated_notes=notes)
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside the required Markdown format", result.stderr)
-
-    def test_rejects_child_without_commit_link(self) -> None:
-        self.commit("Add duration slider")
-        notes = f"- **Stay awake**\n  - *Added a duration slider* by @author\n\n{FULL_CHANGELOG}\n"
+        notes = f"{VALID_BULLET}- Improve timer reliability. (`abc1234`) by @author\n\n{FULL_CHANGELOG}\n"
 
         result = self.run_generator(generated_notes=notes)
 
@@ -236,7 +181,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
     def test_rejects_duplicate_footer(self) -> None:
         self.commit("Add duration slider")
 
-        result = self.run_generator(generated_notes=f"{VALID_GROUP}\n{FULL_CHANGELOG}\n{FULL_CHANGELOG}\n")
+        result = self.run_generator(generated_notes=f"{VALID_BULLET}\n{FULL_CHANGELOG}\n{FULL_CHANGELOG}\n")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside the required Markdown format", result.stderr)
@@ -244,7 +189,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
     def test_rejects_unexpected_workspace_modification(self) -> None:
         self.commit("Add duration slider")
 
-        result = self.run_generator(generated_notes=f"{VALID_GROUP}\n{FULL_CHANGELOG}\n", create_unexpected_file=True)
+        result = self.run_generator(generated_notes=f"{VALID_BULLET}\n{FULL_CHANGELOG}\n", create_unexpected_file=True)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("modified unexpected workspace files", result.stderr)
